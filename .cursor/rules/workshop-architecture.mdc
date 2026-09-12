@@ -1,0 +1,25 @@
+---
+description: Workshop server crate architecture invariants - one-way dependency tiers, registry self-registration, 500-line file ceiling
+globs: crates/workshop*/**
+alwaysApply: false
+---
+
+# Workshop Architecture Invariants
+
+## One-way dependency graph
+
+- Dependencies flow one way: shell -> features -> services -> vocabulary. Never add a dependency from a lower tier to a higher one. If Cargo rejects a cycle, the design is wrong, not the graph.
+- Tiers: vocabulary (`workshop-protocol`, `workshop-support`, `workshop-registry`) <- services (`workshop-gateway`, `workshop-status`, `workshop-menu`) <- features (`workshop-sessions`, `workshop-workspace`) <- shell (`workshop-server`).
+- Crates in the same tier never depend on each other. They meet through `workshop-protocol` wire types and `workshop-registry` proxy slots.
+- Every `workshop-*` crate's `lib.rs` opens with a `//!` doc listing what the crate may depend on and what it may not. Read it before adding an import.
+- `lib.rs` is a facade only: crate docs, crate-level attributes, `mod` declarations, and `pub use` re-exports. No logic.
+
+## Registry pattern
+
+- Subsystems self-register into `workshop-registry` proxy slots: routes, state handles, background tasks, push channels, and shutdown handles. The shell composes the registry; it does not wire subsystems by name.
+- Unregistered slots are graceful no-ops. Never add a hard dependency on an optional subsystem.
+- Registration handles are `#[must_use]`; registry traits are sealed so only workshop crates implement them.
+
+## File ceiling
+
+- No file exceeds 500 lines. If an edit would push a file past 500, split first, then edit.

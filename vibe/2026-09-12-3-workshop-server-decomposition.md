@@ -505,7 +505,7 @@ Verification: `npm run build` produces hashed filenames and a manifest. `cargo t
 
 <step-9>
 
-### Step 9: Rulebook and workspace rules
+### Step 9: Rulebook and workspace rules [completed]
 
 - Component: Cleanup
 
