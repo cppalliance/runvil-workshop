@@ -16,6 +16,14 @@
 // in-page drags (Dockview tabs) are untouched.
 
 import { DisposableStore, toDisposable, type IDisposable } from "../../base/lifecycle";
+import {
+  CatalogError,
+  ErrorCatalog,
+  err,
+  errorText,
+  ok,
+  type Result,
+} from "../../services/error-catalog";
 import type { StatusBar } from "../status/status-bar";
 
 /** The native event the app dispatches when files land on the window. */
@@ -87,18 +95,33 @@ function grantErrorMessage(body: unknown, status: number): string {
 /**
  * Grants one path through the workspace API. Shared with the Workshop
  * tree's Add Folder flow, which grants picked and typed paths the same
- * way a drop does.
+ * way a drop does. Never throws: the outcome is a typed Result, with
+ * transport failures and refusals distinguished by their catalog code.
  */
-export async function grantPath(path: string): Promise<void> {
-  const response = await fetch("/workspace/grant", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ path }),
-  });
+export async function grantPath(path: string): Promise<Result<void>> {
+  let response: Response;
+  try {
+    response = await fetch("/workspace/grant", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path }),
+    });
+  } catch (error) {
+    return err(
+      new CatalogError(ErrorCatalog.Transport, `POST /workspace/grant: ${errorText(error)}`, {
+        cause: error,
+      }),
+    );
+  }
   const body: unknown = await response.json();
   if (!response.ok) {
-    throw new Error(grantErrorMessage(body, response.status));
+    return err(
+      new CatalogError(ErrorCatalog.GrantRefused, grantErrorMessage(body, response.status), {
+        status: response.status,
+      }),
+    );
   }
+  return ok(undefined);
 }
 
 /**
@@ -113,12 +136,12 @@ async function grantDroppedPaths(
 ): Promise<void> {
   let granted = 0;
   for (const path of paths) {
-    try {
-      await grantPath(path);
+    const result = await grantPath(path);
+    if (result.ok) {
       granted += 1;
       statusBar.showLocal(`Added ${path} to the Workshop`, "info");
-    } catch (error) {
-      statusBar.showLocal(`Could not open ${path}: ${(error as Error).message}`, "error");
+    } else {
+      statusBar.showLocal(`Could not open ${path}: ${result.error.message}`, "error");
     }
   }
   if (granted > 0) {

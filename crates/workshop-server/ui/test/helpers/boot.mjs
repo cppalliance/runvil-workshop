@@ -3,7 +3,7 @@
 // per-feature slice boots the exact same way. bootWorkbench(name, run)
 // loads dist/index.html into jsdom, stands in fakes for the APIs jsdom
 // lacks (WebSocket, audio capture, fetch, layout metrics), imports the built
-// dist/app.js (which lazy-loads its feature chunks from dist/chunks/),
+// bundle (which lazy-loads its feature chunks from dist/chunks/),
 // waits for the app to settle, then runs `run` under the shared
 // disposable-leak check and reports the verdict through the
 // process exit code. Run after `npm run build`.
@@ -240,7 +240,7 @@ export async function bootWorkbench(name, run) {
   globalThis.window = window;
   globalThis.document = window.document;
 
-  // dist/app.js exports nothing (main.ts is an entry point) and esbuild
+  // The entry bundle exports nothing (main.ts is an entry point) and esbuild
   // tree-shakes the unused setDisposableTracker export away, so the leak
   // check's seam is unreachable from outside the bundle. Reattach it by
   // appending one export to the bundle text: the dist bytes execute
@@ -278,7 +278,10 @@ export async function bootWorkbench(name, run) {
       "boot.mjs could not locate the disposable tracker seam in dist/; rebuild dist or retune the seam regex",
     );
   }
-  await import(pathToFileURL(path.join(distDir, "app.js")).href);
+  // The entry's name is content-hashed (dist/bundle/app-<hash>.js); the
+  // build's manifest maps the logical name to it.
+  const manifest = JSON.parse(await readFile(path.join(distDir, "manifest.json"), "utf8"));
+  await import(pathToFileURL(path.join(distDir, manifest["app.js"])).href);
   const seam = await import(pathToFileURL(seamPath).href);
   const lifecycle = { setDisposableTracker: seam.__setDisposableTracker };
 

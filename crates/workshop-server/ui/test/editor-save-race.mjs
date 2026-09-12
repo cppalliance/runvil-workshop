@@ -22,7 +22,7 @@ const bundle = await esbuild.build({
     contents: `
       export * as lifecycle from "./src/base/lifecycle.ts";
       export { EditorPanel } from "./src/ui/editor/editor-panel.ts";
-      export { ModifiedConflictError } from "./src/services/workspace-api.ts";
+      export { CatalogError, ErrorCatalog } from "./src/services/error-catalog.ts";
     `,
     resolveDir: path.join(uiDir, ".."),
     loader: "ts",
@@ -67,7 +67,7 @@ globalThis.document = window.document;
 
 const bundlePath = path.join(os.tmpdir(), "promptforge-editor-save-race-test.mjs");
 await writeFile(bundlePath, bundle.outputFiles[0].text);
-const { lifecycle, EditorPanel, ModifiedConflictError } = await import(
+const { lifecycle, EditorPanel, CatalogError, ErrorCatalog } = await import(
   pathToFileURL(bundlePath).href
 );
 
@@ -246,7 +246,9 @@ await assertNoLeaks(lifecycle, async () => {
     writeFile: (filePath, text, expectedToken) => {
       if (failNextPut) {
         failNextPut = false;
-        return Promise.reject(new ModifiedConflictError("file changed on disk"));
+        return Promise.reject(
+          new CatalogError(ErrorCatalog.ModifiedConflict, "file changed on disk"),
+        );
       }
       conflictPuts.push({ path: filePath, text, expectedToken });
       return new Promise((resolve) => {

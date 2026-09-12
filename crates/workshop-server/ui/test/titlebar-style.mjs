@@ -10,9 +10,12 @@ import { JSDOM } from "jsdom";
 
 const uiDir = path.dirname(fileURLToPath(import.meta.url));
 const distDir = path.join(uiDir, "..", "dist");
+// The bundled stylesheet's name is content-hashed; the build's manifest
+// maps the logical name to it.
+const manifest = JSON.parse(await readFile(path.join(distDir, "manifest.json"), "utf8"));
 const [html, css] = await Promise.all([
   readFile(path.join(distDir, "index.html"), "utf8"),
-  readFile(path.join(distDir, "app.css"), "utf8"),
+  readFile(path.join(distDir, manifest["app.css"]), "utf8"),
 ]);
 
 const failures = [];

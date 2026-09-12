@@ -8,6 +8,7 @@ import { check, type DownloadEvent, type Update } from "@tauri-apps/plugin-updat
 
 import { Emitter, type Event } from "../base/event";
 import { Disposable, toDisposable } from "../base/lifecycle";
+import { errorText } from "./error-catalog";
 
 export type UpdatePhase =
   | "idle"
@@ -69,10 +70,6 @@ const EMPTY: UpdateSnapshot = {
   error: "",
   log: [],
 };
-
-function errorText(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
 
 function oneLine(text: string | undefined): string {
   return (text ?? "").split(/\r?\n/, 1)[0]?.trim() ?? "";

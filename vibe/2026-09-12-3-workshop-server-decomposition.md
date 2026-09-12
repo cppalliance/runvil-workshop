@@ -489,7 +489,7 @@ Verification: `npm run build` succeeds with chunk splitting (verify multiple out
 
 <step-8>
 
-### Step 8: SPA error handling, view decoupling, and asset hashing
+### Step 8: SPA error handling, view decoupling, and asset hashing [completed]
 
 - Component: SPA Restructuring
 

@@ -2,7 +2,11 @@
 // as unknown and is parsed field by field into a narrow type before any
 // consumer touches it; no casts. The tree panel lists directories through
 // fetchTree; the editor panel reads and writes files through fetchFile
-// and writeFile, which carry the server's opaque conflict token.
+// and writeFile, which carry the server's opaque conflict token. Failures
+// throw typed CatalogError variants (services/error-catalog.ts); callers
+// match on the ErrorCatalog code, never on message text.
+
+import { CatalogError, ErrorCatalog, errorText, isCatalogError } from "./error-catalog";
 
 /** One entry in a directory listing. */
 export interface TreeEntry {
@@ -34,17 +38,9 @@ export interface WorkspaceFile {
   readonly text: string;
 }
 
-/** Thrown when the server refuses a write because the file changed on disk. */
-export class ModifiedConflictError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "ModifiedConflictError";
-  }
-}
-
 /** Narrows a caught error to a modified-time conflict from writeFile. */
-export function isModifiedConflict(error: unknown): error is ModifiedConflictError {
-  return error instanceof ModifiedConflictError;
+export function isModifiedConflict(error: unknown): error is CatalogError {
+  return isCatalogError(error, ErrorCatalog.ModifiedConflict);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -101,40 +97,81 @@ function errorMessage(body: unknown, status: number, route: string): string {
   return `${route} answered ${status}`;
 }
 
+/** The server's machine-readable error code, when the body carries one. */
+function errorCode(body: unknown): string | null {
+  if (isRecord(body) && isRecord(body.error) && typeof body.error.code === "string") {
+    return body.error.code;
+  }
+  return null;
+}
+
+/** Performs one fetch, wrapping transport failures as typed errors. */
+async function request(url: string, route: string, init?: RequestInit): Promise<Response> {
+  try {
+    return await fetch(url, init);
+  } catch (error) {
+    throw new CatalogError(ErrorCatalog.Transport, `${route}: ${errorText(error)}`, {
+      cause: error,
+    });
+  }
+}
+
+/** Parses one response body; a non-JSON answer is a shape failure. */
+async function readJson(response: Response, route: string): Promise<unknown> {
+  try {
+    return await response.json();
+  } catch (error) {
+    throw new CatalogError(ErrorCatalog.UnexpectedShape, `${route} returned a non-JSON answer`, {
+      status: response.status,
+      cause: error,
+    });
+  }
+}
+
+/** Throws the typed failure for one non-OK response. */
+function httpFailure(body: unknown, status: number, route: string): never {
+  const message = errorMessage(body, status, route);
+  if (status === 409 && errorCode(body) === "modified_conflict") {
+    throw new CatalogError(ErrorCatalog.ModifiedConflict, message, { status });
+  }
+  throw new CatalogError(ErrorCatalog.HttpStatus, message, { status });
+}
+
 /**
  * Lists one level of a workspace directory, or the granted roots when
- * `path` is null. Throws on transport, HTTP, and shape failures.
+ * `path` is null. Throws typed CatalogError variants on transport, HTTP,
+ * and shape failures.
  */
 export async function fetchTree(path: string | null): Promise<TreeListing> {
   const route = "/workspace/tree";
   const url = path === null ? route : `${route}?path=${encodeURIComponent(path)}`;
-  const response = await fetch(url);
-  const body: unknown = await response.json();
+  const response = await request(url, `GET ${route}`);
+  const body = await readJson(response, `GET ${route}`);
   if (!response.ok) {
-    throw new Error(errorMessage(body, response.status, `GET ${route}`));
+    httpFailure(body, response.status, `GET ${route}`);
   }
   const listing = parseListing(body);
   if (listing === null) {
-    throw new Error(`GET ${route} returned an unexpected shape`);
+    throw new CatalogError(ErrorCatalog.UnexpectedShape, `GET ${route} returned an unexpected shape`);
   }
   return listing;
 }
 
 /**
  * Removes a granted root by its listed path. The server refuses unknown
- * roots with a 404; a root deleted from disk stays revocable. Throws on
- * transport and HTTP failures.
+ * roots with a 404; a root deleted from disk stays revocable. Throws
+ * typed CatalogError variants on transport and HTTP failures.
  */
 export async function revokeRoot(path: string): Promise<void> {
   const route = "/workspace/revoke";
-  const response = await fetch(route, {
+  const response = await request(route, `POST ${route}`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ path }),
   });
-  const body: unknown = await response.json();
+  const body = await readJson(response, `POST ${route}`);
   if (!response.ok) {
-    throw new Error(errorMessage(body, response.status, `POST ${route}`));
+    httpFailure(body, response.status, `POST ${route}`);
   }
 }
 
@@ -155,28 +192,21 @@ function parseFile(body: unknown): WorkspaceFile | null {
   return { path, size, token, text };
 }
 
-/** The server's machine-readable error code, when the body carries one. */
-function errorCode(body: unknown): string | null {
-  if (isRecord(body) && isRecord(body.error) && typeof body.error.code === "string") {
-    return body.error.code;
-  }
-  return null;
-}
-
 /**
  * Reads a confined workspace file's text with its size and conflict
- * token. Throws on transport, HTTP, and shape failures.
+ * token. Throws typed CatalogError variants on transport, HTTP, and
+ * shape failures.
  */
 export async function fetchFile(path: string): Promise<WorkspaceFile> {
   const route = "/workspace/file";
-  const response = await fetch(`${route}?path=${encodeURIComponent(path)}`);
-  const body: unknown = await response.json();
+  const response = await request(`${route}?path=${encodeURIComponent(path)}`, `GET ${route}`);
+  const body = await readJson(response, `GET ${route}`);
   if (!response.ok) {
-    throw new Error(errorMessage(body, response.status, `GET ${route}`));
+    httpFailure(body, response.status, `GET ${route}`);
   }
   const file = parseFile(body);
   if (file === null) {
-    throw new Error(`GET ${route} returned an unexpected shape`);
+    throw new CatalogError(ErrorCatalog.UnexpectedShape, `GET ${route} returned an unexpected shape`);
   }
   return file;
 }
@@ -185,8 +215,8 @@ export async function fetchFile(path: string): Promise<WorkspaceFile> {
  * Writes a confined workspace file. `expectedToken` is the token the
  * caller last read, passed back verbatim; the server refuses the write
  * with a 409 when the file changed on disk since, surfaced here as a
- * ModifiedConflictError. Returns the post-write metadata, including the
- * fresh token.
+ * CatalogError with the ModifiedConflict code (see isModifiedConflict).
+ * Returns the post-write metadata, including the fresh token.
  */
 export async function writeFile(
   path: string,
@@ -194,22 +224,18 @@ export async function writeFile(
   expectedToken: string | null,
 ): Promise<WorkspaceFile> {
   const route = "/workspace/file";
-  const response = await fetch(route, {
+  const response = await request(route, `PUT ${route}`, {
     method: "PUT",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ path, text, expected_token: expectedToken }),
   });
-  const body: unknown = await response.json();
+  const body = await readJson(response, `PUT ${route}`);
   if (!response.ok) {
-    const message = errorMessage(body, response.status, `PUT ${route}`);
-    if (response.status === 409 && errorCode(body) === "modified_conflict") {
-      throw new ModifiedConflictError(message);
-    }
-    throw new Error(message);
+    httpFailure(body, response.status, `PUT ${route}`);
   }
   const file = parseFile(body);
   if (file === null) {
-    throw new Error(`PUT ${route} returned an unexpected shape`);
+    throw new CatalogError(ErrorCatalog.UnexpectedShape, `PUT ${route} returned an unexpected shape`);
   }
   return file;
 }

@@ -1,5 +1,6 @@
 import { Emitter, type Event } from "../base/event";
 import { Disposable } from "../base/lifecycle";
+import { errorText } from "./error-catalog";
 import { createServiceToken, type ServiceToken } from "./service-registry";
 
 const OUTPUT_SAMPLE_RATE = 24_000;
@@ -48,19 +49,6 @@ type OpenFailureKind = "permission" | "device" | "start";
 interface OpenFailure {
   readonly kind: OpenFailureKind;
   readonly message: string;
-}
-
-function errorText(error: unknown): string {
-  if (error instanceof Error) {
-    return error.message;
-  }
-  if (typeof error === "object" && error !== null) {
-    const message = Reflect.get(error, "message");
-    if (typeof message === "string") {
-      return message;
-    }
-  }
-  return String(error);
 }
 
 function openFailure(kind: OpenFailureKind, error: unknown): OpenFailure {

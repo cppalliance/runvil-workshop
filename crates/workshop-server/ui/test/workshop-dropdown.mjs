@@ -210,9 +210,13 @@ dropdown.show(trigger, [
 // build that `cargo build` writes emits `.x {`; both must carry the rules.
 
 {
-  const appCss = await readFile(path.join(uiDir, "..", "dist", "app.css"), "utf8");
-  check("dist/app.css carries the menu surface rules", /\.menu-item\s*\{/.test(appCss));
-  check("dist/app.css carries the popup menu's rules", /\.menu-popup\s*\{/.test(appCss));
+  // The bundled stylesheet's name is content-hashed; the build's manifest
+  // maps the logical name to it.
+  const distDir = path.join(uiDir, "..", "dist");
+  const manifest = JSON.parse(await readFile(path.join(distDir, "manifest.json"), "utf8"));
+  const appCss = await readFile(path.join(distDir, manifest["app.css"]), "utf8");
+  check("the bundled app.css carries the menu surface rules", /\.menu-item\s*\{/.test(appCss));
+  check("the bundled app.css carries the popup menu's rules", /\.menu-popup\s*\{/.test(appCss));
 }
 
 if (failures.length > 0) {

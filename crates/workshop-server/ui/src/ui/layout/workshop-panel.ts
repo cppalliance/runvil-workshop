@@ -343,10 +343,9 @@ export class WorkshopTreePanel extends WorkshopPart {
 
   /** Grants one folder and announces the outcome, like the drop flow. */
   private async grantFolder(path: string): Promise<void> {
-    try {
-      await grantPath(path);
-    } catch (error) {
-      this.statusBar?.showLocal(`Could not add ${path}: ${(error as Error).message}`, "error");
+    const result = await grantPath(path);
+    if (!result.ok) {
+      this.statusBar?.showLocal(`Could not add ${path}: ${result.error.message}`, "error");
       return;
     }
     this.statusBar?.showLocal(`Added ${path} to the Workshop`, "info");
