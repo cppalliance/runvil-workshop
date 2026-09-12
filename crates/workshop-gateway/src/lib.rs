@@ -20,6 +20,7 @@
 pub mod gateway;
 pub mod gateway_binding;
 pub mod gateway_progress;
+pub mod handles;
 pub mod heartbeat;
 pub mod observer;
 pub mod resolve;
@@ -33,6 +34,7 @@ pub use gateway::{
 pub use gateway_binding::{
     GatewayBinding, GatewayPublicationError, GatewaySnapshot, GatewayUpdater,
 };
+pub use handles::{GatewayHandles, register};
 pub use heartbeat::{GatewayHealth, Heartbeat};
 pub use observer::WorkshopObserver;
 pub use resolve::{GatewaySource, ResolveError, ResolvedGateway};

@@ -49,7 +49,7 @@ use crate::agents::{answer, collect_turn, delta_text, next_wait_token, wait_afte
 use crate::common::{JsonSocket, spawn_gateway};
 
 /// The embedded built-in chat prompt, exactly what a `chat` launch runs.
-const CHAT_MD: &str = include_str!("../../agents/chat.md");
+const CHAT_MD: &str = include_str!("../../../workshop-sessions/agents/chat.md");
 
 /// Every completion request body the gate mock received, in arrival
 /// order: the gate's proof of exactly what the model was shown.

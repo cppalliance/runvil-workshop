@@ -5,7 +5,8 @@ use std::sync::Arc;
 use promptforge_tools::{Tool, ToolCatalog};
 use tokio::sync::mpsc;
 
-use crate::gateway_binding::GatewayBinding;
+use workshop_gateway::GatewayBinding;
+
 use crate::input::UserInputTool;
 
 use super::{AgentSession, AgentSessions, SessionHost};
@@ -42,7 +43,7 @@ pub(super) fn spawn(
             }
         };
         let (mut collector, initial_catalog, initial_gateway) =
-            EventCollector::new(lifecycle, cancellations, host.catalog.clone(), gateway);
+            EventCollector::new(lifecycle, cancellations, host.catalog().clone(), gateway);
         let mut executor = EffectExecutor::new(
             Arc::clone(&session),
             host,

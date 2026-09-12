@@ -121,7 +121,7 @@ impl WorkshopObserver {
     /// ```
     /// use promptforge_core_support::events::EventLog;
     /// use promptforge_core_support::observe::Observer;
-    /// use workshop_server::WorkshopObserver;
+    /// use workshop_gateway::WorkshopObserver;
     ///
     /// let log = WorkshopObserver::new(None)?;
     /// log.on_user_input("run", "chat", "hello");
@@ -153,7 +153,7 @@ impl WorkshopObserver {
     /// ```
     /// use promptforge_core_support::events::EventLog;
     /// use promptforge_core_support::observe::Observer;
-    /// use workshop_server::WorkshopObserver;
+    /// use workshop_gateway::WorkshopObserver;
     ///
     /// let dir = tempfile::TempDir::new()?;
     /// let path = dir.path().join("events.jsonl");
@@ -189,7 +189,7 @@ impl WorkshopObserver {
     /// # Examples
     /// ```
     /// use promptforge_core_support::observe::Observer;
-    /// use workshop_server::WorkshopObserver;
+    /// use workshop_gateway::WorkshopObserver;
     ///
     /// let log = WorkshopObserver::new(None)?;
     /// let mut entries = log.subscribe();

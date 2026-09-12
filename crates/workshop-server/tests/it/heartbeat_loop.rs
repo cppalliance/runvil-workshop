@@ -29,7 +29,7 @@ use workshop_gateway::{GatewayBinding, GatewayHealth, Heartbeat};
 use workshop_menu::{CatalogBus, MenuBus};
 use workshop_protocol::{CatalogPush, Severity, StatusBarUpdate, WorkbenchSnapshot};
 use workshop_registry::{
-    CatalogSink, MenuSink, Push, Registration, Registry, StatusChannel, StatusSink,
+    CatalogSink, MenuSink, Push, Registration, Registry, StateProvider, StatusChannel, StatusSink,
 };
 use workshop_status::StatusBus;
 use workshop_support::ReconnectBackoff;
@@ -38,19 +38,28 @@ use workshop_support::ReconnectBackoff;
 type Guards = (
     Registration<dyn StatusChannel>,
     Registration<dyn StatusSink>,
+    Registration<dyn StateProvider>,
     Registration<dyn CatalogSink>,
     Registration<dyn MenuSink>,
+    Registration<dyn StateProvider>,
 );
 
 /// Wires the buses into a fresh registry and returns the push facade
 /// plus the guards keeping the registrations alive.
 fn wired_push(status: &StatusBus, catalog: &CatalogBus, menu: &MenuBus) -> (Push, Guards) {
     let registry = Registry::new();
-    let (status_channel, status_sink) = workshop_status::register(&registry, status);
-    let (catalog_sink, menu_sink) = workshop_menu::register(&registry, catalog, menu);
+    let (status_channel, status_sink, status_state) = workshop_status::register(&registry, status);
+    let (catalog_sink, menu_sink, menu_state) = workshop_menu::register(&registry, catalog, menu);
     (
         registry.push(),
-        (status_channel, status_sink, catalog_sink, menu_sink),
+        (
+            status_channel,
+            status_sink,
+            status_state,
+            catalog_sink,
+            menu_sink,
+            menu_state,
+        ),
     )
 }
 

@@ -10,6 +10,7 @@
 
 use std::any::Any;
 use std::fmt;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use axum::Router;
@@ -210,6 +211,120 @@ where
 impl<P> fmt::Debug for CatalogSinkAdapter<P> {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.debug_struct("CatalogSinkAdapter").finish()
+    }
+}
+
+/// The workspace subsystem's granted-root view: the narrow state handle
+/// same-tier subsystems (the agent session's `ui()` snapshot) consume
+/// through the registry instead of naming the workspace crate, which the
+/// one-way tier graph forbids.
+pub trait WorkspaceRoots: Sealed + Send + Sync {
+    /// The granted workspace roots in stable sorted order.
+    fn granted_roots(&self) -> Vec<PathBuf>;
+}
+
+/// A [`WorkspaceRoots`] backed by one closure over the workspace's grant
+/// set: the registration adapter for the workspace subsystem. The
+/// registry's traits are sealed, so the registrant plugs its state in
+/// through this adapter rather than implementing the trait itself.
+pub struct WorkspaceRootsAdapter<F> {
+    roots: F,
+}
+
+impl<F> WorkspaceRootsAdapter<F>
+where
+    F: Fn() -> Vec<PathBuf> + Send + Sync,
+{
+    /// Builds the adapter from the workspace's granted-roots closure.
+    pub fn new(roots: F) -> Self {
+        Self { roots }
+    }
+}
+
+impl<F> Sealed for WorkspaceRootsAdapter<F> where F: Fn() -> Vec<PathBuf> + Send + Sync {}
+
+impl<F> WorkspaceRoots for WorkspaceRootsAdapter<F>
+where
+    F: Fn() -> Vec<PathBuf> + Send + Sync,
+{
+    fn granted_roots(&self) -> Vec<PathBuf> {
+        (self.roots)()
+    }
+}
+
+impl<F> fmt::Debug for WorkspaceRootsAdapter<F> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.debug_struct("WorkspaceRootsAdapter").finish()
+    }
+}
+
+/// A [`RouteRegistrar`] backed by one closure building the subsystem's
+/// router: the registration adapter for a subsystem's routes. The
+/// registry's traits are sealed, so the registrant plugs its routes in
+/// through this adapter rather than implementing the trait itself.
+pub struct RouteRegistrarAdapter<F> {
+    build: F,
+}
+
+impl<F> RouteRegistrarAdapter<F>
+where
+    F: Fn() -> Router + Send + Sync,
+{
+    /// Builds the adapter from the subsystem's router constructor.
+    pub fn new(build: F) -> Self {
+        Self { build }
+    }
+}
+
+impl<F> Sealed for RouteRegistrarAdapter<F> where F: Fn() -> Router + Send + Sync {}
+
+impl<F> RouteRegistrar for RouteRegistrarAdapter<F>
+where
+    F: Fn() -> Router + Send + Sync,
+{
+    fn routes(&self) -> Router {
+        (self.build)()
+    }
+}
+
+impl<F> fmt::Debug for RouteRegistrarAdapter<F> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.debug_struct("RouteRegistrarAdapter").finish()
+    }
+}
+
+/// A [`StateProvider`] backed by one closure yielding the subsystem's
+/// handle set: the registration adapter for a subsystem's shared state.
+/// The registry's traits are sealed, so the registrant plugs its handles
+/// in through this adapter rather than implementing the trait itself.
+pub struct StateProviderAdapter<F> {
+    handles: F,
+}
+
+impl<F> StateProviderAdapter<F>
+where
+    F: Fn() -> Arc<dyn Any + Send + Sync> + Send + Sync,
+{
+    /// Builds the adapter from the subsystem's handle-set closure.
+    pub fn new(handles: F) -> Self {
+        Self { handles }
+    }
+}
+
+impl<F> Sealed for StateProviderAdapter<F> where F: Fn() -> Arc<dyn Any + Send + Sync> + Send + Sync {}
+
+impl<F> StateProvider for StateProviderAdapter<F>
+where
+    F: Fn() -> Arc<dyn Any + Send + Sync> + Send + Sync,
+{
+    fn handles(&self) -> Arc<dyn Any + Send + Sync> {
+        (self.handles)()
+    }
+}
+
+impl<F> fmt::Debug for StateProviderAdapter<F> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.debug_struct("StateProviderAdapter").finish()
     }
 }
 

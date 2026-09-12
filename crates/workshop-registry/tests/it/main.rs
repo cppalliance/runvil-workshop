@@ -133,3 +133,76 @@ fn registry_clones_share_the_same_slots() {
         "a registration through one handle is visible through every clone"
     );
 }
+
+#[test]
+fn the_workspace_roots_slot_serves_the_registrants_grants() {
+    use std::path::PathBuf;
+
+    use workshop_registry::WorkspaceRootsAdapter;
+
+    let registry = Registry::new();
+    assert!(
+        registry.workspace_roots().get().is_none(),
+        "an unregistered roots slot is a graceful no-op"
+    );
+    let registration = registry
+        .workspace_roots()
+        .register(Arc::new(WorkspaceRootsAdapter::new(|| {
+            vec![PathBuf::from("/granted")]
+        })));
+    let roots = registry
+        .workspace_roots()
+        .get()
+        .expect("the registered roots handle is served");
+    assert_eq!(roots.granted_roots(), vec![PathBuf::from("/granted")]);
+    drop(registration);
+    assert!(
+        registry.workspace_roots().get().is_none(),
+        "the slot empties when the guard drops"
+    );
+}
+
+#[test]
+fn a_registered_route_registrar_builds_its_router() {
+    use workshop_registry::RouteRegistrarAdapter;
+
+    let registry = Registry::new();
+    assert!(registry.session_routes().get().is_none());
+    assert!(registry.workspace_routes().get().is_none());
+    let _registration = registry
+        .session_routes()
+        .register(Arc::new(RouteRegistrarAdapter::new(axum::Router::new)));
+    assert!(
+        registry.session_routes().get().is_some(),
+        "the sessions subsystem's routes are served"
+    );
+    assert!(
+        registry.workspace_routes().get().is_none(),
+        "route slots are per subsystem"
+    );
+}
+
+#[test]
+fn a_registered_state_provider_serves_its_handles_for_downcast() {
+    use workshop_registry::StateProviderAdapter;
+
+    let registry = Registry::new();
+    assert!(registry.sessions_state().get().is_none());
+    let _registration = registry
+        .sessions_state()
+        .register(Arc::new(StateProviderAdapter::new(|| {
+            Arc::new("handles".to_string()) as Arc<dyn std::any::Any + Send + Sync>
+        })));
+    let handles = registry
+        .sessions_state()
+        .get()
+        .expect("the registered provider is served")
+        .handles();
+    assert_eq!(
+        handles
+            .downcast::<String>()
+            .expect("the handle set downcasts to its concrete type")
+            .as_str(),
+        "handles"
+    );
+}

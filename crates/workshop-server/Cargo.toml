@@ -14,33 +14,20 @@ path = "src/main.rs"
 
 [dependencies]
 anyhow.workspace = true
-arc-swap.workspace = true
-async-trait.workspace = true
 axum.workspace = true
-dunce.workspace = true
 futures-util.workspace = true
 open.workspace = true
-percent-encoding.workspace = true
-promptforge-core.workspace = true
-promptforge-core-support.workspace = true
-promptforge-model-client.workspace = true
-promptforge-tool-picker.workspace = true
-shared-progress.workspace = true
-promptforge-vfs.workspace = true
-promptforge-tools.workspace = true
-rand.workspace = true
 reqwest.workspace = true
 rust-embed.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 shared-loopback.workspace = true
+shared-progress.workspace = true
 shared-sidecar.workspace = true
-shared-vfs.workspace = true
 socket2.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tokio-tungstenite.workspace = true
-toml.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 url.workspace = true
@@ -48,9 +35,10 @@ workshop-gateway.workspace = true
 workshop-menu.workspace = true
 workshop-protocol.workspace = true
 workshop-registry.workspace = true
+workshop-sessions.workspace = true
 workshop-status.workspace = true
 workshop-support.workspace = true
-promptforge-agent.workspace = true
+workshop-workspace.workspace = true
 tempfile = { workspace = true, optional = true }
 
 [features]
@@ -59,6 +47,7 @@ test-fixtures = [
     "dep:tempfile",
     "workshop-gateway/test-fixtures",
     "workshop-menu/test-fixtures",
+    "workshop-sessions/test-fixtures",
     "workshop-support/test-fixtures",
 ]
 
@@ -68,6 +57,15 @@ workshop-server = { path = ".", features = ["test-fixtures"] }
 # tests can run the real liveness gauntlet against the test binary's own
 # process image.
 shared-sidecar = { workspace = true, features = ["test-fixtures"] }
+# The socket integration tests drive agent programs on the runtime engine
+# directly, so the engine crates are test-only dependencies of the shell.
+promptforge-agent.workspace = true
+promptforge-core.workspace = true
+promptforge-core-support.workspace = true
+promptforge-model-client.workspace = true
+promptforge-tool-picker.workspace = true
+promptforge-tools.workspace = true
+promptforge-vfs.workspace = true
 tempfile.workspace = true
 tokio = { workspace = true, features = ["test-util"] }
 tower.workspace = true

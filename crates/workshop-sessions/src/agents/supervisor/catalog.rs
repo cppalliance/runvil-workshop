@@ -1,6 +1,6 @@
 //! Typed catalog-event collection for one agent supervisor.
 
-use crate::catalog::{CatalogBus, ChatCatalog};
+use workshop_menu::{CatalogBus, ChatCatalog};
 
 use super::transition::{CatalogDisposition, SupervisorEvent};
 

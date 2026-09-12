@@ -12,19 +12,20 @@ use promptforge_tool_picker::{Config, ToolPicker};
 use promptforge_tools::ToolCatalog;
 use shared_vfs::VfsRef;
 
-use crate::catalog::ChatCatalog;
-use crate::gateway_binding::GatewaySnapshot;
-use crate::input::SessionInputBroker;
+use workshop_gateway::GatewaySnapshot;
+use workshop_menu::ChatCatalog;
 use workshop_protocol::Activity;
+
+use crate::agents::{
+    AgentSession, AgentSource, SessionHost, SessionObserver, build_model_catalog, delta_stamp,
+    ui_provider,
+};
+use crate::input::SessionInputBroker;
 
 use super::events::{CollectedEvent, EventCollector, RunFuture};
 use super::transition::{
     CancelOrigin, CatalogDisposition, CloseReason, HistoryEffect, RelaunchEffect, RunCompletion,
     RunId, SupervisorEffect, SupervisorEvent,
-};
-use crate::session_agents::{
-    AgentSession, AgentSource, SessionHost, SessionObserver, build_model_catalog, delta_stamp,
-    ui_provider,
 };
 
 /// The result of executing one reducer-selected effect.
@@ -54,8 +55,8 @@ impl RunFactory {
         let observer: Arc<dyn Observer> = Arc::new(SessionObserver {
             log: Arc::clone(&session.log),
             rounds: Arc::clone(&session.rounds),
-            push: host.push.clone(),
-            backoff: host.backoff.clone(),
+            push: host.push(),
+            backoff: host.backoff().clone(),
             errors: session.errors.clone(),
             lifecycle: Arc::clone(&session.lifecycle),
         });
@@ -64,8 +65,8 @@ impl RunFactory {
             AgentSource::Lua(_) => None,
         };
         Self {
-            on_delta: delta_stamp(&session, &host.push),
-            ui: ui_provider(&host.menu, &host.workspace),
+            on_delta: delta_stamp(&session, &host.push()),
+            ui: ui_provider(host.menu(), host.registry()),
             session,
             tools,
             vfs: promptforge_vfs::empty(),
@@ -344,7 +345,7 @@ fn run_completion_event(
                 "agent run failed"
             );
             let _ = session.errors.send(error.to_string());
-            host.push
+            host.push()
                 .push_failure("Agent failed", error.to_string(), Activity::General);
             RunCompletion::Failed
         }
@@ -370,7 +371,7 @@ fn report_cancel_origin(session: &AgentSession, origin: CancelOrigin) {
 /// Reports a failure shared by relaunch validation paths.
 fn report_failure(session: &AgentSession, host: &SessionHost, message: &str) {
     let _ = session.errors.send(message.to_owned());
-    host.push
+    host.push()
         .push_failure("Agent failed", message, Activity::General);
 }
 

@@ -25,44 +25,34 @@
 
 use std::sync::Arc;
 
-use axum::Router;
 use axum::extract::State;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::http::HeaderMap;
-use axum::response::{IntoResponse, Response};
-use axum::routing::get;
+use axum::response::Response;
 use promptforge_core_support::events::{EventLog as _, RuntimeEvent};
 use tokio::sync::broadcast;
 
-use crate::app::AppState;
-use crate::cross_site;
-use crate::error::AppError;
-use crate::input::WaitError;
-use crate::session::{send_error, send_frame};
 use workshop_protocol::{
     Activity, AgentDeltaFrame, AgentEventFrame, AgentSessionFrame, AgentsFrame, ErrorFrame,
     InputFrame, InputResponse,
 };
 
+use crate::input::WaitError;
+use crate::session::{cross_site_refusal, send_error, send_frame};
+use crate::state::SessionsState;
+
 use super::{AgentDelta, AgentSession, reply_stamp};
 
-/// The agent-session socket route.
-pub(crate) fn routes(state: AppState) -> Router {
-    Router::new()
-        .route("/agents/ws", get(upgrade))
-        .with_state(state)
-}
-
 /// Upgrades a `GET /agents/ws` request to an agent-session socket. A
-/// foreign `Origin` is refused with 403, exactly as the chat socket's
-/// upgrade is.
-async fn upgrade(
-    State(state): State<AppState>,
+/// foreign `Origin` is refused with 403, exactly as the workbench
+/// socket's upgrade is.
+pub(crate) async fn upgrade(
+    State(state): State<SessionsState>,
     headers: HeaderMap,
     ws: WebSocketUpgrade,
 ) -> Response {
-    if !cross_site::origin_allowed(&headers) {
-        return AppError::CrossSite.into_response();
+    if !state.origin_allowed(&headers) {
+        return cross_site_refusal();
     }
     ws.on_upgrade(move |socket| run_socket(socket, state))
 }
@@ -92,7 +82,7 @@ async fn recv_or_pending<T: Clone>(
 }
 
 /// Runs one agent-session socket until it closes or fails.
-async fn run_socket(mut socket: WebSocket, state: AppState) {
+async fn run_socket(mut socket: WebSocket, state: SessionsState) {
     // The list is discovered per connect: the frame is a complete
     // snapshot, so a directory edited between connects is picked up by
     // the next window with no push machinery.
@@ -226,7 +216,7 @@ type Subscriptions<'a> = (
 /// Handles one inbound text frame. A `false` return means the client is
 /// gone and the socket loop should end.
 async fn handle_frame(
-    state: &AppState,
+    state: &SessionsState,
     text: &str,
     attached: &mut Option<Attached>,
     subscriptions: Subscriptions<'_>,
@@ -305,7 +295,7 @@ async fn handle_frame(
 /// windows are modal - so a second open on an attached socket is
 /// refused. A `false` return means the client is gone.
 async fn handle_open(
-    state: &AppState,
+    state: &SessionsState,
     kind: &str,
     frame: &serde_json::Value,
     attached: &mut Option<Attached>,

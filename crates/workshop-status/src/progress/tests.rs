@@ -19,7 +19,7 @@ fn wired() -> (
     let status = StatusBus::new();
     let rx = status.subscribe();
     let registry = Registry::new();
-    let (_channel, sink) = crate::register(&registry, &status);
+    let (_channel, sink, _state) = crate::register(&registry, &status);
     (hub, registry.push(), rx, sink)
 }
 

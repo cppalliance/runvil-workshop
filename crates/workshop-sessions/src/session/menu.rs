@@ -1,21 +1,22 @@
 //! The socket side of the Model menu: `select_model` and
 //! `switch_profile` frame handling, plus the profile-switch task that
 //! drives the gateway's stage stream into status-bar progress. The menu
-//! state and bus live in the crate-root [`crate::menu`]; this module is
-//! only the session's orchestration of them.
+//! state and bus live in the menu subsystem (`workshop-menu`); this
+//! module is only the session's orchestration of them.
 
 use axum::extract::ws::WebSocket;
 use futures_util::StreamExt;
 
-use crate::app::AppState;
-use crate::gateway::{
+use workshop_gateway::heartbeat::{refresh_catalog, refresh_profiles};
+use workshop_gateway::{
     GatewayClient, GatewayError, GatewayResponse, SwitchEvent, SwitchResponse, switch_events,
 };
-use crate::heartbeat::{refresh_catalog, refresh_profiles};
-use crate::menu::{MenuBus, SwitchOutcome};
-use crate::push::Push;
-use crate::relay::value_from_bytes;
+use workshop_menu::{MenuBus, SwitchOutcome};
 use workshop_protocol::Activity;
+use workshop_registry::Push;
+
+use crate::relay::value_from_bytes;
+use crate::state::SessionsState;
 
 use super::send_error;
 
@@ -27,7 +28,7 @@ use super::send_error;
 /// missing field) is answered with an `error` frame and the session
 /// continues (zone two).
 pub(super) async fn select_model(
-    state: &AppState,
+    state: &SessionsState,
     id: Option<&serde_json::Value>,
     frame: &serde_json::Value,
     socket: &mut WebSocket,
@@ -47,7 +48,7 @@ pub(super) async fn select_model(
 /// switch already in flight, a missing field) is answered with an
 /// `error` frame and the session continues (zone two).
 pub(super) async fn start_switch(
-    state: &AppState,
+    state: &SessionsState,
     id: Option<&serde_json::Value>,
     frame: &serde_json::Value,
     socket: &mut WebSocket,

@@ -431,7 +431,7 @@ Verification: `cargo clippy --all-targets --all-features -- -D warnings` clean f
 
 <step-5>
 
-### Step 5: Extract feature crates and decompose AppState
+### Step 5: Extract feature crates and decompose AppState [completed]
 
 - Component: Server Decomposition
 

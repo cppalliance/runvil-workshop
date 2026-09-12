@@ -18,24 +18,23 @@
 //! frame. Both events echo an `id` on their refusals when the frame
 //! carried one. A frame that is not a well-formed menu event is answered
 //! with an `error` frame and the session continues. Chat itself lives on
-//! the `/agents/ws` socket ([`crate::session_agents`]); this endpoint
+//! the `/agents/ws` socket ([`crate::agents`]); this endpoint
 //! carries no chat frames.
 //!
 //! One task owns the socket: a single `select!` loop reads inbound frames
 //! and writes every outbound frame itself - no outbox channel, no writer
-//! task. Status updates from [`crate::status`], catalog pushes from
-//! [`crate::catalog`], and workbench snapshots from [`crate::menu`] flow
-//! as they publish. On connect the session first sends the retained
-//! status, catalog, and workbench snapshots, honoring the delivery
-//! contract's resend promise (see `workshop-protocol`) - the UI boots
-//! from this socket alone, with zero HTTP state fetches; after that the
-//! buses forward as they publish, and a session too slow to drain them
-//! skips ahead to the newest snapshot rather than slowing the producers.
+//! task. Status updates from the status subsystem, catalog pushes and
+//! workbench snapshots from the menu subsystem flow as they publish. On
+//! connect the session first sends the retained status, catalog, and
+//! workbench snapshots, honoring the delivery contract's resend promise
+//! (see `workshop-protocol`) - the UI boots from this socket alone, with
+//! zero HTTP state fetches; after that the buses forward as they publish,
+//! and a session too slow to drain them skips ahead to the newest
+//! snapshot rather than slowing the producers.
 //!
 //! The status channel is reached through the subsystem registry
-//! ([`AppState::registry`]), not named directly: the status bus is the
-//! proof-of-concept self-registrant, and an unregistered slot degrades
-//! the session to no status frames rather than failing it.
+//! ([`SessionsState::registry`]), not named directly: an unregistered
+//! slot degrades the session to no status frames rather than failing it.
 
 mod log;
 mod menu;
@@ -48,11 +47,9 @@ use axum::http::HeaderMap;
 use axum::response::{IntoResponse, Response};
 use tokio::sync::broadcast;
 
-use workshop_protocol::ErrorFrame;
+use workshop_protocol::{ErrorEnvelope, ErrorFrame};
 
-use crate::app::AppState;
-use crate::cross_site;
-use crate::error::AppError;
+use crate::state::SessionsState;
 
 use self::log::SessionLog;
 use self::menu::{select_model, start_switch};
@@ -60,24 +57,40 @@ use self::menu::{select_model, start_switch};
 /// Session ids for log correlation, handed out in connection order.
 static NEXT_SESSION: AtomicU64 = AtomicU64::new(1);
 
+/// The 403 refusal every WebSocket upgrade answers a foreign `Origin`
+/// with: the same `cross_site` envelope the shell's guard middleware
+/// renders for plain HTTP requests.
+pub(crate) fn cross_site_refusal() -> Response {
+    let envelope = ErrorEnvelope::new("cross-site request refused", "cross_site");
+    // Serializing the envelope cannot fail: two strings only.
+    let body = serde_json::to_string(&envelope)
+        .unwrap_or_else(|_| "cross-site request refused".to_string());
+    (
+        axum::http::StatusCode::FORBIDDEN,
+        [(axum::http::header::CONTENT_TYPE, "application/json")],
+        body,
+    )
+        .into_response()
+}
+
 /// Upgrades a `GET /ws` request to a WebSocket session. A foreign
 /// `Origin` is refused with 403: WS upgrades bypass Sec-Fetch in older
-/// browsers, so the loopback allowlist in [`crate::cross_site`] guards the
-/// upgrade itself.
+/// browsers, so the shell's loopback origin policy guards the upgrade
+/// itself.
 pub(crate) async fn upgrade(
-    State(state): State<AppState>,
+    State(state): State<SessionsState>,
     headers: HeaderMap,
     ws: WebSocketUpgrade,
 ) -> Response {
-    if !cross_site::origin_allowed(&headers) {
-        return AppError::CrossSite.into_response();
+    if !state.origin_allowed(&headers) {
+        return cross_site_refusal();
     }
     ws.on_upgrade(move |socket| run_session(socket, state))
 }
 
 /// Runs one session until the socket closes or fails: a single `select!`
 /// loop owning the socket for both reading and writing.
-async fn run_session(mut socket: WebSocket, state: AppState) {
+async fn run_session(mut socket: WebSocket, state: SessionsState) {
     let session = NEXT_SESSION.fetch_add(1, Ordering::Relaxed);
     tracing::info!(session, "workshop session opened");
     let _closed = SessionLog { session };
@@ -97,7 +110,7 @@ async fn run_session(mut socket: WebSocket, state: AppState) {
     // The status line is the one exception: a retained heartbeat transition
     // ("Connected to gateway") describes a past moment, so the join line is
     // recomputed from the current probe instead of replayed stale.
-    if let Some(update) = crate::heartbeat::join_status(
+    if let Some(update) = workshop_gateway::heartbeat::join_status(
         status.as_ref().and_then(|channel| channel.latest()),
         state.health(),
     ) && !send_frame(&mut socket, &update.frame()).await
@@ -191,7 +204,7 @@ async fn run_session(mut socket: WebSocket, state: AppState) {
 /// Handles one inbound text frame: `select_model` and `switch_profile`
 /// drive the Model menu, and anything else is answered with an `error`
 /// frame. Refusals echo the frame's `id` when it carried one.
-async fn handle_frame(state: &AppState, text: &str, socket: &mut WebSocket) {
+async fn handle_frame(state: &SessionsState, text: &str, socket: &mut WebSocket) {
     let frame: serde_json::Value = match serde_json::from_str(text) {
         Ok(frame) => frame,
         Err(error) => {

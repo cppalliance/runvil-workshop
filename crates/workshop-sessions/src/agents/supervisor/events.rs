@@ -7,8 +7,8 @@ use std::sync::Arc;
 use promptforge_agent::AgentError;
 use tokio::sync::{mpsc, watch};
 
-use crate::catalog::CatalogBus;
-use crate::gateway_binding::{GatewayBinding, GatewaySnapshot};
+use workshop_gateway::{GatewayBinding, GatewaySnapshot};
+use workshop_menu::CatalogBus;
 
 use super::catalog::{CatalogEvent, current_catalog_event, next_catalog_event};
 use super::transition::{RunId, SupervisorEvent};

@@ -7,19 +7,22 @@
 //! waits, [`AgentSessions`] for the agent-session registry behind
 //! `/agents/ws`, and [`router`] for the HTTP API; [`spawn`] runs the whole
 //! server in-process on its own thread for embedding binaries.
+//!
+//! The crate is the composition root of the workshop server
+//! decomposition: the feature subsystems (`workshop-sessions`,
+//! `workshop-workspace`), the domain services (`workshop-gateway`,
+//! `workshop-status`, `workshop-menu`), and the vocabulary crates
+//! (`workshop-protocol`, `workshop-registry`, `workshop-support`) are
+//! assembled in `app.rs`, where every subsystem self-registers its
+//! routes, state handles, and push channels into the registry.
 
 mod app;
 mod assets;
 mod cross_site;
 mod csp;
 mod error;
-mod input;
-mod relay;
 mod routes;
 mod serve;
-mod session;
-mod session_agents;
-mod workspace;
 
 // The extracted subsystem crates, aliased at their pre-decomposition
 // module paths so the shell's internals read as they did before the
@@ -58,15 +61,15 @@ pub use gateway::{
     SwitchEvent, SwitchEventStream, SwitchResponse, switch_events,
 };
 pub use gateway_binding::{GatewayPublicationError, GatewayUpdater};
-pub use input::{
-    SessionInputBroker, UserInputTool, WaitError, WaitRegistry, deliver_input_response,
-};
 pub use observer::WorkshopObserver;
 pub use push::Push;
 pub use resolve::{GatewaySource, ResolveError, ResolvedGateway};
 pub use serve::{ServerHandle, SpawnError, Termination, spawn};
-pub use session_agents::AgentSessions;
 pub use workshop_protocol::{Activity, InputFrame, InputResponse};
+pub use workshop_sessions::{
+    AgentSessions, SessionInputBroker, UserInputTool, WaitError, WaitRegistry,
+    deliver_input_response,
+};
 pub use workshop_support::{
     AgentsConfig, Config, ConfigError, DEFAULT_CONFIG_PATH, GatewayConfig, ServerConfig,
 };

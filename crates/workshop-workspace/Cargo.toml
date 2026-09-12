@@ -1,0 +1,28 @@
+[package]
+name = "workshop-workspace"
+version = "0.0.0"
+publish = false
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+description = "Workshop workspace subsystem: the jailed filesystem behind /workspace/* - directory trees, file reads, and file writes confined to granted roots"
+
+[dependencies]
+axum.workspace = true
+dunce.workspace = true
+percent-encoding.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+workshop-protocol.workspace = true
+workshop-registry.workspace = true
+workshop-support.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+tower.workspace = true
+
+[lints]
+workspace = true

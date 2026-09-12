@@ -31,6 +31,6 @@ pub use registry::Registry;
 pub use slot::{ProxySlot, Registration};
 pub use traits::{
     BackgroundTasks, CatalogSink, CatalogSinkAdapter, MenuSink, MenuSinkAdapter, RouteRegistrar,
-    ShutdownHook, StateProvider, StatusChannel, StatusChannelAdapter, StatusSink,
-    StatusSinkAdapter,
+    RouteRegistrarAdapter, ShutdownHook, StateProvider, StateProviderAdapter, StatusChannel,
+    StatusChannelAdapter, StatusSink, StatusSinkAdapter, WorkspaceRoots, WorkspaceRootsAdapter,
 };
