@@ -505,15 +505,15 @@ Verification: `npm run build` produces hashed filenames and a manifest. `cargo t
 
 <step-9>
 
-### Step 9: Shell cleanup and rulebook
+### Step 9: Rulebook and workspace rules
 
 - Component: Cleanup
 
-**Shell gateway supervisor deletion:** Delete `workshop/src/gateway/supervisor.rs` (~1.4k lines) in the Tauri shell crate. Replace with the existing `shared-sidecar` crate's supervisor, which provides the same gateway lifecycle management. Update `workshop/Cargo.toml` to depend on `shared-sidecar`. Update call sites in the shell to use the shared implementation.
+**Shell gateway supervisor - KEEP, do not delete:** The original step text assumed `shared-sidecar` already contained a gateway supervisor. It does not: that crate exports only the primitives (`GatewayDiscoveryFile`, `launch_or_attach`, `wait_for_health`, `request_shutdown`) on which the shell's `GatewaySupervisor` is built. The supervision loop, bounded shutdown, and recovery ownership live only in the workshop shell, their only consumer, with dedicated tests in `tests/shutdown.rs` and `tests/recovery.rs`. Operator decision (2026-09-12): the supervisor stays in the shell for now. A shared `shared-gateway-mon` crate is expected to be needed by the planned headless agent mode; the port defers to that plan so the second consumer's requirements drive the shared API shape. `workshop/Cargo.toml` already depends on `shared-sidecar`. No code change in this half of the step.
 
 **Rulebook and workspace rules:** Update `.cursor/rules/` with architecture invariants: one-way dependency graph (shell -> features -> services -> vocabulary), registry pattern (self-registration via `workshop-registry`), file ceiling (500 lines), SPA conventions (feature directories, barrel exports, lazy loading), CSS colocation (`.css` beside `.ts`), token-only values (`--ws-*` in component CSS). These rules encode the decomposition's structural decisions so future agents maintain them.
 
-Verification: `cargo clippy -p workshop --all-targets -- -D warnings` clean. `cargo test --locked -p workshop` green. `cargo test -p xtask` confirms full architecture. All crates under 2k lines. All files under 500 lines. Full CI green. `npm run build` + `npm test` green. Initial SPA bundle measurably smaller than pre-decomposition baseline.
+Verification: `.cursor/rules/` renders correctly and states the invariants above. `cargo clippy -p workshop --all-targets -- -D warnings` clean and `cargo test --locked -p workshop` green (no code change expected; confirms the shell is untouched). `cargo test -p xtask` confirms full architecture. All crates under 2k lines. All files under 500 lines. Full CI green. `npm run build` + `npm test` green. Initial SPA bundle measurably smaller than pre-decomposition baseline.
 
 </step-9>
 
