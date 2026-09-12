@@ -7,10 +7,10 @@ use axum::Router;
 
 use shared_progress::ProgressHub;
 
-use crate::backoff::ReconnectBackoff;
+use workshop_registry::{Registration, Registry, StatusChannel, StatusChannelAdapter};
+use workshop_support::{Config, DEFAULT_DEADLINE, ReconnectBackoff, with_deadline};
+
 use crate::catalog::CatalogBus;
-use crate::config::Config;
-use crate::deadline::{DEFAULT_DEADLINE, with_deadline};
 use crate::gateway::GatewayError;
 use crate::gateway_binding::{GatewayBinding, GatewaySnapshot, GatewayUpdater};
 use crate::heartbeat::GatewayHealth;
@@ -23,7 +23,7 @@ use crate::status::StatusBus;
 use crate::workspace::Workspace;
 
 /// Address the server binds to when no override is given.
-pub const DEFAULT_ADDR: &str = "127.0.0.1:7910";
+pub use workshop_support::DEFAULT_ADDR;
 
 /// Shared handler state: the authenticated gateway client, the status,
 /// catalog, and menu buses, the process progress hub, the hosted
@@ -39,6 +39,10 @@ pub struct AppState {
     pub(crate) menu: MenuBus,
     pub(crate) workspace: Workspace,
     pub(crate) agents: AgentSessions,
+    registry: Registry,
+    // Keeps the status bus's self-registration alive; dropping the last
+    // state clone deregisters it.
+    _status_registration: Arc<Registration<dyn StatusChannel>>,
 }
 
 impl AppState {
@@ -141,6 +145,15 @@ impl AppState {
         &self.workspace
     }
 
+    /// The subsystem registry: proxy slots the subsystems self-register
+    /// into, so consumers reach them by slot instead of by name. The
+    /// status bus is the proof-of-concept registrant; the `/ws` session
+    /// loop reads its channel here.
+    #[must_use]
+    pub fn registry(&self) -> &Registry {
+        &self.registry
+    }
+
     /// The agent-session registry: discovery, launch, and the running
     /// sessions behind the `/agents/ws` socket. Sessions outlive
     /// sockets, so an embedding host ends one through
@@ -169,9 +182,25 @@ pub fn state_with_gateway(
     // A crash between an atomic write's temp file and its rename
     // orphans the temp; boot is the one moment the directory is
     // known and quiet, so it is swept here.
-    crate::atomic::sweep_orphaned_temps(state_dir);
+    workshop_support::sweep_orphaned_temps(state_dir);
     let menu = MenuBus::new(catalog.clone(), Some(state_dir));
     let push = Push::new(status.clone(), catalog.clone(), menu.clone());
+    // The status bus is the proof-of-concept self-registrant: the `/ws`
+    // session loop discovers its channel through the registry's slot
+    // instead of naming the bus.
+    let registry = Registry::new();
+    let status_registration = Arc::new(registry.status().register(Arc::new(
+        StatusChannelAdapter::new(
+            {
+                let bus = status.clone();
+                move || bus.subscribe()
+            },
+            {
+                let bus = status.clone();
+                move || bus.latest()
+            },
+        ),
+    )));
     // Startup phases are reported as they run; with no client connected
     // yet these land on an empty bus, ready for the first session.
     crate::resolve::report(gateway, &push);
@@ -207,6 +236,8 @@ pub fn state_with_gateway(
         menu,
         workspace,
         agents,
+        registry,
+        _status_registration: status_registration,
     })
 }
 
@@ -232,7 +263,8 @@ pub enum StateError {
 /// group narrowed to the one service its handlers use. The API routes sit
 /// behind the `crate::cross_site` guard; `/health` and the UI assets
 /// stay outside it so the shell probe, heartbeat, and initial navigation
-/// keep working. Every HTTP route carries a `crate::deadline` tier -
+/// keep working. Every HTTP route carries a `workshop_support` deadline
+/// tier -
 /// the default here, the relay tier inside `routes::chat` - and the
 /// WebSocket upgrades carry none. Every response carries the
 /// `crate::csp` policy: the shell's webview loads the UI as an External
@@ -288,7 +320,7 @@ pub(crate) mod fixtures {
     #[cfg(test)]
     use crate::app::{AppState, state_with_gateway};
     #[cfg(test)]
-    use crate::config::{AgentsConfig, Config, GatewayConfig, ServerConfig};
+    use workshop_support::{AgentsConfig, Config, GatewayConfig, ServerConfig};
 
     /// Builds a configuration pointing at `base_url`, anchoring the state
     /// directory at `state_dir`.
@@ -384,6 +416,15 @@ mod tests {
     #[test]
     fn default_bind_is_loopback_port_7910() {
         assert_eq!(DEFAULT_ADDR, "127.0.0.1:7910");
+    }
+
+    #[test]
+    fn the_relay_deadline_outlasts_the_gateway_request_timeout() {
+        assert!(
+            workshop_support::RELAY_DEADLINE > crate::gateway::REQUEST_TIMEOUT,
+            "the route deadline must let the gateway client time out first, \
+             so the caller sees the relay's 502 rather than a blunt 408"
+        );
     }
 
     #[test]

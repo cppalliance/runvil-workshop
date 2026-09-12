@@ -25,8 +25,10 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use tokio::sync::broadcast;
 
+use workshop_protocol::WorkbenchSnapshot;
+use workshop_support::RetainedBus;
+
 use crate::catalog::{CatalogBus, is_chat_capable};
-use crate::protocol::WorkbenchSnapshot;
 
 /// Ring capacity of the menu bus. Pushes follow user interactions and
 /// heartbeat transitions, so a handful of slots is generous.
@@ -44,8 +46,7 @@ const WORKSHOP_STATE_FILE: &str = "workshop-state.json";
 /// snapshot, and one channel.
 #[derive(Debug, Clone)]
 pub struct MenuBus {
-    sender: broadcast::Sender<WorkbenchSnapshot>,
-    latest: Arc<Mutex<Option<WorkbenchSnapshot>>>,
+    bus: RetainedBus<WorkbenchSnapshot>,
     state: Arc<Mutex<MenuState>>,
     // Selections are validated against the retained catalog and
     // `chat_ready` reads its emptiness, so the menu holds its own handle.
@@ -160,8 +161,7 @@ impl MenuBus {
         let memory_path = state_dir.map(|dir| dir.join(WORKSHOP_STATE_FILE));
         let last_selected = memory_path.as_deref().map(load_memory).unwrap_or_default();
         Self {
-            sender: broadcast::channel(MENU_CHANNEL_CAPACITY).0,
-            latest: Arc::new(Mutex::new(None)),
+            bus: RetainedBus::new(MENU_CHANNEL_CAPACITY),
             state: Arc::new(Mutex::new(MenuState {
                 profiles: Vec::new(),
                 active: None,
@@ -177,18 +177,13 @@ impl MenuBus {
 
     /// Subscribes to every snapshot published from this call onward.
     pub(crate) fn subscribe(&self) -> broadcast::Receiver<WorkbenchSnapshot> {
-        self.sender.subscribe()
+        self.bus.subscribe()
     }
 
     /// The most recently published snapshot, retained so a session
     /// connecting later can send the current menu as its snapshot.
     pub(crate) fn latest(&self) -> Option<WorkbenchSnapshot> {
-        // A lock poisoned by a panicking peer recovers the value rather
-        // than wedging the process (the crate's zone-two error policy).
-        self.latest
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone()
+        self.bus.latest()
     }
 
     /// Selects `id` as the chat model and publishes a fresh snapshot,
@@ -365,13 +360,7 @@ impl MenuBus {
     /// Broadcasts one snapshot. With no subscribers this is a no-op; a
     /// slow subscriber skips ahead rather than applying backpressure.
     fn send(&self, snapshot: WorkbenchSnapshot) {
-        // The retained copy (a second owner, hence the clone) is written
-        // before the send, so a session that subscribes after the send
-        // still finds this snapshot.
-        *self.latest.lock().unwrap_or_else(PoisonError::into_inner) = Some(snapshot.clone());
-        // A send only fails when there are no receivers, which is the
-        // bus's resting state before the first client connects.
-        let _ = self.sender.send(snapshot);
+        self.bus.send(snapshot);
     }
 
     /// Whether `id` names a model in the current catalog snapshot.
@@ -467,7 +456,7 @@ fn store_pending(pending: Option<PendingWrite>) {
 /// [`WORKSHOP_STATE_FILE`]. A failed write costs the memory, not the
 /// process (zone two): logged and tolerated.
 fn store_memory(pending: &PendingWrite) {
-    if let Err(error) = crate::atomic::write_atomic(&pending.path, &pending.bytes) {
+    if let Err(error) = workshop_support::write_atomic(&pending.path, &pending.bytes) {
         tracing::warn!(
             %error,
             path = %pending.path.display(),

@@ -10,13 +10,9 @@
 
 mod app;
 mod assets;
-mod atomic;
-mod backoff;
 mod catalog;
-mod config;
 mod cross_site;
 mod csp;
-mod deadline;
 mod error;
 mod gateway;
 mod gateway_binding;
@@ -26,7 +22,6 @@ mod input;
 mod menu;
 mod observer;
 mod progress;
-mod protocol;
 mod push;
 mod relay;
 mod resolve;
@@ -51,9 +46,6 @@ mod workspace;
 pub mod fixtures;
 
 pub use app::{AppState, DEFAULT_ADDR, StateError, router};
-pub use config::{
-    AgentsConfig, Config, ConfigError, DEFAULT_CONFIG_PATH, GatewayConfig, ServerConfig,
-};
 pub use cross_site::{guard as cross_site_guard, origin_allowed};
 pub use gateway::{
     CacheEvent, CacheResponse, GatewayClient, GatewayError, GatewayResponse, SsePayloadStream,
@@ -64,8 +56,11 @@ pub use input::{
     SessionInputBroker, UserInputTool, WaitError, WaitRegistry, deliver_input_response,
 };
 pub use observer::WorkshopObserver;
-pub use protocol::{Activity, InputFrame, InputResponse};
 pub use push::Push;
 pub use resolve::{GatewaySource, ResolveError, ResolvedGateway};
 pub use serve::{ServerHandle, SpawnError, Termination, spawn};
 pub use session_agents::AgentSessions;
+pub use workshop_protocol::{Activity, InputFrame, InputResponse};
+pub use workshop_support::{
+    AgentsConfig, Config, ConfigError, DEFAULT_CONFIG_PATH, GatewayConfig, ServerConfig,
+};

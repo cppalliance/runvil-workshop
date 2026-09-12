@@ -8,15 +8,15 @@
 //! catalog; workbench producers drive the Model-menu mutators through
 //! [`Push::menu`], and every mutation publishes its own snapshot. What
 //! each intent becomes on the wire
-//! is decided here and in [`crate::protocol`], nowhere else. The buses
+//! is decided here and in `workshop-protocol`, nowhere else. The buses
 //! stay the transport: every `/ws` session subscribes on
 //! [`crate::status::StatusBus`], [`crate::catalog::CatalogBus`], and
 //! [`crate::menu::MenuBus`] and serializes what it receives.
 
 use crate::catalog::CatalogBus;
 use crate::menu::MenuBus;
-use crate::protocol::{Activity, Progress};
 use crate::status::StatusBus;
+use workshop_protocol::{Activity, Progress};
 
 /// The intent-named push handle over the status, catalog, and menu buses.
 ///
@@ -75,8 +75,8 @@ impl Push {
     }
 
     /// Pushes determinate progress - `current` of `total` units done: a
-    /// `{"type":"status",...}` [`crate::protocol::StatusFrame`] at
-    /// [`Severity::Info`](crate::protocol::Severity::Info) carrying a
+    /// `{"type":"status",...}` `StatusFrame` at
+    /// [`Severity::Info`](workshop_protocol::Severity::Info) carrying a
     /// [`Progress`], which the status bar renders as its progress bar.
     pub(crate) fn push_progress(
         &self,
@@ -97,7 +97,7 @@ impl Push {
     }
 
     /// Pushes one complete model catalog snapshot: a `{"type":"models",...}`
-    /// [`crate::protocol::CatalogFrame`] carrying only chat-capable
+    /// `CatalogFrame` carrying only chat-capable
     /// entries. The single choke point for catalog publishes: the menu
     /// revalidates its selection against the new catalog and republishes
     /// the workbench snapshot when it changed.
@@ -120,8 +120,7 @@ mod tests {
 
     use tokio::sync::broadcast;
 
-    use crate::protocol::{CatalogPush, Severity, StatusBarUpdate};
-
+    use workshop_protocol::{CatalogPush, Severity, StatusBarUpdate};
     /// A push handle plus one receiver on the status and catalog buses.
     fn wired() -> (
         Push,

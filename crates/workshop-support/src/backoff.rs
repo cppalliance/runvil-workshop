@@ -67,7 +67,8 @@ struct State {
 
 impl ReconnectBackoff {
     /// A backoff on the production schedule.
-    pub(crate) fn new() -> Self {
+    #[must_use]
+    pub fn new() -> Self {
         Self::with_schedule(BASE_DELAY, MAX_DELAY, TOTAL_DELAY_BUDGET)
     }
 
@@ -123,7 +124,7 @@ impl ReconnectBackoff {
     /// only when the gateway does useful work - a delivered streaming
     /// token or a successful buffered completion - never on a probe that
     /// merely connects.
-    pub(crate) fn record_useful_work(&self) {
+    pub fn record_useful_work(&self) {
         let mut state = self.lock_state();
         state.current = self.base;
         state.spent = Duration::ZERO;
@@ -145,11 +146,17 @@ impl ReconnectBackoff {
     }
 }
 
+impl Default for ReconnectBackoff {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// xorshift64: a tiny deterministic generator; jitter needs spread, not
 /// cryptography, and this keeps the dependency tree unchanged. Shared
 /// with the gateway tests, which seed it explicitly so each randomized
 /// failure names its seed.
-pub(crate) fn xorshift(state: &mut u64) -> u64 {
+pub fn xorshift(state: &mut u64) -> u64 {
     *state ^= *state << 13;
     *state ^= *state >> 7;
     *state ^= *state << 17;

@@ -18,8 +18,8 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{any, get};
 
 use crate::app::AppState;
-use crate::deadline::{DEFAULT_DEADLINE, with_deadline};
 use crate::error::AppError;
+use workshop_support::{DEFAULT_DEADLINE, with_deadline};
 
 /// The gateway-config panel routes. The origin probe is local and
 /// instant, so it carries the default deadline; the forward route is

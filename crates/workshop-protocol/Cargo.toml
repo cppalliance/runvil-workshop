@@ -1,0 +1,17 @@
+[package]
+name = "workshop-protocol"
+version = "0.0.0"
+publish = false
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+description = "Workshop wire protocol: every JSON frame exchanged over the workshop sockets, typed in one place, with zero I/O"
+
+[dependencies]
+promptforge-core-support.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true

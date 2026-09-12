@@ -13,9 +13,9 @@ use crate::gateway::{
 };
 use crate::heartbeat::{refresh_catalog, refresh_profiles};
 use crate::menu::SwitchOutcome;
-use crate::protocol::Activity;
 use crate::push::Push;
 use crate::relay::value_from_bytes;
+use workshop_protocol::Activity;
 
 use super::send_error;
 

@@ -44,12 +44,15 @@ toml.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 url.workspace = true
+workshop-protocol.workspace = true
+workshop-registry.workspace = true
+workshop-support.workspace = true
 promptforge-agent.workspace = true
 tempfile = { workspace = true, optional = true }
 
 [features]
 default = []
-test-fixtures = ["dep:tempfile"]
+test-fixtures = ["dep:tempfile", "workshop-support/test-fixtures"]
 
 [dev-dependencies]
 workshop-server = { path = ".", features = ["test-fixtures"] }

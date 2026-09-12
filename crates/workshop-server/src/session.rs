@@ -27,10 +27,15 @@
 //! [`crate::catalog`], and workbench snapshots from [`crate::menu`] flow
 //! as they publish. On connect the session first sends the retained
 //! status, catalog, and workbench snapshots, honoring the delivery
-//! contract's resend promise (see [`crate::protocol`]) - the UI boots
+//! contract's resend promise (see `workshop-protocol`) - the UI boots
 //! from this socket alone, with zero HTTP state fetches; after that the
 //! buses forward as they publish, and a session too slow to drain them
 //! skips ahead to the newest snapshot rather than slowing the producers.
+//!
+//! The status channel is reached through the subsystem registry
+//! ([`AppState::registry`]), not named directly: the status bus is the
+//! proof-of-concept self-registrant, and an unregistered slot degrades
+//! the session to no status frames rather than failing it.
 
 mod log;
 mod menu;
@@ -43,10 +48,11 @@ use axum::http::HeaderMap;
 use axum::response::{IntoResponse, Response};
 use tokio::sync::broadcast;
 
+use workshop_protocol::ErrorFrame;
+
 use crate::app::AppState;
 use crate::cross_site;
 use crate::error::AppError;
-use crate::protocol::ErrorFrame;
 
 use self::log::SessionLog;
 use self::menu::{select_model, start_switch};
@@ -78,8 +84,11 @@ async fn run_session(mut socket: WebSocket, state: AppState) {
 
     // Subscribe before snapshotting, so an update emitted between the two
     // arrives at least once; the possible duplicate is harmless because
-    // status and catalog frames are complete snapshots.
-    let mut status_rx = state.status().subscribe();
+    // status and catalog frames are complete snapshots. The status
+    // channel comes from the registry's slot: unregistered is a graceful
+    // no-op, so the branch below pends forever instead of failing.
+    let status = state.registry().status_channel();
+    let mut status_rx = status.as_ref().map(|channel| channel.subscribe());
     let mut catalog_rx = state.catalog().subscribe();
     let mut menu_rx = state.menu().subscribe();
     // The delivery contract resends the current status, catalog, and
@@ -88,8 +97,10 @@ async fn run_session(mut socket: WebSocket, state: AppState) {
     // The status line is the one exception: a retained heartbeat transition
     // ("Connected to gateway") describes a past moment, so the join line is
     // recomputed from the current probe instead of replayed stale.
-    if let Some(update) = crate::heartbeat::join_status(state.status().latest(), state.health())
-        && !send_frame(&mut socket, &update.frame()).await
+    if let Some(update) = crate::heartbeat::join_status(
+        status.as_ref().and_then(|channel| channel.latest()),
+        state.health(),
+    ) && !send_frame(&mut socket, &update.frame()).await
     {
         return;
     }
@@ -120,7 +131,14 @@ async fn run_session(mut socket: WebSocket, state: AppState) {
             // skips ahead to the retained window, which is a resync
             // because every status and catalog frame is a complete
             // snapshot.
-            received = status_rx.recv(), if status_open => match received {
+            received = async {
+                match status_rx.as_mut() {
+                    Some(rx) => rx.recv().await,
+                    // The unregistered slot: a graceful no-op that never
+                    // fires, so the branch simply never runs.
+                    None => std::future::pending().await,
+                }
+            }, if status_open => match received {
                 Ok(update) => {
                     if !send_frame(&mut socket, &update.frame()).await {
                         break;

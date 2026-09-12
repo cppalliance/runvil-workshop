@@ -45,7 +45,7 @@ fn temp_path(path: &Path) -> Option<PathBuf> {
 /// Returns [`io::ErrorKind::InvalidInput`] when `path` has no file name,
 /// and otherwise the underlying I/O error when the create, write, sync,
 /// or rename fails.
-pub(crate) fn write_atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
+pub fn write_atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
     let Some(temp) = temp_path(path) else {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
@@ -72,7 +72,7 @@ pub(crate) fn write_atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
 /// simply never written there. Every other failure - an unreadable
 /// directory or entry, an unremovable file - is logged and tolerated:
 /// the sweep is cleanup and must never cost startup.
-pub(crate) fn sweep_orphaned_temps(dir: &Path) {
+pub fn sweep_orphaned_temps(dir: &Path) {
     let entries = match fs::read_dir(dir) {
         Ok(entries) => entries,
         Err(error) => {

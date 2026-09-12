@@ -669,8 +669,7 @@ mod tests {
 
     use axum::response::IntoResponse;
 
-    use crate::backoff::xorshift;
-
+    use workshop_support::xorshift;
     #[test]
     fn trailing_slash_is_trimmed_from_base_url() {
         let client = GatewayClient::new("http://127.0.0.1:8081/", "k").expect("client builds");

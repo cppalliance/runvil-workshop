@@ -15,12 +15,12 @@ use std::thread::JoinHandle;
 use std::time::Duration;
 
 use crate::app::{StateError, router, state_with_gateway};
-use crate::config::Config;
 use crate::gateway_binding::GatewayUpdater;
 use crate::gateway_progress;
 use crate::heartbeat;
 use crate::progress;
 use crate::resolve::ResolvedGateway;
+use workshop_support::Config;
 
 /// How long a signaled shutdown waits for in-flight connections to drain
 /// before the watchdog abandons the graceful path. axum's drain waits on
@@ -352,8 +352,7 @@ mod tests {
 
     use std::path::Path;
 
-    use crate::config::{AgentsConfig, GatewayConfig, ServerConfig};
-
+    use workshop_support::{AgentsConfig, GatewayConfig, ServerConfig};
     fn test_config(bind: &str, state_dir: &Path) -> Config {
         Config {
             gateway: GatewayConfig {

@@ -8,8 +8,8 @@ use axum::response::{IntoResponse, Response};
 use crate::app::AppState;
 use crate::error::AppError;
 use crate::gateway::{GatewayError, GatewayResponse};
-use crate::protocol::Activity;
 use crate::push::Push;
+use workshop_protocol::Activity;
 
 /// Relays the gateway's model catalog to the caller verbatim.
 ///

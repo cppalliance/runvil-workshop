@@ -38,11 +38,11 @@ use crate::app::AppState;
 use crate::cross_site;
 use crate::error::AppError;
 use crate::input::WaitError;
-use crate::protocol::{
+use crate::session::{send_error, send_frame};
+use workshop_protocol::{
     Activity, AgentDeltaFrame, AgentEventFrame, AgentSessionFrame, AgentsFrame, ErrorFrame,
     InputFrame, InputResponse,
 };
-use crate::session::{send_error, send_frame};
 
 use super::{AgentDelta, AgentSession, reply_stamp};
 

@@ -353,7 +353,7 @@ impl Workspace {
             Err(source) if source.kind() == io::ErrorKind::NotFound => {}
             Err(source) => return Err(WorkspaceError::InspectPath { source }),
         }
-        crate::atomic::write_atomic(&canonical, text.as_bytes())
+        workshop_support::write_atomic(&canonical, text.as_bytes())
             .map_err(|source| WorkspaceError::WriteFile { source })?;
         let metadata =
             fs::metadata(&canonical).map_err(|source| WorkspaceError::InspectPath { source })?;

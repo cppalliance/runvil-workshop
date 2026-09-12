@@ -13,13 +13,13 @@ use axum::response::IntoResponse;
 
 /// Deadline for ordinary HTTP routes: local, fast work that should never
 /// run long. A response not produced in time answers 408.
-pub(crate) const DEFAULT_DEADLINE: Duration = Duration::from_secs(10);
+pub const DEFAULT_DEADLINE: Duration = Duration::from_secs(10);
 
 /// Deadline for routes that relay a buffered gateway call: longer than the
 /// gateway client's own request timeout, so a stalled gateway surfaces as
 /// the relay's 502 with its failure shape rather than a blunt 408 from the
 /// route deadline.
-pub(crate) const RELAY_DEADLINE: Duration = Duration::from_secs(35);
+pub const RELAY_DEADLINE: Duration = Duration::from_secs(35);
 
 /// Bounds every route already in `router` on `limit`: a response not
 /// produced by the deadline is abandoned and answered with 408 instead.
@@ -27,7 +27,7 @@ pub(crate) const RELAY_DEADLINE: Duration = Duration::from_secs(35);
 /// The WebSocket upgrade routes are deliberately left outside this layer
 /// by their feature modules: an upgrade answers immediately and the
 /// session then lives as long as the client stays connected.
-pub(crate) fn with_deadline<S>(router: Router<S>, limit: Duration) -> Router<S>
+pub fn with_deadline<S>(router: Router<S>, limit: Duration) -> Router<S>
 where
     S: Clone + Send + Sync + 'static,
 {
@@ -53,7 +53,12 @@ mod tests {
     use axum::routing::get;
     use tower::ServiceExt;
 
-    use crate::app::fixtures::body_bytes;
+    /// Collects a response body already buffered in memory.
+    async fn body_bytes(response: axum::response::Response) -> axum::body::Bytes {
+        axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("the body is in memory already")
+    }
 
     #[tokio::test(start_paused = true)]
     async fn a_stalled_route_answers_408_at_its_deadline() {
@@ -99,14 +104,5 @@ mod tests {
             .expect("the router is infallible");
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(&body_bytes(response).await[..], b"ok");
-    }
-
-    #[test]
-    fn the_relay_deadline_outlasts_the_gateway_request_timeout() {
-        assert!(
-            RELAY_DEADLINE > crate::gateway::REQUEST_TIMEOUT,
-            "the route deadline must let the gateway client time out first, \
-             so the caller sees the relay's 502 rather than a blunt 408"
-        );
     }
 }

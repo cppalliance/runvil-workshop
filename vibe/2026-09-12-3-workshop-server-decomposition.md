@@ -391,7 +391,7 @@ Verification: `cargo test -p xtask` passes. `cargo xtask new-crate workshop-scra
 
 <step-3>
 
-### Step 3: Extract tier-0 vocabulary crates
+### Step 3: Extract tier-0 vocabulary crates [completed]
 
 - Component: Server Decomposition
 

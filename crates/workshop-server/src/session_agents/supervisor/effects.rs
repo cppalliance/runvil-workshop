@@ -15,7 +15,7 @@ use shared_vfs::VfsRef;
 use crate::catalog::ChatCatalog;
 use crate::gateway_binding::GatewaySnapshot;
 use crate::input::SessionInputBroker;
-use crate::protocol::Activity;
+use workshop_protocol::Activity;
 
 use super::events::{CollectedEvent, EventCollector, RunFuture};
 use super::transition::{

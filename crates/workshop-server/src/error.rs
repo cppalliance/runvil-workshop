@@ -10,14 +10,16 @@
 //! Internal failure detail (the source chain) reaches the response body in
 //! debug builds only; production bodies stay at each variant's own message,
 //! close to the status text. Rich construction-time errors live elsewhere
-//! ([`crate::config::ConfigError`], [`crate::serve::SpawnError`]) and never
-//! cross the wire.
+//! ([`workshop_support::ConfigError`], [`crate::serve::SpawnError`]) and
+//! never cross the wire.
 
 use std::fmt::Write as _;
 use std::io;
 
 use axum::http::{StatusCode, header};
 use axum::response::{IntoResponse, Response};
+
+use workshop_protocol::ErrorEnvelope;
 
 use crate::gateway::GatewayError;
 use crate::workspace::WorkspaceError;
@@ -241,18 +243,13 @@ impl IntoResponse for AppError {
         let status = self.status();
         match self.code() {
             Some(code) => {
-                let body = serde_json::json!({
-                    "error": {
-                        "message": render_message(&self, LEAK_DETAIL),
-                        "code": code,
-                    }
-                });
-                (
-                    status,
-                    [(header::CONTENT_TYPE, "application/json")],
-                    body.to_string(),
-                )
-                    .into_response()
+                let envelope = ErrorEnvelope::new(render_message(&self, LEAK_DETAIL), code);
+                // Serializing the envelope cannot fail: two strings only.
+                // A body that somehow cannot serialize degrades to the
+                // status line's own text.
+                let body = serde_json::to_string(&envelope)
+                    .unwrap_or_else(|_| status.canonical_reason().unwrap_or("error").to_string());
+                (status, [(header::CONTENT_TYPE, "application/json")], body).into_response()
             }
             None => (
                 status,

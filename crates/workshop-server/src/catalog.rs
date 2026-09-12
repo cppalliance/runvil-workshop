@@ -3,19 +3,18 @@
 //!
 //! The heartbeat republishes the catalog when the gateway comes back
 //! (unreachable to connected), so a UI that booted while the gateway was
-//! down refreshes its model picker without a reload. Like the status bus,
-//! the channel is a tokio broadcast: publishing never blocks, a publish
-//! with no sessions is a no-op, and a lagging session skips ahead - every
-//! push is a complete snapshot, so an overwritten one loses nothing. The
-//! bus also retains the newest push, so a session that connects later
-//! sends the current catalog immediately - the delivery contract's
+//! down refreshes its model picker without a reload. The channel is a
+//! [`RetainedBus`]: publishing never blocks, a publish with no sessions
+//! is a no-op, and a lagging session skips ahead - every push is a
+//! complete snapshot, so an overwritten one loses nothing. The bus also
+//! retains the newest push, so a session that connects later sends the
+//! current catalog immediately - the delivery contract's
 //! resend-on-reconnect for ephemeral frames.
-
-use std::sync::{Arc, Mutex, PoisonError};
 
 use tokio::sync::{broadcast, watch};
 
-use crate::protocol::CatalogPush;
+use workshop_protocol::CatalogPush;
+use workshop_support::RetainedBus;
 
 mod chat;
 use chat::ChatCatalogBus;
@@ -30,8 +29,7 @@ const CATALOG_CHANNEL_CAPACITY: usize = 4;
 /// mirroring [`crate::status::StatusBus`].
 #[derive(Debug, Clone)]
 pub struct CatalogBus {
-    sender: broadcast::Sender<CatalogPush>,
-    latest: Arc<Mutex<Option<CatalogPush>>>,
+    bus: RetainedBus<CatalogPush>,
     chat: ChatCatalogBus,
 }
 
@@ -39,26 +37,20 @@ impl CatalogBus {
     /// Creates a bus with no subscribers, an empty ring, and no snapshot.
     pub(crate) fn new() -> Self {
         Self {
-            sender: broadcast::channel(CATALOG_CHANNEL_CAPACITY).0,
-            latest: Arc::new(Mutex::new(None)),
+            bus: RetainedBus::new(CATALOG_CHANNEL_CAPACITY),
             chat: ChatCatalogBus::new(),
         }
     }
 
     /// Subscribes to every push sent from this call onward.
     pub(crate) fn subscribe(&self) -> broadcast::Receiver<CatalogPush> {
-        self.sender.subscribe()
+        self.bus.subscribe()
     }
 
     /// The most recently published catalog, retained so a session
     /// connecting later can send the current catalog as its snapshot.
     pub(crate) fn latest(&self) -> Option<CatalogPush> {
-        // A lock poisoned by a panicking peer recovers the value rather
-        // than wedging the process (the crate's zone-two error policy).
-        self.latest
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone()
+        self.bus.latest()
     }
 
     /// The current non-empty chat-capable catalog generation.
@@ -77,13 +69,7 @@ impl CatalogBus {
         let models = models.into_iter().filter(is_chat_capable).collect();
         let push = CatalogPush { models };
         self.chat.publish(&push.models);
-        // The retained copy (a second owner, hence the clone) is written
-        // before the send, so a session that subscribes after the send
-        // still finds this push as its snapshot.
-        *self.latest.lock().unwrap_or_else(PoisonError::into_inner) = Some(push.clone());
-        // A send only fails when there are no receivers, which is the bus's
-        // resting state before the first client connects.
-        let _ = self.sender.send(push);
+        self.bus.send(push);
     }
 }
 

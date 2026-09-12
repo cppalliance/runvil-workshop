@@ -22,7 +22,7 @@ use promptforge_core_support::observe::Observer;
 use promptforge_tools::{Tool, ToolError, ToolErrorKind, ToolId, ToolOutput};
 use tokio::sync::{broadcast, oneshot};
 
-use crate::protocol::{InputFrame, InputResponse};
+use workshop_protocol::{InputFrame, InputResponse};
 
 /// One unresolved wait: its single-use token, and the sender that resumes
 /// the suspended `user_input` call with the operator's text.

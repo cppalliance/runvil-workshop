@@ -1,0 +1,20 @@
+[package]
+name = "workshop-registry"
+version = "0.0.0"
+publish = false
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+description = "Workshop subsystem registry: sealed proxy slots subsystems self-register into, so the composition root never names them"
+
+[dependencies]
+axum.workspace = true
+tokio.workspace = true
+workshop-protocol.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+
+[lints]
+workspace = true

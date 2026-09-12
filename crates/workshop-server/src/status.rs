@@ -3,8 +3,8 @@
 //!
 //! Anything with user-visible latency - startup phases, gateway round
 //! trips, dictation and transcription, model downloads - reports what
-//! it is doing as a [`StatusBarUpdate`]. The bus is a tokio broadcast
-//! channel: updates fan out to all current subscribers, a send with no
+//! it is doing as a [`StatusBarUpdate`]. The bus is a [`RetainedBus`]:
+//! updates fan out to all current subscribers, a send with no
 //! subscribers is a no-op, and a subscriber that falls more than
 //! [`STATUS_CHANNEL_CAPACITY`] updates behind is told it lagged and resumes
 //! at the oldest retained update. Sending never blocks, so instrumenting a
@@ -16,11 +16,10 @@
 //! sends the current status immediately - the delivery contract's
 //! resend-on-reconnect for ephemeral frames.
 
-use std::sync::{Arc, Mutex, PoisonError};
-
 use tokio::sync::broadcast;
 
-use crate::protocol::{Activity, Progress, Severity, StatusBarUpdate};
+use workshop_protocol::{Activity, Progress, Severity, StatusBarUpdate};
+use workshop_support::RetainedBus;
 
 /// Ring capacity of the status bus. Covers a startup burst plus an agent
 /// turn's phase transitions with headroom; a receiver lagging past it
@@ -33,45 +32,32 @@ const STATUS_CHANNEL_CAPACITY: usize = 64;
 /// channel, so subsystems take their own copy rather than a reference.
 #[derive(Debug, Clone)]
 pub struct StatusBus {
-    sender: broadcast::Sender<StatusBarUpdate>,
-    latest: Arc<Mutex<Option<StatusBarUpdate>>>,
+    bus: RetainedBus<StatusBarUpdate>,
 }
 
 impl StatusBus {
     /// Creates a bus with no subscribers, an empty ring, and no snapshot.
     pub(crate) fn new() -> Self {
         Self {
-            sender: broadcast::channel(STATUS_CHANNEL_CAPACITY).0,
-            latest: Arc::new(Mutex::new(None)),
+            bus: RetainedBus::new(STATUS_CHANNEL_CAPACITY),
         }
     }
 
     /// Subscribes to every update sent from this call onward.
     pub(crate) fn subscribe(&self) -> broadcast::Receiver<StatusBarUpdate> {
-        self.sender.subscribe()
+        self.bus.subscribe()
     }
 
     /// The most recently emitted update, retained so a session connecting
     /// later can send the current status as its snapshot.
     pub(crate) fn latest(&self) -> Option<StatusBarUpdate> {
-        // A lock poisoned by a panicking peer recovers the value rather
-        // than wedging the process (the crate's zone-two error policy).
-        self.latest
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone()
+        self.bus.latest()
     }
 
     /// Broadcasts one update. With no subscribers this is a no-op; a slow
     /// subscriber skips ahead rather than applying backpressure.
     pub fn emit(&self, update: StatusBarUpdate) {
-        // The retained copy (a second owner, hence the clone) is written
-        // before the send, so a session that subscribes after the send
-        // still finds this update as its snapshot.
-        *self.latest.lock().unwrap_or_else(PoisonError::into_inner) = Some(update.clone());
-        // A send only fails when there are no receivers, which is the bus's
-        // resting state before the first client connects.
-        let _ = self.sender.send(update);
+        self.bus.send(update);
     }
 
     /// Broadcasts one progress-free update at the given severity.

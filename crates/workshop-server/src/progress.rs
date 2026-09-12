@@ -20,8 +20,8 @@ use tokio::time::Instant;
 
 use shared_progress::{ProgressHub, ProgressMeter};
 
-use crate::protocol::Activity;
 use crate::push::Push;
+use workshop_protocol::Activity;
 
 /// How long an operation must be live before the indicator appears; work
 /// shorter than this never disturbs the status bar.
@@ -218,8 +218,8 @@ mod tests {
 
     use crate::catalog::CatalogBus;
     use crate::menu::MenuBus;
-    use crate::protocol::{Progress, Severity, StatusBarUpdate};
     use crate::status::StatusBus;
+    use workshop_protocol::{Progress, Severity, StatusBarUpdate};
 
     /// A hub, a push handle over fresh buses, and the status receiver the
     /// renderer's frames land on (the push.rs wired() pattern).

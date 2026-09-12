@@ -36,7 +36,11 @@ pub(crate) fn all_violations(root: &Path) -> Vec<String> {
 /// The internal `workshop-*` crates a tiered crate may depend on, or `None`
 /// when `name` is not part of the decomposition's crate map.
 fn allowed_dependencies(name: &str) -> Option<Vec<&'static str>> {
-    let allowed = if VOCABULARY.contains(&name) {
+    let allowed = if name == "workshop-registry" {
+        // The proxy slots speak the wire types: the status push-channel
+        // slot carries `workshop-protocol`'s `StatusBarUpdate`.
+        vec!["workshop-protocol"]
+    } else if VOCABULARY.contains(&name) {
         Vec::new()
     } else if SERVICES.contains(&name) {
         VOCABULARY.to_vec()
@@ -283,6 +287,10 @@ mod tests {
     #[test]
     fn tier_table_grants_each_tier_only_lower_tiers() {
         assert_eq!(allowed_dependencies("workshop-protocol"), Some(Vec::new()));
+        assert_eq!(
+            allowed_dependencies("workshop-registry"),
+            Some(vec!["workshop-protocol"])
+        );
         assert_eq!(
             allowed_dependencies("workshop-gateway"),
             Some(VOCABULARY.to_vec())

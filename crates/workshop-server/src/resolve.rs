@@ -12,8 +12,9 @@ use std::path::Path;
 
 use shared_sidecar::{Resolution, SidecarError, StaleReason, ValidatedConnection};
 
-use crate::config::GatewayConfig;
-use crate::protocol::Activity;
+use workshop_protocol::Activity;
+use workshop_support::GatewayConfig;
+
 use crate::push::Push;
 
 /// The gateway endpoint state construction connects to, and how it was

@@ -1,13 +1,13 @@
 //! Integration-test seams that exercise Workshop behavior in-process.
 
 pub use crate::app::state_with_gateway;
-pub use crate::backoff::ReconnectBackoff;
 pub use crate::catalog::CatalogBus;
 pub use crate::heartbeat::{GatewayHealth, Heartbeat};
 pub use crate::menu::{MenuBus, MenuRefusal};
-pub use crate::protocol::{Activity, Progress, Severity, StatusBarUpdate};
 pub use crate::push::Push;
 pub use crate::status::StatusBus;
+pub use workshop_protocol::{Activity, Progress, Severity, StatusBarUpdate};
+pub use workshop_support::ReconnectBackoff;
 
 #[cfg(feature = "test-fixtures")]
 pub use crate::app::fixtures::spawn_gateway;

@@ -7,8 +7,8 @@ use axum::Router;
 use axum::routing::get;
 
 use crate::app::AppState;
-use crate::deadline::{RELAY_DEADLINE, with_deadline};
 use crate::{relay, session};
+use workshop_support::{RELAY_DEADLINE, with_deadline};
 
 /// The relay routes. They take the whole [`AppState`]: the handlers reach
 /// the gateway client, the health flag, and the status and catalog buses.

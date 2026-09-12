@@ -44,13 +44,14 @@ use promptforge_model_client::client::StreamDelta;
 use promptforge_model_client::model::{ModelCatalog, ModelDescriptor, ModelId, ThinkingMode};
 use tokio::sync::{broadcast, mpsc};
 
-use crate::backoff::ReconnectBackoff;
+use workshop_protocol::{Activity, AgentDeltaKind, InputFrame, InputResponse};
+use workshop_support::ReconnectBackoff;
+
 use crate::catalog::{CatalogBus, is_chat_capable};
 use crate::gateway_binding::GatewayBinding;
 use crate::input::{WaitError, WaitRegistry, deliver_input_response_before_completion};
 use crate::menu::MenuBus;
 use crate::observer::WorkshopObserver;
-use crate::protocol::{Activity, AgentDeltaKind, InputFrame, InputResponse};
 use crate::push::Push;
 use crate::workspace::Workspace;
 
@@ -1030,7 +1031,7 @@ mod tests {
             .recv()
             .await
             .expect("the failed round pushes a terminal status");
-        assert_eq!(update.severity, crate::protocol::Severity::Error);
+        assert_eq!(update.severity, workshop_protocol::Severity::Error);
         assert_eq!(
             update.activity,
             Activity::General,

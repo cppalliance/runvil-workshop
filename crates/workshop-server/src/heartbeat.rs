@@ -32,9 +32,10 @@ use std::time::Duration;
 
 use tokio::sync::{oneshot, watch};
 
-use crate::backoff::ReconnectBackoff;
+use workshop_protocol::{Activity, Severity, StatusBarUpdate};
+use workshop_support::ReconnectBackoff;
+
 use crate::gateway_binding::{GatewayBinding, GatewaySnapshot};
-use crate::protocol::{Activity, Severity, StatusBarUpdate};
 use crate::push::Push;
 
 mod refresh;
@@ -355,7 +356,7 @@ mod tests {
 
     use crate::catalog::CatalogBus;
     use crate::menu::MenuBus;
-    use crate::protocol::{CatalogPush, Progress, Severity, StatusBarUpdate, WorkbenchSnapshot};
+    use workshop_protocol::{CatalogPush, Progress, Severity, StatusBarUpdate, WorkbenchSnapshot};
 
     fn retained(label: &str) -> StatusBarUpdate {
         StatusBarUpdate {

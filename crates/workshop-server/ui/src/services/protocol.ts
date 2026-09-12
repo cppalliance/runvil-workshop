@@ -3,12 +3,12 @@
 // Types only - the socket logic that sends and routes these frames stays
 // in workshop-socket.ts and agent-socket.ts. The
 // Rust half of this contract is
-// crates/workshop-server/src/protocol.rs; the two files
+// crates/workshop-protocol/src; the two files
 // cross-cite each other so a shape change touches both or neither. The
 // agent-session frame family is additionally pinned by the shared fixture
-// crates/workshop-server/tests/fixtures/agent-frames.json,
+// crates/workshop-protocol/tests/fixtures/agent-frames.json,
 // asserted as the same JSON by both suites (test/agent-wire-fixtures.mjs
-// here, the protocol.rs fixture test there), so drift on either side fails
+// here, the workshop-protocol fixture test there), so drift on either side fails
 // that side's tests.
 
 /** One observer status update, as sent by the server. */
