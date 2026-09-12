@@ -377,7 +377,7 @@ Verification: `cargo nextest run --locked -p promptforge-core scheduler` passes 
 
 <step-2>
 
-### Step 2: AGENTS.md, xtask, and new-crate generator
+### Step 2: AGENTS.md, xtask, and new-crate generator [completed]
 
 - Component: Foundation
 
