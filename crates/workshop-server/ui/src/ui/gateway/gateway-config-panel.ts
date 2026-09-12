@@ -9,9 +9,7 @@
 
 import "./gateway-config-panel.css";
 
-import type { GroupPanelPartInitParameters, IContentRenderer } from "dockview";
-
-import { Disposable } from "../../base/lifecycle";
+import { WorkshopPart } from "../../base/workshop-part";
 
 /** Injectable seams for tests. */
 export interface GatewayConfigPanelDeps {
@@ -19,15 +17,13 @@ export interface GatewayConfigPanelDeps {
   readonly workshopOrigin?: string;
 }
 
-export class GatewayConfigPanel extends Disposable implements IContentRenderer {
-  readonly element = document.createElement("div");
-
+export class GatewayConfigPanel extends WorkshopPart {
   constructor(private readonly deps: GatewayConfigPanelDeps = {}) {
     super();
     this.element.className = "ws-gateway-config-panel";
   }
 
-  init(_parameters: GroupPanelPartInitParameters): void {
+  protected create(parent: HTMLElement): void {
     const iframe = document.createElement("iframe");
     iframe.className = "ws-gateway-config-panel__frame";
     iframe.title = "Gateway Config";
@@ -39,6 +35,6 @@ export class GatewayConfigPanel extends Disposable implements IContentRenderer {
     iframe.setAttribute("sandbox", "allow-scripts allow-same-origin");
     const workshopOrigin = this.deps.workshopOrigin ?? window.location.origin;
     iframe.src = `/gateway/config/?mode=panel&bridge=${encodeURIComponent(workshopOrigin)}`;
-    this.element.replaceChildren(iframe);
+    parent.replaceChildren(iframe);
   }
 }

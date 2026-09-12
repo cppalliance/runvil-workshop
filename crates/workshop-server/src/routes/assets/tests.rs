@@ -91,3 +91,54 @@ async fn program_icon_is_served_as_png() {
 async fn program_icon_2x_is_served_as_png() {
     assert_ui_asset("/icons/promptforge-icon@2x.png", "image/png").await;
 }
+
+/// The code-split chunks have content-hashed names, so the test discovers
+/// one through the embedded asset listing rather than naming it.
+fn first_chunk_name(extension: &str) -> String {
+    crate::assets::UiAssets::iter()
+        .map(std::borrow::Cow::into_owned)
+        .find(|name| name.starts_with("chunks/") && name.ends_with(extension))
+        .unwrap_or_else(|| panic!("the UI build emits a chunks/*{extension} chunk"))
+}
+
+#[tokio::test]
+async fn a_code_split_chunk_is_served_as_javascript() {
+    let name = first_chunk_name(".js");
+    assert_ui_asset(&format!("/{name}"), "text/javascript; charset=utf-8").await;
+}
+
+#[tokio::test]
+async fn a_chunk_without_a_bundle_extension_is_not_found() {
+    let (state, _state_dir) = state_for("http://127.0.0.1:1");
+    let request = Request::builder()
+        .uri("/chunks/app.toml")
+        .body(Body::empty())
+        .expect("static request parts are valid");
+    let response = router(state).oneshot(request).await.expect("infallible");
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn a_chunk_name_cannot_escape_the_asset_root() {
+    // The wildcard captures the remainder raw; ui_asset's own tests pin
+    // traversal refusal for the names it is handed. Here the route must
+    // not 500 on a hostile name.
+    let (state, _state_dir) = state_for("http://127.0.0.1:1");
+    let request = Request::builder()
+        .uri("/chunks/..%2F..%2FCargo.toml")
+        .body(Body::empty())
+        .expect("static request parts are valid");
+    let response = router(state).oneshot(request).await.expect("infallible");
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn a_missing_chunk_is_not_found() {
+    let (state, _state_dir) = state_for("http://127.0.0.1:1");
+    let request = Request::builder()
+        .uri("/chunks/chunk-DEADBEEF00.js")
+        .body(Body::empty())
+        .expect("static request parts are valid");
+    let response = router(state).oneshot(request).await.expect("infallible");
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+}

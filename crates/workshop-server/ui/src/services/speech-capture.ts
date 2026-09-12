@@ -1,5 +1,6 @@
 import { Emitter, type Event } from "../base/event";
 import { Disposable } from "../base/lifecycle";
+import { createServiceToken, type ServiceToken } from "./service-registry";
 
 const OUTPUT_SAMPLE_RATE = 24_000;
 const FLUSH_TIMEOUT_MS = 1_000;
@@ -340,3 +341,13 @@ export class SpeechCaptureService extends Disposable {
     super.dispose();
   }
 }
+
+/**
+ * The registry token for the composition root's SpeechCaptureService.
+ * The agent session's dictation resolves it through the service registry
+ * instead of the dock's createComponent seam. Registered by the
+ * composition root at boot; unregistered in tests that drive panels
+ * standalone.
+ */
+export const SPEECH_CAPTURE: ServiceToken<SpeechCaptureService> =
+  createServiceToken<SpeechCaptureService>("workshop.speechCapture");

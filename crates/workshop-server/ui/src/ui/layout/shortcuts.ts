@@ -1,86 +1,43 @@
 // App-level keyboard shortcuts: one document keydown listener dispatching
-// to the workshop's command functions. The bindings are fixed - no
-// customization, no chords. CodeMirror keeps typing, selection, clipboard,
-// undo/redo, and in-file find/replace; these bindings cover
-// workspace-level actions only: Ctrl+S save the active editor, Ctrl+W
-// close it (prompting on unsaved changes), Ctrl+B toggle the Workshop
-// tree, Ctrl+Tab / Ctrl+Shift+Tab cycle the editors, Ctrl+Shift+F focus
-// the tree, Ctrl+= / Ctrl+- / Ctrl+0 zoom the window.
-
-import type { DockviewApi, IDockviewPanel } from "dockview";
+// key chords to commands in the command registry. The binding table below
+// maps chords to command ids; the commands themselves are registered by
+// the feature directories that own them (the editor's save and close, the
+// tree's toggle and focus, chrome's zoom), so this module imports no
+// feature code and the heavy panels stay out of the initial bundle. A
+// matched chord always preventDefaults - even when its command is not
+// registered yet (the feature chunk is still loading) - so the browser
+// never sees Ctrl+W or Ctrl+S. CodeMirror keeps typing, selection,
+// clipboard, undo/redo, and in-file find/replace; these bindings cover
+// workspace-level actions only.
 
 import { toDisposable, type IDisposable } from "../../base/lifecycle";
-import { resetZoom, zoomIn, zoomOut } from "../chrome/zoom";
-import { EditorPanel } from "../editor/editor-panel";
-import { WorkshopTreePanel } from "./workshop-panel";
-import { openInZone, panelIdFor } from "./zones";
+import { executeCommand } from "../menu/command-registry";
 
-/** The panel's content as an EditorPanel, or null for other panel kinds. */
-function asEditor(panel: IDockviewPanel | undefined): EditorPanel | null {
-  if (panel === undefined) {
-    return null;
-  }
-  const content = panel.view.content;
-  return content instanceof EditorPanel ? content : null;
+/**
+ * One key chord bound to a command id. `matches` sees the raw keydown
+ * after the plain-Ctrl gate; it must be specific enough to never collide
+ * with another binding, because the first match wins.
+ */
+export interface Keybinding {
+  readonly command: string;
+  readonly matches: (event: KeyboardEvent) => boolean;
 }
 
-/** Every open editor panel, in dock order. */
-function editorPanels(dock: DockviewApi): IDockviewPanel[] {
-  return dock.panels.filter((panel) => asEditor(panel) !== null);
-}
+const keybindings: Keybinding[] = [];
 
-/** Ctrl+S: save the active editor. A no-op when no editor is active. */
-export function saveActiveEditor(dock: DockviewApi): void {
-  const editor = asEditor(dock.activePanel);
-  if (editor !== null) {
-    // save() handles its own failures (error bar, conflict dialog).
-    void editor.save();
-  }
-}
-
-/** Ctrl+W: close the active editor, prompting on unsaved changes. */
-export function closeActiveEditor(dock: DockviewApi): void {
-  asEditor(dock.activePanel)?.requestClose();
-}
-
-/** Ctrl+B: toggle the Workshop tree panel. */
-export function toggleWorkshopPanel(dock: DockviewApi): void {
-  const existing = dock.getPanel(panelIdFor("tree", {}));
-  if (existing) {
-    dock.removePanel(existing);
-  } else {
-    openInZone("tree", {});
-  }
-}
-
-/** Ctrl+Tab / Ctrl+Shift+Tab: cycle the open editors, wrapping around. */
-export function cycleEditor(dock: DockviewApi, direction: 1 | -1): void {
-  const editors = editorPanels(dock);
-  if (editors.length === 0) {
-    return;
-  }
-  const current = editors.findIndex((panel) => panel === dock.activePanel);
-  const index =
-    current === -1
-      ? direction === 1
-        ? 0
-        : editors.length - 1
-      : (current + direction + editors.length) % editors.length;
-  const panel = editors[index];
-  if (panel === undefined) {
-    return;
-  }
-  panel.api.setActive();
-  asEditor(panel)?.focus();
-}
-
-/** Ctrl+Shift+F: open or activate the Workshop tree and focus it. */
-export function focusWorkshopTree(): void {
-  const panel = openInZone("tree", {});
-  const content = panel.view.content;
-  if (content instanceof WorkshopTreePanel) {
-    content.focus();
-  }
+/**
+ * Binds a chord to a command id. Feature directories call this from
+ * their register() functions, alongside their commands. The returned
+ * disposable unbinds.
+ */
+export function registerKeybinding(keybinding: Keybinding): IDisposable {
+  keybindings.push(keybinding);
+  return toDisposable(() => {
+    const index = keybindings.indexOf(keybinding);
+    if (index !== -1) {
+      keybindings.splice(index, 1);
+    }
+  });
 }
 
 /** Only plain Ctrl combinations are bound; Alt and Meta stay untouched. */
@@ -88,60 +45,70 @@ function isPlainCtrl(event: KeyboardEvent): boolean {
   return event.ctrlKey && !event.altKey && !event.metaKey;
 }
 
+// The built-in bindings. The commands behind them self-register:
+// editor.* when the first editor panel's chunk loads, workshop.* when
+// the tree's chunk loads (both happen at boot for the default layout),
+// chrome.* from the eager chrome directory.
+registerKeybinding({
+  command: "editor.cyclePrevious",
+  matches: (event) => event.key === "Tab" && event.shiftKey,
+});
+registerKeybinding({
+  command: "editor.cycleNext",
+  matches: (event) => event.key === "Tab" && !event.shiftKey,
+});
+// Zoom binds run without a Shift gate: Ctrl+Shift+= reports "+" for the
+// same physical key Ctrl+= reports "=" for, and both are the conventional
+// zoom-in chord.
+registerKeybinding({
+  command: "chrome.zoomIn",
+  matches: (event) => event.code === "Equal" || event.key === "=" || event.key === "+",
+});
+registerKeybinding({
+  command: "chrome.zoomOut",
+  matches: (event) => event.code === "Minus" || event.key === "-",
+});
+registerKeybinding({
+  command: "chrome.resetZoom",
+  matches: (event) => event.code === "Digit0" || event.key === "0",
+});
+registerKeybinding({
+  command: "workshop.focusTree",
+  matches: (event) => event.shiftKey && event.key.toLowerCase() === "f",
+});
+registerKeybinding({
+  command: "editor.save",
+  matches: (event) => !event.shiftKey && event.key.toLowerCase() === "s",
+});
+registerKeybinding({
+  command: "editor.close",
+  matches: (event) => !event.shiftKey && event.key.toLowerCase() === "w",
+});
+registerKeybinding({
+  command: "workshop.togglePanel",
+  matches: (event) => !event.shiftKey && event.key.toLowerCase() === "b",
+});
+
 /**
- * Installs the app-level keydown listener. Unbound combinations fall
- * through without preventDefault so the browser and CodeMirror keep
- * theirs. Returns the disposable that uninstalls it.
+ * Installs the app-level keydown listener. A matched chord dispatches its
+ * command through the command registry; unbound combinations fall through
+ * without preventDefault so the browser and CodeMirror keep theirs.
+ * Returns the disposable that uninstalls it.
  */
-export function installShortcuts(dock: DockviewApi): IDisposable {
+export function installShortcuts(): IDisposable {
   const onKeydown = (event: KeyboardEvent): void => {
     if (!isPlainCtrl(event)) {
       return;
     }
-    if (event.key === "Tab") {
-      event.preventDefault();
-      cycleEditor(dock, event.shiftKey ? -1 : 1);
-      return;
-    }
-    // Zoom binds run before the Shift gate below: Ctrl+Shift+= reports
-    // "+" for the same physical key Ctrl+= reports "=" for, and both are
-    // the conventional zoom-in chord.
-    if (event.code === "Equal" || event.key === "=" || event.key === "+") {
-      event.preventDefault();
-      zoomIn();
-      return;
-    }
-    if (event.code === "Minus" || event.key === "-") {
-      event.preventDefault();
-      zoomOut();
-      return;
-    }
-    if (event.code === "Digit0" || event.key === "0") {
-      event.preventDefault();
-      resetZoom();
-      return;
-    }
-    const key = event.key.toLowerCase();
-    if (event.shiftKey) {
-      if (key === "f") {
+    for (const keybinding of keybindings) {
+      if (keybinding.matches(event)) {
+        // Prevent the browser default even when the command has not
+        // registered yet: Ctrl+W closing the browser tab because the
+        // editor chunk was still loading would be a data-loss-shaped bug.
         event.preventDefault();
-        focusWorkshopTree();
+        executeCommand(keybinding.command);
+        return;
       }
-      return;
-    }
-    switch (key) {
-      case "s":
-        event.preventDefault();
-        saveActiveEditor(dock);
-        break;
-      case "w":
-        event.preventDefault();
-        closeActiveEditor(dock);
-        break;
-      case "b":
-        event.preventDefault();
-        toggleWorkshopPanel(dock);
-        break;
     }
   };
   document.addEventListener("keydown", onKeydown);

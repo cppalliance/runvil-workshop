@@ -27,6 +27,7 @@ const bundle = await esbuild.build({
   stdin: {
     contents: `
       export { installShortcuts } from "./src/ui/layout/shortcuts.ts";
+      export { register as registerChrome } from "./src/ui/chrome/index.ts";
       export { setupWindowMenus } from "./src/ui/menu/window-menu.ts";
       export {
         getZoom,
@@ -205,6 +206,9 @@ async function scenario({ desktop = false } = {}) {
 
 {
   const { module, press } = await scenario();
+  // The zoom keybindings dispatch to the chrome.* commands, which the
+  // chrome directory's register() installs (main.ts calls it at boot).
+  module.registerChrome();
   const uninstall = module.installShortcuts({});
   let event = press("=");
   check("Ctrl+= zooms in", module.getZoom() === 1.1);

@@ -8,9 +8,10 @@
 
 import "./editor-panel.css";
 
-import type { DockviewPanelApi, GroupPanelPartInitParameters, IContentRenderer } from "dockview";
+import type { DockviewPanelApi, GroupPanelPartInitParameters } from "dockview";
 
-import { Disposable, toDisposable } from "../../base/lifecycle";
+import { toDisposable } from "../../base/lifecycle";
+import { WorkshopPart } from "../../base/workshop-part";
 import { showPanelDialog } from "./editor-dialog";
 import { CodeMirrorSurface, type EditorSurface } from "./editor-surface";
 import {
@@ -42,8 +43,7 @@ function baseName(path: string): string {
   return path.split(/[\\/]/).filter(Boolean).pop() ?? path;
 }
 
-export class EditorPanel extends Disposable implements IContentRenderer {
-  readonly element = document.createElement("div");
+export class EditorPanel extends WorkshopPart {
   private readonly surface: EditorSurface;
   private panelApi: DockviewPanelApi | null = null;
   private path: string | null = null;
@@ -67,9 +67,13 @@ export class EditorPanel extends Disposable implements IContentRenderer {
     );
   }
 
-  init(parameters: GroupPanelPartInitParameters): void {
+  protected create(parent: HTMLElement): void {
+    parent.appendChild(this.surface.element);
+  }
+
+  override init(parameters: GroupPanelPartInitParameters): void {
+    super.init(parameters);
     this.panelApi = parameters.api;
-    this.element.appendChild(this.surface.element);
     const path = filePathParam(parameters.params);
     if (path === null) {
       this.showError("No file path was provided for this editor.");

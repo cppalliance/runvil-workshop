@@ -13,6 +13,7 @@
 import { Emitter, type Event } from "../base/event";
 import { Disposable } from "../base/lifecycle";
 import type { CatalogModel } from "./protocol";
+import { createServiceToken, type ServiceToken } from "./service-registry";
 
 /**
  * Owns the model catalog and the current model selection shared by every
@@ -83,3 +84,13 @@ export class ModelService extends Disposable {
     this._onDidChangeCurrent.fire(next);
   }
 }
+
+/**
+ * The registry token for the composition root's ModelService. Panels
+ * resolve the shared catalog and selection through the service registry
+ * instead of receiving them through the dock's createComponent seam.
+ * Registered by the composition root at boot; unregistered in tests that
+ * drive panels standalone.
+ */
+export const MODEL_SERVICE: ServiceToken<ModelService> =
+  createServiceToken<ModelService>("workshop.model");

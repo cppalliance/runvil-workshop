@@ -467,7 +467,7 @@ Verification: `npm run build` succeeds. `npm run typecheck` clean. `npm test` (`
 
 <step-7>
 
-### Step 7: SPA registries, lazy loading, and god-object breakup
+### Step 7: SPA registries, lazy loading, and god-object breakup [completed]
 
 - Component: SPA Restructuring
 

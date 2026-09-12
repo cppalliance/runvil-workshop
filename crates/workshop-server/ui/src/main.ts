@@ -5,18 +5,36 @@ import "./tokens/base.css";
 import "./tokens/semantic.css";
 import "./tokens/component.css";
 
+// The lazy feature directories keep their colocated CSS imports, but
+// esbuild does not load a chunk's CSS when the chunk's JS activates, so
+// every feature stylesheet is also imported here: all CSS rides the
+// eager app.css (the VS Code model - styles are cheap, the heavy JS is
+// what splits), and a panel is never unstyled while its chunk loads.
+import "./ui/agent/agent-session.css";
+import "./ui/agent/agent-toolbar.css";
+import "./ui/agent/markdown-render.css";
+import "./ui/agent/mode-chip.css";
+import "./ui/agent/prompt-input.css";
+import "./ui/agent/tool-call-card.css";
+import "./ui/agent/typeahead-popup.css";
+import "./ui/editor/editor-panel.css";
+import "./ui/gateway/gateway-config-panel.css";
+import "./ui/stt/stt.css";
+
 import { createDockview, themeDark } from "dockview";
 import { createToastStack } from "shared-ui/toast";
 
 import { DisposableStore, toDisposable } from "./base/lifecycle";
-import { ModelService } from "./services/model-service";
-import { SpeechCaptureService } from "./services/speech-capture";
+import { ModelService, MODEL_SERVICE } from "./services/model-service";
+import { registerService } from "./services/service-registry";
+import { SpeechCaptureService, SPEECH_CAPTURE } from "./services/speech-capture";
 import { UpdateService } from "./services/update-service";
 import { WorkbenchService } from "./services/workbench-service";
 import { WorkshopSocket } from "./services/workshop-socket";
+import { executeCommand } from "./ui/menu/command-registry";
+import { register as registerChrome } from "./ui/chrome/index";
 import { setupGatewayConfigBridge } from "./ui/gateway/gateway-config-bridge";
-import { markdownReady } from "./ui/agent/markdown-render";
-import { StatusBar } from "./ui/status/status-bar";
+import { StatusBar, STATUS_BAR } from "./ui/status/status-bar";
 import { UpdateView } from "./ui/chrome/update-view";
 import { setupWindowChrome } from "./ui/chrome/window-chrome";
 import { setupWindowMenus, type ModelMenuService, type ProfileMenuService } from "./ui/menu/window-menu";
@@ -24,7 +42,7 @@ import { setupWorkspaceDrops } from "./ui/workspace/workspace-drops";
 import { restoreZoom } from "./ui/chrome/zoom";
 import { restoreLayout, startLayoutPersistence } from "./ui/layout/layout-persistence";
 import { createPanelComponent, createPanelTabComponent } from "./ui/layout/panel-types";
-import { installShortcuts, toggleWorkshopPanel } from "./ui/layout/shortcuts";
+import { installShortcuts } from "./ui/layout/shortcuts";
 import { initZones, openInZone } from "./ui/layout/zones";
 
 // The root of the ownership tree: every top-level binding registers here,
@@ -85,22 +103,26 @@ const modelService = disposables.add(
 const workbenchService = disposables.add(new WorkbenchService());
 const speechCapture = new SpeechCaptureService();
 
+// The composition root's services register into the service registry;
+// the lazy feature directories (the panels) resolve them from there when
+// their chunks activate, instead of receiving them through the dock's
+// createComponent seam.
+registerService(STATUS_BAR, () => statusBar);
+registerService(MODEL_SERVICE, () => modelService);
+registerService(SPEECH_CAPTURE, () => speechCapture);
+
+// The eager directories' registrations: chrome's zoom commands. The lazy
+// directories register through the panel registry when their chunks load.
+disposables.add(registerChrome());
+
 disposables.add(workshopSocket.onStatus((frame) => statusBar.render(frame)));
 // A dropped socket means every in-flight status is stale; the bar returns
 // to its reconnecting state until the observer speaks again.
 disposables.add(workshopSocket.onDisconnect(() => statusBar.reset()));
 workshopSocket.connect();
 
-// Code blocks in the agent feed highlight through Shiki, whose init is
-// async; awaiting it here means the first painted message is never the
-// degraded unhighlighted render. A failed init must not block the boot -
-// the renderer degrades to plain <pre><code> blocks instead.
-await markdownReady.catch((error: unknown) => {
-  console.error("markdown highlighting failed to initialize; code blocks render unhighlighted:", error);
-});
-
-// Panels are created through the workshop registry: each component name
-// maps to a factory in panel-types, and openInZone places panels by zone
+// Panels are created through the panel registry: each component name
+// maps to a lazy import thunk, and openInZone places panels by zone
 // affinity (tree left, editors main, the agent session right). The
 // workbench is always unlocked: user drags rearrange panels at any time,
 // and the zone registry records the placement overrides. Every panel
@@ -109,12 +131,7 @@ await markdownReady.catch((error: unknown) => {
 // all); the Workshop tree's tab comes from the close-button-free renderer.
 const dockEl = document.getElementById("dock") as HTMLDivElement;
 const dock = createDockview(dockEl, {
-  // The status bar rides along so the Workshop tree's workspace actions
-  // (add and remove folders) can announce their outcomes; the model
-  // service rides along so the agent session's toolbar picker reads the
-  // shared catalog and selection.
-  createComponent: (options) =>
-    createPanelComponent(options, { statusBar, modelService, speechCapture }),
+  createComponent: createPanelComponent,
   createTabComponent: createPanelTabComponent,
   theme: themeDark,
   disableFloatingGroups: true,
@@ -129,7 +146,7 @@ disposables.add(initZones(dock));
 // Restore the persisted layout; any failure falls back to the known-good
 // default: the tree anchors the left zone first, then the agent session
 // opens right, and main stays empty until a document opens. Panels
-// re-create through their factories - only identity is stored.
+// re-create through their registered factories - only identity is stored.
 if (!restoreLayout(dock)) {
   const treePanel = openInZone("tree", {});
   treePanel.group.api.setSize({ width: 280 });
@@ -142,7 +159,7 @@ if (!restoreLayout(dock)) {
 openInZone("tree", {});
 openInZone("agent", {});
 disposables.add(startLayoutPersistence(dock));
-disposables.add(installShortcuts(dock));
+disposables.add(installShortcuts());
 
 // The Model menu's Profiles section: a thin view over the workbench
 // snapshots the server pushes. Switching is a command on the socket -
@@ -190,8 +207,8 @@ const openNewAgent = (): void => {
   openInZone("agent", { instance: window.crypto.randomUUID() });
 };
 
-// The title-bar menus dispatch through one shared command set; the
-// keyboard shortcuts call the same workshop command functions. The Model
+// The title-bar menus dispatch through the command and menu registries;
+// the keyboard shortcuts call the same registered commands. The Model
 // menu reads the model service's catalog and writes the selection back
 // into it, and its Profiles section reads the workbench service through
 // the profileMenu view above. Each New Agent command creates a separate
@@ -202,7 +219,7 @@ disposables.add(
       newAgent: openNewAgent,
     },
     workshop: {
-      toggleWorkshopPanel: () => toggleWorkshopPanel(dock),
+      toggleWorkshopPanel: () => executeCommand("workshop.togglePanel"),
       openGatewayConfig: () => {
         openInZone("config", {});
       },

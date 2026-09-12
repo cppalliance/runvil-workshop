@@ -37,13 +37,23 @@ const STATIC_FILES = [
 
 // Always minified: the bundle is never inspected by hand, and matching the
 // release profile keeps the jsdom tests exercising what ships.
+//
+// Code splitting is on: the panel registry's import thunks (the agent
+// session's Shiki/TipTap graph, the editor's CodeMirror) become lazily
+// loaded chunks under dist/chunks/, and the initial app.js carries only
+// the boot shell, services, and chrome. The entry keeps its unversioned
+// name (app.js, referenced by index.html and the server's asset routes);
+// chunks are content-hashed.
 const options = {
   entryPoints: [path.join(srcDir, "main.ts")],
   bundle: true,
   format: "esm",
+  splitting: true,
   target: "es2022",
   minify: true,
-  outfile: path.join(distDir, "app.js"),
+  entryNames: "app",
+  chunkNames: "chunks/[name]-[hash]",
+  outdir: distDir,
   logLevel: "info",
   ...(version !== null && { define: { __APP_VERSION__: JSON.stringify(version) } }),
 };

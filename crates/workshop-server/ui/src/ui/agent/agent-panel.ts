@@ -4,9 +4,7 @@
 // Closing the panel disposes the tree and closes its socket; every new
 // panel gets a fresh socket and therefore a fresh server session.
 
-import type { IContentRenderer } from "dockview";
-
-import { Disposable } from "../../base/lifecycle";
+import { WorkshopPart } from "../../base/workshop-part";
 import { AgentSessionService } from "../../services/agent-session";
 import { AgentSocket } from "../../services/agent-socket";
 import type { ModelService } from "../../services/model-service";
@@ -22,9 +20,7 @@ const SILENT_STATUS: SttStatus = {
   setRecording: () => undefined,
 };
 
-export class AgentPanel extends Disposable implements IContentRenderer {
-  readonly element = document.createElement("div");
-
+export class AgentPanel extends WorkshopPart {
   constructor(
     private readonly status: SttStatus = SILENT_STATUS,
     private readonly modelService?: ModelService,
@@ -34,13 +30,13 @@ export class AgentPanel extends Disposable implements IContentRenderer {
     this.element.className = "ws-agent-panel";
   }
 
-  init(): void {
+  protected create(parent: HTMLElement): void {
     const socket = this._register(new AgentSocket());
     const service = this._register(new AgentSessionService(socket));
     const view = this._register(
       new AgentSessionView(service, this.status, this.modelService, this.speechCapture),
     );
-    this.element.appendChild(view.element);
+    parent.appendChild(view.element);
     this._register(
       service.onDidChangeAgents((agents) => {
         if (agents.length > 0 && service.session === null) {

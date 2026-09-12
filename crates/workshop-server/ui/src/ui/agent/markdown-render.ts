@@ -11,9 +11,10 @@
 //
 // Shiki init is async but renderMarkdown is sync, so the highlighter is
 // created at module scope and readiness is exported as markdownReady for
-// main.ts to await during boot. That latch is write-once initialization,
-// not shared app state. Before readiness - or for a language Shiki does
-// not know - code blocks degrade to unhighlighted <pre><code>.
+// the agent directory's register() to log a failure against. That latch
+// is write-once initialization, not shared app state. Before readiness -
+// or for a language Shiki does not know - code blocks degrade to
+// unhighlighted <pre><code>.
 //
 // Streaming re-parses and re-sanitizes the whole buffer per delta: at
 // chat message sizes that stays well under a frame budget, so there is
@@ -70,8 +71,8 @@ const workshopTheme: ThemeRegistration = {
 let highlighter: HighlighterCore | undefined;
 
 /**
- * Resolves when the Shiki highlighter is ready. main.ts awaits this
- * during boot, before mounting panels; until then, code blocks render
+ * Resolves when the Shiki highlighter is ready. The agent directory's
+ * register() logs a failure; until readiness, code blocks render
  * unhighlighted.
  */
 export const markdownReady: Promise<void> = createHighlighterCore({

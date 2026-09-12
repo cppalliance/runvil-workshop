@@ -3,22 +3,28 @@
 // a file opens it in the editor zone through openInZone. Browsing is
 // paths only - the tree never reads file contents. Listings arrive
 // through the validated workspace-api boundary. Expansion state and
-// fetched listings are kept for the running session, so closing and
-// reopening the Workshop panel restores the tree as the user left it.
-// The panel also manages the grants themselves: a root row's context
-// menu revokes it, and a header "+" button (or the empty-space context
-// menu) adds a folder - through the native folder picker in the desktop
-// app, through a typed-path dialog in a plain browser.
+// fetched listings live in the TreeStateService (resolved through the
+// service registry), so closing and reopening the Workshop panel restores
+// the tree as the user left it. The panel also manages the grants
+// themselves: a root row's context menu revokes it, and a header "+"
+// button (or the empty-space context menu) adds a folder - through the
+// native folder picker in the desktop app, through a typed-path dialog in
+// a plain browser.
 
-import type { IContentRenderer } from "dockview";
 import { open } from "@tauri-apps/plugin-dialog";
+import type { GroupPanelPartInitParameters } from "dockview";
 
+import { toDisposable } from "../../base/lifecycle";
+import { WorkshopPart } from "../../base/workshop-part";
+import { DOCK, resolvePanelContent } from "../../services/panel-registry";
+import { getService } from "../../services/service-registry";
+import { TREE_STATE, type TreeStateService } from "../../services/tree-state-service";
 import { fetchTree, revokeRoot, type TreeEntry, type TreeListing } from "../../services/workspace-api";
 import { grantPath, WORKSPACE_CHANGED_EVENT } from "../workspace/workspace-drops";
 import { DropdownMenu } from "shared-ui/dropdown";
 import { showPanelDialog } from "../editor/editor-dialog";
 import { ICON_FOLDER_PLUS, ICON_TRASH_2 } from "../shared/icons";
-import { openInZone } from "./zones";
+import { openInZone, panelIdFor } from "./zones";
 
 /** The status-bar surface the panel paints action outcomes onto. */
 export interface TreeStatusSink {
@@ -28,19 +34,13 @@ export interface TreeStatusSink {
 // Cache key for the synthetic granted-roots listing, which has no path.
 const ROOTS_KEY = "";
 
-// Session state: expanded directory paths and the listings already
-// fetched. Module-level so a reopened Workshop panel restores both.
-const expandedPaths = new Set<string>();
-const listingCache = new Map<string, TreeListing>();
-
 const CHEVRON_SVG =
   '<svg class="ws-workshop-tree__chevron" width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 1.5l3.5 3.5-3.5 3.5" /></svg>';
 
-export class WorkshopTreePanel implements IContentRenderer {
-  readonly element = document.createElement("div");
+export class WorkshopTreePanel extends WorkshopPart {
   private readonly list = document.createElement("ul");
   // The panel's context menus, at most one open at a time.
-  private readonly dropdown = new DropdownMenu();
+  private readonly dropdown = this._register(new DropdownMenu());
   // The current menu's 0x0 fixed-position anchor under the cursor, so
   // the dropdown can anchor a context menu at the pointer.
   private pointerAnchor: HTMLElement | null = null;
@@ -49,23 +49,40 @@ export class WorkshopTreePanel implements IContentRenderer {
   // A dropped folder grants a new root after this panel rendered; the
   // change event refetches the roots so the drop is visible immediately.
   private readonly onWorkspaceChanged = (): void => {
-    listingCache.delete(ROOTS_KEY);
+    this.state.invalidateRoots();
     this.reload();
   };
 
   constructor(private readonly statusBar: TreeStatusSink | null = null) {
+    super();
     this.element.className = "ws-workshop-tree";
     // Focusable so Ctrl+Shift+F can land on the tree even while it is empty.
     this.element.tabIndex = -1;
     this.list.className = "ws-workshop-tree__list";
   }
 
-  init(): void {
-    this.element.appendChild(this.buildHeader());
-    this.element.appendChild(this.list);
+  /** The session state: expansion and fetched listings survive a reopen. */
+  private get state(): TreeStateService {
+    return getService(TREE_STATE);
+  }
+
+  override init(parameters: GroupPanelPartInitParameters): void {
+    super.init(parameters);
+    window.addEventListener(WORKSPACE_CHANGED_EVENT, this.onWorkspaceChanged);
+    this._register(
+      toDisposable(() => window.removeEventListener(WORKSPACE_CHANGED_EVENT, this.onWorkspaceChanged)),
+    );
+    void this.loadRoots().catch((error: unknown) => {
+      this.showError(this.list, error);
+    });
+  }
+
+  protected create(parent: HTMLElement): void {
+    parent.appendChild(this.buildHeader());
+    parent.appendChild(this.list);
     // Right-clicking the panel's empty space offers Add Folder; root rows
     // stop propagation, and other rows fall through to the browser menu.
-    this.element.addEventListener("contextmenu", (event) => {
+    parent.addEventListener("contextmenu", (event) => {
       const target = event.target;
       if (target instanceof Element && target.closest(".ws-workshop-tree__row") !== null) {
         return;
@@ -81,19 +98,14 @@ export class WorkshopTreePanel implements IContentRenderer {
         },
       ]);
     });
-    window.addEventListener(WORKSPACE_CHANGED_EVENT, this.onWorkspaceChanged);
-    void this.loadRoots().catch((error: unknown) => {
-      this.showError(this.list, error);
-    });
   }
 
-  dispose(): void {
-    window.removeEventListener(WORKSPACE_CHANGED_EVENT, this.onWorkspaceChanged);
-    this.dropdown.dispose();
+  override dispose(): void {
     this.dialog?.dispose();
     this.dialog = null;
     this.pointerAnchor?.remove();
     this.pointerAnchor = null;
+    super.dispose();
   }
 
   /** The panel header: an icon button that starts the Add Folder flow. */
@@ -130,10 +142,10 @@ export class WorkshopTreePanel implements IContentRenderer {
 
   /** Renders the granted roots, from the session cache when present. */
   private async loadRoots(): Promise<void> {
-    let listing = listingCache.get(ROOTS_KEY);
+    let listing = this.state.listing(ROOTS_KEY);
     if (listing === undefined) {
       listing = await fetchTree(null);
-      listingCache.set(ROOTS_KEY, listing);
+      this.state.cacheListing(ROOTS_KEY, listing);
     }
     this.renderListing(this.list, listing, true);
     if (listing.entries.length === 0) {
@@ -189,7 +201,7 @@ export class WorkshopTreePanel implements IContentRenderer {
         missing.textContent = "missing";
         row.appendChild(missing);
       }
-      const expanded = expandedPaths.has(entry.path);
+      const expanded = this.state.isExpanded(entry.path);
       row.setAttribute("aria-expanded", String(expanded));
       const children = document.createElement("ul");
       children.className = "ws-workshop-tree__children";
@@ -206,7 +218,7 @@ export class WorkshopTreePanel implements IContentRenderer {
       });
       // An expanded directory always has a cached listing: expansion and
       // caching happen together in toggle().
-      const cached = listingCache.get(entry.path);
+      const cached = this.state.listing(entry.path);
       if (expanded && cached !== undefined) {
         this.renderListing(children, cached);
       }
@@ -226,13 +238,13 @@ export class WorkshopTreePanel implements IContentRenderer {
     row: HTMLButtonElement,
     children: HTMLUListElement,
   ): Promise<void> {
-    if (expandedPaths.has(entry.path)) {
-      expandedPaths.delete(entry.path);
+    if (this.state.isExpanded(entry.path)) {
+      this.state.collapse(entry.path);
       children.hidden = true;
       row.setAttribute("aria-expanded", "false");
       return;
     }
-    let listing = listingCache.get(entry.path);
+    let listing = this.state.listing(entry.path);
     let fresh = false;
     if (listing === undefined) {
       row.disabled = true;
@@ -242,7 +254,7 @@ export class WorkshopTreePanel implements IContentRenderer {
       } finally {
         row.disabled = false;
       }
-      listingCache.set(entry.path, listing);
+      this.state.cacheListing(entry.path, listing);
     }
     // A fresh fetch follows a failed attempt whose error row is still in
     // the list; clear before rendering. A cached listing re-renders only
@@ -251,7 +263,7 @@ export class WorkshopTreePanel implements IContentRenderer {
       children.textContent = "";
       this.renderListing(children, listing);
     }
-    expandedPaths.add(entry.path);
+    this.state.expand(entry.path);
     children.hidden = false;
     row.setAttribute("aria-expanded", "true");
   }
@@ -351,5 +363,27 @@ export class WorkshopTreePanel implements IContentRenderer {
     }
     this.statusBar?.showLocal(`Removed ${path} from the Workshop`, "info");
     window.dispatchEvent(new CustomEvent(WORKSPACE_CHANGED_EVENT));
+  }
+}
+
+/** Ctrl+B: toggle the Workshop tree panel. */
+export function toggleWorkshopPanel(): void {
+  const dock = getService(DOCK);
+  const existing = dock.getPanel(panelIdFor("tree", {}));
+  if (existing) {
+    dock.removePanel(existing);
+  } else {
+    openInZone("tree", {});
+  }
+}
+
+/** Ctrl+Shift+F: open or activate the Workshop tree and focus it. */
+export function focusWorkshopTree(): void {
+  const panel = openInZone("tree", {});
+  // view.content may be the lazy wrapper while the chunk loads; unwrap
+  // to the real panel before the instanceof check.
+  const content = resolvePanelContent(panel.view.content);
+  if (content instanceof WorkshopTreePanel) {
+    content.focus();
   }
 }

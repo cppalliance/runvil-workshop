@@ -2,15 +2,16 @@
 // the jsdom boot that smoke.mjs originally built inline, extracted so every
 // per-feature slice boots the exact same way. bootWorkbench(name, run)
 // loads dist/index.html into jsdom, stands in fakes for the APIs jsdom
-// lacks (WebSocket, audio capture, fetch, layout metrics), imports the bundled
-// dist/app.js, waits for the app to settle, then runs `run` under the
-// shared disposable-leak check and reports the verdict through the
+// lacks (WebSocket, audio capture, fetch, layout metrics), imports the built
+// dist/app.js (which lazy-loads its feature chunks from dist/chunks/),
+// waits for the app to settle, then runs `run` under the shared
+// disposable-leak check and reports the verdict through the
 // process exit code. Run after `npm run build`.
 // Export-only module: the node --test runner discovers every file under
 // test/, so running this file directly must (and does) exit 0.
-import { readFile } from "node:fs/promises";
+import { readdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { JSDOM } from "jsdom";
 import { assertNoLeaks } from "./leak-check.mjs";
 
@@ -242,23 +243,44 @@ export async function bootWorkbench(name, run) {
   // dist/app.js exports nothing (main.ts is an entry point) and esbuild
   // tree-shakes the unused setDisposableTracker export away, so the leak
   // check's seam is unreachable from outside the bundle. Reattach it by
-  // appending one export to the bundle text and importing the result as a
-  // data URL: the dist bytes execute unmodified, and the appended function
-  // assigns the bundle's own module-scope tracker variable, located by its
-  // single call site in the DisposableStore constructor.
-  const bundleSource = await readFile(path.join(distDir, "app.js"), "utf8");
-  // Minified identifiers may contain $, which \w excludes.
-  const trackerVar = bundleSource.match(/([\w$]+)\?\.trackCreated\(this\)/)?.[1];
+  // appending one export to the bundle text: the dist bytes execute
+  // unmodified, and the appended function assigns the bundle's own
+  // module-scope tracker variable, located by its single call site in the
+  // DisposableStore constructor. With code splitting the tracker may live
+  // in any chunk, so every dist script is scanned; the import goes
+  // through file URLs because the split bundle's relative chunk imports
+  // cannot resolve from a data: URL.
+  let trackerVar = null;
+  let seamPath = null;
+  const distScripts = (await readdir(distDir, { recursive: true }))
+    .filter((name) => name.endsWith(".js"))
+    .map((name) => path.join(distDir, name));
+  for (const scriptPath of distScripts) {
+    const source = await readFile(scriptPath, "utf8");
+    // Minified identifiers may contain $, which \w excludes.
+    const match = source.match(/([\w$]+)\?\.trackCreated\(this\)/);
+    if (match) {
+      trackerVar = match[1];
+      seamPath = scriptPath;
+      // Idempotent: dist is not rebuilt between test runs, so a previous
+      // run's appended export may already be there.
+      if (!source.includes("__setDisposableTracker")) {
+        await writeFile(
+          scriptPath,
+          `${source}\nexport function __setDisposableTracker(next) { ${trackerVar} = next; }\n`,
+        );
+      }
+      break;
+    }
+  }
   if (!trackerVar) {
     throw new Error(
-      "boot.mjs could not locate the disposable tracker seam in dist/app.js; rebuild dist or retune the seam regex",
+      "boot.mjs could not locate the disposable tracker seam in dist/; rebuild dist or retune the seam regex",
     );
   }
-  const patched = `${bundleSource}\nexport function __setDisposableTracker(next) { ${trackerVar} = next; }\n`;
-  const bundle = await import(
-    `data:text/javascript;base64,${Buffer.from(patched, "utf8").toString("base64")}`
-  );
-  const lifecycle = { setDisposableTracker: bundle.__setDisposableTracker };
+  await import(pathToFileURL(path.join(distDir, "app.js")).href);
+  const seam = await import(pathToFileURL(seamPath).href);
+  const lifecycle = { setDisposableTracker: seam.__setDisposableTracker };
 
   const statusBar = window.document.querySelector(".status-bar");
   const statusText = window.document.querySelector(".status-bar__text");

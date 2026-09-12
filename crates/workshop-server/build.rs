@@ -8,6 +8,7 @@ fn main() -> std::process::ExitCode {
     match build_ui::build(build_ui::UiBuild {
         static_files: build_ui::WORKSHOP_STATIC_FILES,
         define_app_version: true,
+        splitting: true,
     }) {
         Ok(()) => std::process::ExitCode::SUCCESS,
         Err(error) => {

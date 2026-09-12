@@ -3,9 +3,13 @@
 // "main" holds document editors, "right" holds the agent session
 // ("bottom" is reserved for later). Placement for a new panel resolves as
 // the per-panel override recorded when the user last moved that panel,
-// then the panel type's declared affinity from panel-types. When every
-// panel in a zone has been closed its Dockview group is gone; the next
-// open into the zone rebuilds the group on its side of the dock.
+// then the panel type's declared affinity from the panel registry. When
+// every panel in a zone has been closed its Dockview group is gone; the
+// next open into the zone rebuilds the group on its side of the dock.
+//
+// The zone state itself (the group map and the placement overrides) lives
+// in the ZoneStateService, resolved through the service registry; this
+// module is the placement behavior over that state.
 
 import "./zones.css";
 
@@ -18,21 +22,28 @@ import type {
 } from "dockview";
 
 import { DisposableStore, type IDisposable } from "../../base/lifecycle";
-import { PANEL_TYPES, isPanelType, type PanelType } from "./panel-types";
+import { DOCK, isPanelType, panelTypeEntry, type PanelType } from "../../services/panel-registry";
+import { getService, registerService } from "../../services/service-registry";
+import {
+  ZoneStateService,
+  ZONE_STATE,
+  type ZoneName,
+  type ZoneState,
+} from "../../services/zone-state-service";
 
-export const ZONE_NAMES = ["left", "main", "right"] as const;
-export type ZoneName = (typeof ZONE_NAMES)[number];
+export { ZONE_NAMES } from "../../services/zone-state-service";
+export type { PanelType } from "../../services/panel-registry";
+export type { ZoneName, ZoneState } from "../../services/zone-state-service";
 
 /** Parameters carried into a panel open; editor opens carry { path }. */
 export type PanelParams = Record<string, unknown>;
 
 let dock: DockviewApi | null = null;
-// Zone name -> live Dockview group id. Entries go stale when the user
-// closes a zone's last panel; openInZone rebuilds the group on demand.
-const zoneGroups = new Map<ZoneName, string>();
-// Panel id -> zone the user last moved it to. Survives panel close so a
-// reopened panel returns to the user's chosen zone; step 15 persists it.
-const zoneOverrides = new Map<string, ZoneName>();
+
+/** The shared zone state: the group map and the placement overrides. */
+function zoneState(): ZoneStateService {
+  return getService(ZONE_STATE);
+}
 
 /**
  * The panel id for one open: editors key by path, new agent panels key by
@@ -56,19 +67,9 @@ function panelTypeFromId(id: string): PanelType | null {
   return isPanelType(name) ? name : null;
 }
 
-/** The zone owning a live group id, if the group is a known zone. */
-function zoneForGroupId(groupId: string): ZoneName | undefined {
-  for (const [zone, id] of zoneGroups) {
-    if (id === groupId) {
-      return zone;
-    }
-  }
-  return undefined;
-}
-
 /** The zone a panel currently lives in, by reverse group lookup. */
 export function zoneOfPanel(panel: IDockviewPanel): ZoneName | undefined {
-  return zoneForGroupId(panel.group.id);
+  return zoneState().zoneForGroupId(panel.group.id);
 }
 
 /**
@@ -77,24 +78,29 @@ export function zoneOfPanel(panel: IDockviewPanel): ZoneName | undefined {
  */
 export function setZoneOverride(panelId: string, zone: ZoneName): void {
   const type = panelTypeFromId(panelId);
-  if (type !== null && PANEL_TYPES[type].defaultZone === zone) {
-    zoneOverrides.delete(panelId);
+  const state = zoneState();
+  if (type !== null && panelTypeEntry(type)?.defaultZone === zone) {
+    state.clearOverride(panelId);
   } else {
-    zoneOverrides.set(panelId, zone);
+    state.setOverride(panelId, zone);
   }
 }
 
 /**
  * Binds the registry to the dock. User drags (always possible: the
  * workbench is never locked) flow back into the override map through
- * onDidMovePanel. Returns the disposable owning that subscription.
+ * onDidMovePanel. The dock itself registers as the DOCK service, so the
+ * commands the feature directories register (save, close, toggle) resolve
+ * the dock from the service registry instead of capturing it. Returns
+ * the disposable owning that subscription.
  */
 export function initZones(dockview: DockviewApi): IDisposable {
   dock = dockview;
+  registerService(DOCK, () => dockview);
   const store = new DisposableStore();
   store.add(
     dockview.onDidMovePanel(({ panel, to }) => {
-      const zone = zoneForGroupId(to.id);
+      const zone = zoneState().zoneForGroupId(to.id);
       if (zone !== undefined) {
         setZoneOverride(panel.id, zone);
       }
@@ -108,7 +114,7 @@ function liveGroup(zone: ZoneName): IDockviewGroupPanel | undefined {
   if (dock === null) {
     return undefined;
   }
-  const id = zoneGroups.get(zone);
+  const id = zoneState().groupFor(zone);
   return id === undefined ? undefined : dock.getGroup(id);
 }
 
@@ -153,7 +159,7 @@ function titleFor(type: PanelType, params: PanelParams): string {
       }
     }
   }
-  return PANEL_TYPES[type].title;
+  return panelTypeEntry(type)?.title ?? type;
 }
 
 /**
@@ -165,14 +171,18 @@ export function openInZone(type: PanelType, params: PanelParams): IDockviewPanel
   if (dock === null) {
     throw new Error("openInZone called before initZones.");
   }
+  const entry = panelTypeEntry(type);
+  if (entry === undefined) {
+    throw new Error(`openInZone called with the unregistered panel type "${type}".`);
+  }
   const id = panelIdFor(type, params);
   const existing = dock.getPanel(id);
   if (existing) {
     existing.api.setActive();
     return existing;
   }
-  const entry = PANEL_TYPES[type];
-  const zone = zoneOverrides.get(id) ?? entry.defaultZone;
+  const state = zoneState();
+  const zone = state.overrideFor(id) ?? entry.defaultZone;
   const group = liveGroup(zone);
   const panel = dock.addPanel({
     id,
@@ -182,31 +192,13 @@ export function openInZone(type: PanelType, params: PanelParams): IDockviewPanel
     params,
     position: group ? { referenceGroup: group.id } : rebuildPosition(zone),
   });
-  zoneGroups.set(zone, panel.group.id);
+  state.setGroup(zone, panel.group.id);
   return panel;
-}
-
-/** Narrows a string to a declared zone name. */
-function isZoneName(name: string): name is ZoneName {
-  return (ZONE_NAMES as readonly string[]).includes(name);
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-/** The persisted placement state: live zone groups and user overrides. */
-export interface ZoneState {
-  readonly zones: Record<string, string>;
-  readonly overrides: Record<string, string>;
 }
 
 /** Snapshots the zone map and placement overrides for layout persistence. */
 export function serializeZoneState(): ZoneState {
-  return {
-    zones: Object.fromEntries(zoneGroups),
-    overrides: Object.fromEntries(zoneOverrides),
-  };
+  return zoneState().serialize();
 }
 
 /**
@@ -216,26 +208,10 @@ export function serializeZoneState(): ZoneState {
  * longer exists.
  */
 export function restoreZoneState(zones: unknown, overrides: unknown): void {
-  zoneGroups.clear();
-  zoneOverrides.clear();
-  if (isRecord(zones)) {
-    for (const [name, groupId] of Object.entries(zones)) {
-      if (isZoneName(name) && typeof groupId === "string") {
-        zoneGroups.set(name, groupId);
-      }
-    }
-  }
-  if (isRecord(overrides)) {
-    for (const [panelId, zone] of Object.entries(overrides)) {
-      if (typeof zone === "string" && isZoneName(zone)) {
-        zoneOverrides.set(panelId, zone);
-      }
-    }
-  }
+  zoneState().restore(zones, overrides);
 }
 
 /** Clears all zone state; the default-layout fallback starts from blank. */
 export function resetZones(): void {
-  zoneGroups.clear();
-  zoneOverrides.clear();
+  zoneState().reset();
 }

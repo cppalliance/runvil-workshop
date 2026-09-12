@@ -379,6 +379,9 @@ press("b");
 check("Ctrl+B closes the Workshop panel", dock2.getPanel("tree") === undefined);
 press("b");
 check("Ctrl+B reopens the Workshop panel", !!dock2.getPanel("tree"));
+// The reopened tree's chunk resolves asynchronously (the panel registry
+// lazy-loads feature directories); let the swap land before focusing.
+await flush();
 
 // Ctrl+Shift+F activates and focuses the Workshop tree.
 press("f", { shiftKey: true });

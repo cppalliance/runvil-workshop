@@ -1,105 +1,111 @@
-// The static panel registry: every Dockview panel kind declared once with
-// its zone affinity, default title, content factory, and optional tab
-// renderer. zones.ts resolves placement from `defaultZone`; main.ts and
-// the tests build Dockview's createComponent / createTabComponent dispatch
-// from here. Adding a panel kind means adding one entry.
+// The dockview renderer seam for the panel registry. The panel kinds
+// themselves - zone affinity, title, tab renderer, and the import thunk
+// that lazy-loads the feature directory - are declared in
+// services/panel-registry.ts; this file holds the DOM side: the LazyPanel
+// that stands in for a panel while its chunk loads (Home Assistant's
+// partial-panel-resolver pattern), the tab renderers, and Dockview's
+// createComponent / createTabComponent dispatch. main.ts and the tests
+// build the dock's dispatch from here.
 
-import type { CreateComponentOptions, IContentRenderer, ITabRenderer, TabPartInitParameters } from "dockview";
+import type {
+  CreateComponentOptions,
+  GroupPanelPartInitParameters,
+  IContentRenderer,
+  ITabRenderer,
+  TabPartInitParameters,
+} from "dockview";
 
 import { Disposable } from "../../base/lifecycle";
-import type { ModelService } from "../../services/model-service";
-import type { SpeechCaptureService } from "../../services/speech-capture";
-import type { SttStatus } from "../stt/stt";
-import { AgentPanel } from "../agent/agent-panel";
+import {
+  AGENT_TAB,
+  PERMANENT_TAB,
+  loadPanelType,
+  panelTypeEntry,
+} from "../../services/panel-registry";
 import { DropdownMenu } from "shared-ui/dropdown";
-import { EditorPanel } from "../editor/editor-panel";
-import { GatewayConfigPanel } from "../gateway/gateway-config-panel";
-import { WorkshopTreePanel, type TreeStatusSink } from "./workshop-panel";
-import type { ZoneName } from "./zones";
+
+export {
+  AGENT_TAB,
+  PERMANENT_TAB,
+  isPanelType,
+  panelTypeEntry,
+  registerPanelFactory,
+  registerPanelType,
+} from "../../services/panel-registry";
+export type { PanelFeatureModule, PanelType, PanelTypeEntry } from "../../services/panel-registry";
 
 /**
- * The composition-root services a panel factory may consume. main.ts
- * passes them through Dockview's createComponent seam, since panel
- * params hold only serializable identity. The status bar serves both
- * the tree's action outcomes and the agent session's dictation reports;
- * the model service feeds the agent session's toolbar picker.
+ * A dockview content renderer standing in for a panel whose feature
+ * chunk is still loading. The element mounts into the dock immediately
+ * (an empty shell keeps the layout stable); when the thunk resolves, the
+ * directory's register() has run and the real panel's element swaps in,
+ * receiving the init parameters dockview delivered at mount. Disposing
+ * before the load resolves cancels the swap.
  */
-export interface PanelServices {
-  readonly statusBar: TreeStatusSink & SttStatus;
-  readonly modelService: ModelService;
-  readonly speechCapture: SpeechCaptureService;
-}
+class LazyPanel extends Disposable implements IContentRenderer {
+  readonly element = document.createElement("div");
+  private inner: (IContentRenderer & { dispose?: () => void }) | null = null;
+  private unloaded = false;
 
-/** One panel kind's static registration. */
-export interface PanelTypeEntry {
-  readonly type: string;
-  /** The zone a new panel opens in when the user has not moved it. */
-  readonly defaultZone: ZoneName;
-  readonly title: string;
-  /** The named tab renderer, or undefined for Dockview's default tab. */
-  readonly tabComponent: string | undefined;
-  readonly factory: (services?: PanelServices) => IContentRenderer;
-}
+  constructor(private readonly type: string) {
+    super();
+    this.element.className = "ws-panel-lazy";
+    this.element.dataset["panelType"] = type;
+  }
 
-/** The registered name of the close-button-free tab renderer. */
-export const PERMANENT_TAB = "permanent";
-/** The registered name of the agent tab renderer with an SPA context menu. */
-export const AGENT_TAB = "agent-tab";
+  init(parameters: GroupPanelPartInitParameters): void {
+    void loadPanelType(this.type)
+      .then((factory) => {
+        if (this.unloaded) {
+          return;
+        }
+        if (factory === undefined) {
+          this.showError(`Unknown panel: ${this.type}`);
+          return;
+        }
+        const renderer = factory();
+        this.inner = renderer;
+        this.element.appendChild(renderer.element);
+        renderer.init(parameters);
+      })
+      .catch((error: unknown) => {
+        if (!this.unloaded) {
+          this.showError(error instanceof Error ? error.message : String(error));
+        }
+      });
+  }
 
-export const PANEL_TYPES = {
-  tree: {
-    type: "tree",
-    defaultZone: "left",
-    title: "Workshop",
-    // The Workshop tree anchors the workbench; its tab has no close
-    // button, so the panel cannot be dismissed from the tab strip.
-    tabComponent: PERMANENT_TAB,
-    factory: (services?: PanelServices): IContentRenderer =>
-      new WorkshopTreePanel(services?.statusBar ?? null),
-  },
-  editor: {
-    type: "editor",
-    defaultZone: "main",
-    title: "Editor",
-    tabComponent: undefined,
-    factory: (): IContentRenderer => new EditorPanel(),
-  },
-  config: {
-    type: "config",
-    defaultZone: "main",
-    title: "Gateway Config",
-    tabComponent: undefined,
-    factory: (): IContentRenderer => new GatewayConfigPanel(),
-  },
-  agent: {
-    type: "agent",
-    defaultZone: "right",
-    title: "Agent Session",
-    tabComponent: AGENT_TAB,
-    factory: (services?: PanelServices): IContentRenderer =>
-      new AgentPanel(services?.statusBar, services?.modelService, services?.speechCapture),
-  },
-} as const satisfies Record<string, PanelTypeEntry>;
+  /** The real panel once the feature chunk has resolved; null before. */
+  get resolvedPanel(): IContentRenderer | null {
+    return this.inner;
+  }
 
-export type PanelType = keyof typeof PANEL_TYPES;
+  private showError(message: string): void {
+    const element = document.createElement("div");
+    element.className = "ws-panel-error";
+    element.setAttribute("role", "alert");
+    element.textContent = message;
+    this.element.replaceChildren(element);
+  }
 
-/** Narrows a Dockview component name to a registered panel type. */
-export function isPanelType(name: string): name is PanelType {
-  return Object.hasOwn(PANEL_TYPES, name);
+  override dispose(): void {
+    this.unloaded = true;
+    this.inner?.dispose?.();
+    this.inner = null;
+    super.dispose();
+  }
 }
 
 /**
- * Dockview's createComponent dispatch: component name -> registered
- * factory. Unknown names should never arrive - every addPanel call goes
- * through openInZone with a registered type - but an unknown name must not
- * break the dock, so it renders a labelled placeholder instead of throwing.
+ * Dockview's createComponent dispatch: component name -> a lazy renderer
+ * for the registered panel kind. Unknown names should never arrive -
+ * every addPanel call goes through openInZone with a registered type -
+ * but an unknown name must not break the dock, so it renders a labelled
+ * placeholder instead of throwing.
  */
-export function createPanelComponent(
-  options: CreateComponentOptions,
-  services?: PanelServices,
-): IContentRenderer {
-  if (isPanelType(options.name)) {
-    return PANEL_TYPES[options.name].factory(services);
+export function createPanelComponent(options: CreateComponentOptions): IContentRenderer {
+  if (panelTypeEntry(options.name) !== undefined) {
+    return new LazyPanel(options.name);
   }
   const element = document.createElement("div");
   element.className = "ws-panel-unknown";
