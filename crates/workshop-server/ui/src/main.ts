@@ -1,6 +1,10 @@
 import "shared-ui/tokens.css";
 import "dockview/dist/styles/dockview.css";
 
+import "./tokens/base.css";
+import "./tokens/semantic.css";
+import "./tokens/component.css";
+
 import { createDockview, themeDark } from "dockview";
 import { createToastStack } from "shared-ui/toast";
 
@@ -10,18 +14,18 @@ import { SpeechCaptureService } from "./services/speech-capture";
 import { UpdateService } from "./services/update-service";
 import { WorkbenchService } from "./services/workbench-service";
 import { WorkshopSocket } from "./services/workshop-socket";
-import { setupGatewayConfigBridge } from "./ui/gateway-config-bridge";
-import { markdownReady } from "./ui/markdown-render";
-import { StatusBar } from "./ui/status-bar";
-import { UpdateView } from "./ui/update-view";
-import { setupWindowChrome } from "./ui/window-chrome";
-import { setupWindowMenus, type ModelMenuService, type ProfileMenuService } from "./ui/window-menu";
-import { setupWorkspaceDrops } from "./ui/workspace-drops";
-import { restoreZoom } from "./ui/zoom";
-import { restoreLayout, startLayoutPersistence } from "./ui/workshop/layout-persistence";
-import { createPanelComponent, createPanelTabComponent } from "./ui/workshop/panel-types";
-import { installShortcuts, toggleWorkshopPanel } from "./ui/workshop/shortcuts";
-import { initZones, openInZone } from "./ui/workshop/zones";
+import { setupGatewayConfigBridge } from "./ui/gateway/gateway-config-bridge";
+import { markdownReady } from "./ui/agent/markdown-render";
+import { StatusBar } from "./ui/status/status-bar";
+import { UpdateView } from "./ui/chrome/update-view";
+import { setupWindowChrome } from "./ui/chrome/window-chrome";
+import { setupWindowMenus, type ModelMenuService, type ProfileMenuService } from "./ui/menu/window-menu";
+import { setupWorkspaceDrops } from "./ui/workspace/workspace-drops";
+import { restoreZoom } from "./ui/chrome/zoom";
+import { restoreLayout, startLayoutPersistence } from "./ui/layout/layout-persistence";
+import { createPanelComponent, createPanelTabComponent } from "./ui/layout/panel-types";
+import { installShortcuts, toggleWorkshopPanel } from "./ui/layout/shortcuts";
+import { initZones, openInZone } from "./ui/layout/zones";
 
 // The root of the ownership tree: every top-level binding registers here,
 // so the whole composition tears down with one dispose() call.

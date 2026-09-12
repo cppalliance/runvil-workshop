@@ -11,10 +11,10 @@ await bootWorkbench("a model selection while the socket is down surfaces on the 
   // onclose: sendFrame checks readyState, and a fired close would start
   // the reconnect and status-reset machinery this test does not exercise.
   wsSocket().readyState = FakeWebSocket.CLOSED;
-  const modelButton = document.querySelector('.window-titlebar__menu[data-menu="model"]');
+  const modelButton = document.querySelector('.ws-window-titlebar__menu[data-menu="model"]');
   modelButton.click();
-  const row = [...modelButton.nextElementSibling.querySelectorAll(".window-titlebar__item")]
-    .find((item) => item.querySelector(".window-titlebar__item-label").textContent === "test-model");
+  const row = [...modelButton.nextElementSibling.querySelectorAll(".ws-window-titlebar__item")]
+    .find((item) => item.querySelector(".ws-window-titlebar__item-label").textContent === "test-model");
   if (!row) {
     failures.push("the Model menu never listed test-model");
     return;

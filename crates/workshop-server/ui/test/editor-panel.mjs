@@ -1,5 +1,5 @@
 // Integration test for the editor panel and EditorSurface contract
-// (src/ui/workshop/editor-panel.ts, editor-surface.ts, and the file
+// (src/ui/editor/editor-panel.ts, editor-surface.ts, and the file
 // read/write half of src/services/workspace-api.ts). Bundles the modules with esbuild
 // and drives them in jsdom.
 //
@@ -23,8 +23,8 @@ const uiDir = path.dirname(fileURLToPath(import.meta.url));
 const bundle = await esbuild.build({
   stdin: {
     contents: `
-      export { EditorPanel } from "./src/ui/workshop/editor-panel.ts";
-      export { CodeMirrorSurface } from "./src/ui/workshop/editor-surface.ts";
+      export { EditorPanel } from "./src/ui/editor/editor-panel.ts";
+      export { CodeMirrorSurface } from "./src/ui/editor/editor-surface.ts";
     `,
     resolveDir: path.join(uiDir, ".."),
     loader: "ts",
@@ -156,7 +156,7 @@ globalThis.fetch = async (url, options) => {
       }),
     };
   }
-  throw new Error(`unexpected fetch in the editor-panel test: ${target}`);
+  throw new Error(`unexpected fetch in the ws-editor-panel test: ${target}`);
 };
 
 // --- A stub EditorSurface: the panel's contract, no editor internals ------
@@ -238,30 +238,30 @@ check("save restores the clean title", params.titles.at(-1) === "a.txt");
 stub.type("local edits\n");
 disk.failNextPut = true;
 await panel.save();
-const overlay = panel.element.querySelector(".editor-conflict-overlay");
+const overlay = panel.element.querySelector(".ws-editor-conflict-overlay");
 check("a stale modified-time token surfaces the conflict dialog", !!overlay);
 check(
   "the conflict dialog is a modal dialog",
-  overlay?.querySelector(".editor-conflict")?.getAttribute("role") === "dialog" &&
-    overlay.querySelector(".editor-conflict")?.getAttribute("aria-modal") === "true",
+  overlay?.querySelector(".ws-editor-conflict")?.getAttribute("role") === "dialog" &&
+    overlay.querySelector(".ws-editor-conflict")?.getAttribute("aria-modal") === "true",
 );
 check("the conflicted save did not write", disk.text === "hello world\n");
 
 // Escape dismisses without resolving the conflict.
 document.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape" }));
-check("Escape dismisses the conflict dialog", !panel.element.querySelector(".editor-conflict-overlay"));
+check("Escape dismisses the conflict dialog", !panel.element.querySelector(".ws-editor-conflict-overlay"));
 check("dismissing leaves the editor dirty", panel.isDirty());
 
 // Reload: the on-disk text replaces the editor's text.
 disk.text = "on disk\n";
 disk.failNextPut = true;
 await panel.save();
-const reloadButton = [...panel.element.querySelectorAll(".editor-conflict__button")].find(
+const reloadButton = [...panel.element.querySelectorAll(".ws-editor-conflict__button")].find(
   (button) => button.textContent === "Reload",
 );
 reloadButton.click();
 await flush();
-check("Reload dismisses the dialog", !panel.element.querySelector(".editor-conflict-overlay"));
+check("Reload dismisses the dialog", !panel.element.querySelector(".ws-editor-conflict-overlay"));
 check(
   "Reload replaces the editor text with the on-disk text",
   stub.opened.at(-1).text === "on disk\n",
@@ -272,13 +272,13 @@ check("Reload clears the dirty state", !panel.isDirty());
 stub.type("mine\n");
 disk.failNextPut = true;
 await panel.save();
-const overwriteButton = [...panel.element.querySelectorAll(".editor-conflict__button")].find(
+const overwriteButton = [...panel.element.querySelectorAll(".ws-editor-conflict__button")].find(
   (button) => button.textContent === "Overwrite",
 );
 const putsBeforeOverwrite = puts.length;
 overwriteButton.click();
 await flush();
-check("Overwrite dismisses the dialog", !panel.element.querySelector(".editor-conflict-overlay"));
+check("Overwrite dismisses the dialog", !panel.element.querySelector(".ws-editor-conflict-overlay"));
 check(
   "Overwrite re-reads the token and writes the editor text",
   puts.length === putsBeforeOverwrite + 1 &&
@@ -294,7 +294,7 @@ stub.type("trap check\n");
 disk.failNextPut = true;
 await panel.save();
 window.document.body.appendChild(panel.element);
-const trapButtons = [...panel.element.querySelectorAll(".editor-conflict__button")];
+const trapButtons = [...panel.element.querySelectorAll(".ws-editor-conflict__button")];
 trapButtons.at(-1).focus();
 document.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Tab" }));
 check("Tab wraps focus from the last button to the first", document.activeElement === trapButtons[0]);
@@ -348,9 +348,9 @@ surface.dispose();
 check("dispose tears the editor down", !surface.element.querySelector(".cm-editor"));
 
 if (failures.length > 0) {
-  console.error(`editor-panel: ${failures.length} failure(s)`);
+  console.error(`ws-editor-panel: ${failures.length} failure(s)`);
   for (const failure of failures) console.error(`  - ${failure}`);
   process.exit(1);
 }
-console.log("editor-panel: all assertions passed");
+console.log("ws-editor-panel: all assertions passed");
 process.exit(0);

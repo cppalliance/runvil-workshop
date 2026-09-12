@@ -1,5 +1,5 @@
 // Integration test for layout boot, persistence, and shortcuts
-// (src/ui/workshop/layout-persistence.ts, shortcuts.ts, the zone-state
+// (src/ui/layout/layout-persistence.ts, shortcuts.ts, the zone-state
 // serialization in zones.ts, and EditorPanel.requestClose). Bundles the
 // modules with esbuild, mounts real Dockview docks in jsdom against the
 // real index.html, and drives the public API. Covers: the layout
@@ -28,18 +28,18 @@ const bundle = await esbuild.build({
         openInZone,
         panelIdFor,
         zoneOfPanel,
-      } from "./src/ui/workshop/zones.ts";
-      export { createPanelComponent, createPanelTabComponent } from "./src/ui/workshop/panel-types.ts";
+      } from "./src/ui/layout/zones.ts";
+      export { createPanelComponent, createPanelTabComponent } from "./src/ui/layout/panel-types.ts";
       export {
         restoreLayout,
         persistLayout,
         startLayoutPersistence,
         LAYOUT_STORAGE_KEY,
         LAYOUT_SCHEMA_VERSION,
-      } from "./src/ui/workshop/layout-persistence.ts";
-      export { installShortcuts } from "./src/ui/workshop/shortcuts.ts";
-      export { EditorPanel } from "./src/ui/workshop/editor-panel.ts";
-      export { StatusBar } from "./src/ui/status-bar.ts";
+      } from "./src/ui/layout/layout-persistence.ts";
+      export { installShortcuts } from "./src/ui/layout/shortcuts.ts";
+      export { EditorPanel } from "./src/ui/editor/editor-panel.ts";
+      export { StatusBar } from "./src/ui/status/status-bar.ts";
     `,
     resolveDir: path.join(uiDir, ".."),
     loader: "ts",
@@ -234,7 +234,7 @@ window.localStorage.clear();
 
 // Builds a dock wired exactly as main.ts wires it, on a fresh element.
 function createDock(element) {
-  element.className = "dock";
+  element.className = "ws-dock";
   window.document.body.appendChild(element);
   return createDockview(element, {
     createComponent: createPanelComponent,
@@ -300,7 +300,7 @@ new StatusBar();
 check("the status bar is a direct child of body",
   !!window.document.querySelector("body > .status-bar"));
 check("the status bar is outside the shell and the dock",
-  window.document.querySelector(".shell .status-bar") === null &&
+  window.document.querySelector(".ws-shell .status-bar") === null &&
     window.document.querySelector("#dock .status-bar") === null);
 check("the status bar never enters the serialized layout",
   !JSON.stringify(envelope.layout).includes("status-bar"));
@@ -363,7 +363,7 @@ check("Ctrl+S saves the active editor",
 press("w");
 check("Ctrl+W closes the active editor", dock2.getPanel(editorAId) === undefined);
 check("a clean close does not prompt",
-  window.document.querySelector(".editor-close-overlay") === null);
+  window.document.querySelector(".ws-editor-close-overlay") === null);
 
 // Ctrl+Tab / Ctrl+Shift+Tab cycle the editors. Reopen A so two exist.
 openInZone("editor", { path: FILE_A });
@@ -482,7 +482,7 @@ cleanPanel.init(fakeParameters(`${ROOT}\\clean.txt`, () => { cleanClosed = true;
 await flush();
 cleanPanel.requestClose();
 check("closing a clean editor skips the prompt",
-  cleanClosed && cleanPanel.element.querySelector(".editor-close-overlay") === null);
+  cleanClosed && cleanPanel.element.querySelector(".ws-editor-close-overlay") === null);
 
 // A dirty panel prompts; Cancel keeps it, Discard closes it.
 let dirtyClosed = false;
@@ -493,18 +493,18 @@ await flush();
 window.document.body.appendChild(dirtyPanel.element);
 dirtyStub.type("unsaved\n");
 dirtyPanel.requestClose();
-const closeOverlay = dirtyPanel.element.querySelector(".editor-close-overlay");
+const closeOverlay = dirtyPanel.element.querySelector(".ws-editor-close-overlay");
 check("closing a dirty editor prompts instead of closing", !dirtyClosed && !!closeOverlay);
 check("the close prompt is a modal dialog",
-  closeOverlay?.querySelector(".editor-close")?.getAttribute("role") === "dialog" &&
-    closeOverlay.querySelector(".editor-close")?.getAttribute("aria-modal") === "true");
+  closeOverlay?.querySelector(".ws-editor-close")?.getAttribute("role") === "dialog" &&
+    closeOverlay.querySelector(".ws-editor-close")?.getAttribute("aria-modal") === "true");
 const closeButton = (label) =>
-  [...dirtyPanel.element.querySelectorAll(".editor-close__button")].find(
+  [...dirtyPanel.element.querySelectorAll(".ws-editor-close__button")].find(
     (button) => button.textContent === label,
   );
 closeButton("Cancel").click();
 check("Cancel keeps the dirty editor open",
-  !dirtyClosed && dirtyPanel.element.querySelector(".editor-close-overlay") === null);
+  !dirtyClosed && dirtyPanel.element.querySelector(".ws-editor-close-overlay") === null);
 check("Cancel leaves the editor dirty", dirtyPanel.isDirty());
 dirtyPanel.requestClose();
 closeButton("Discard").click();
@@ -519,7 +519,7 @@ await flush();
 saveStub.type("keep me\n");
 const putsBeforeDialogSave = puts.length;
 savePanel.requestClose();
-[...savePanel.element.querySelectorAll(".editor-close__button")]
+[...savePanel.element.querySelectorAll(".ws-editor-close__button")]
   .find((button) => button.textContent === "Save")
   .click();
 await flush();

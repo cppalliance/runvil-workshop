@@ -1,0 +1,45 @@
+/* Styles for about-dialog.ts, which imports this file; esbuild bundles it
+   into dist/app.css. Themed values come from the :root tokens in shared-ui/tokens.css. */
+
+/* About dialog: a centered modal over a dimmed backdrop. Structural only,
+   like the title-bar popovers in window-menu.css. */
+.ws-about-dialog-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--ws-overlay-scrim);
+}
+
+.ws-about-dialog {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: var(--space-md);
+  min-width: var(--ws-about-min-width);
+  padding: var(--space-xl);
+  background: var(--bg-raised);
+  border: var(--ws-border-width) solid var(--border);
+  border-radius: var(--radius);
+}
+
+.ws-about-dialog__title,
+.ws-about-dialog__line {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
+.ws-about-dialog__check,
+.ws-about-dialog__close {
+  min-height: var(--ws-button-min-height);
+  padding: 0 var(--space-md);
+  color: var(--text);
+  background: var(--bg-hover);
+  border: 0;
+  border-radius: var(--radius-sm);
+}
+
+.ws-about-dialog__check:disabled {
+  color: var(--text-tertiary);
+}

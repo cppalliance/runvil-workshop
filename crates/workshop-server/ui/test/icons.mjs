@@ -1,4 +1,4 @@
-// Unit test for the lucide-backed icon strings (src/ui/workshop/icons.ts).
+// Unit test for the lucide-backed icon strings (src/ui/shared/icons.ts).
 // Bundles the module with esbuild, imports it via a data URL under jsdom
 // (lucide's createElement needs a document at module load), and asserts
 // every exported icon is a parseable inline SVG string carrying the
@@ -17,7 +17,7 @@ globalThis.window = dom.window;
 globalThis.document = dom.window.document;
 
 const result = await esbuild.build({
-  entryPoints: [path.join(uiDir, "..", "src", "ui", "workshop", "icons.ts")],
+  entryPoints: [path.join(uiDir, "..", "src", "ui", "shared", "icons.ts")],
   bundle: true,
   write: false,
   format: "esm",

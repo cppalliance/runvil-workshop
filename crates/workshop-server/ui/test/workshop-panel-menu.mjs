@@ -1,5 +1,5 @@
 // Unit test for the Workshop tree's workspace management
-// (src/ui/workshop/workshop-panel.ts): the root-row context menu, the
+// (src/ui/layout/workshop-panel.ts): the root-row context menu, the
 // missing-root rendering, and the Add Folder flows. Bundles the panel
 // with esbuild - with "@tauri-apps/plugin-dialog" aliased to the scripted
 // stub in test/helpers - and drives it against jsdom. Covers: a missing
@@ -39,7 +39,7 @@ globalThis.Node = window.Node;
 
 const bundle = await esbuild.build({
   stdin: {
-    contents: `export { WorkshopTreePanel } from "./src/ui/workshop/workshop-panel.ts";`,
+    contents: `export { WorkshopTreePanel } from "./src/ui/layout/workshop-panel.ts";`,
     resolveDir: path.join(uiDir, ".."),
     loader: "ts",
   },
@@ -125,8 +125,8 @@ function menu() {
 }
 
 function rowByName(panel, name) {
-  return [...panel.element.querySelectorAll(".workshop-tree__row")].find(
-    (row) => row.querySelector(".workshop-tree__name")?.textContent === name,
+  return [...panel.element.querySelectorAll(".ws-workshop-tree__row")].find(
+    (row) => row.querySelector(".ws-workshop-tree__name")?.textContent === name,
   );
 }
 
@@ -143,16 +143,16 @@ await flush();
   check("both granted roots render as rows", !!gone && !!live);
   check(
     "a missing root carries the strikethrough/danger modifier class",
-    gone?.classList.contains("workshop-tree__row--missing") === true,
+    gone?.classList.contains("ws-workshop-tree__row--missing") === true,
   );
   check(
     'a missing root carries a "missing" text label beside its name',
-    gone?.querySelector(".workshop-tree__missing")?.textContent === "missing",
+    gone?.querySelector(".ws-workshop-tree__missing")?.textContent === "missing",
   );
   check(
     "a live root carries neither the modifier class nor the label",
-    live?.classList.contains("workshop-tree__row--missing") === false &&
-      live?.querySelector(".workshop-tree__missing") === null,
+    live?.classList.contains("ws-workshop-tree__row--missing") === false &&
+      live?.querySelector(".ws-workshop-tree__missing") === null,
   );
 }
 
@@ -209,7 +209,7 @@ await flush();
 // --- The header "+" button is keyboard-reachable -----------------------------
 
 {
-  const add = panelA.element.querySelector(".workshop-tree__add");
+  const add = panelA.element.querySelector(".ws-workshop-tree__add");
   check("the header renders an add-folder button", add instanceof window.HTMLButtonElement);
   check("the add button is not removed from the tab order", add?.tabIndex === 0);
   check("the add button has an accessible name", (add?.getAttribute("aria-label") ?? "").includes("Add Folder"));
@@ -229,21 +229,21 @@ panelA.dispose();
   window.document.body.appendChild(panelB.element);
   await flush();
 
-  panelB.element.querySelector(".workshop-tree__add").click();
+  panelB.element.querySelector(".ws-workshop-tree__add").click();
   await flush();
   check(
     "the desktop add opens the native directory picker",
     window.__TAURI_DIALOG__.calls.length === 1 &&
       window.__TAURI_DIALOG__.calls[0].directory === true,
   );
-  check("the desktop add opens no typed-path dialog", panelB.element.querySelector(".workspace-add-overlay") === null);
+  check("the desktop add opens no typed-path dialog", panelB.element.querySelector(".ws-workspace-add-overlay") === null);
 
   // A cancelled pick resolves null: nothing grants.
   check("a cancelled pick grants nothing", grants.length === 0);
 
   const changesBefore = workspaceChanges;
   window.__TAURI_DIALOG__.answer = "C:\\picked";
-  panelB.element.querySelector(".workshop-tree__add").click();
+  panelB.element.querySelector(".ws-workshop-tree__add").click();
   await flush();
   check("a picked path is granted", grants.join(",") === "C:\\picked");
   check("a picked-path grant announces one workspace change", workspaceChanges === changesBefore + 1);
@@ -274,7 +274,7 @@ panelA.dispose();
   );
   items[0].click();
 
-  const overlay = panelC.element.querySelector(".workspace-add-overlay");
+  const overlay = panelC.element.querySelector(".ws-workspace-add-overlay");
   check("the browser add opens the path dialog", overlay !== null);
   const label = overlay?.querySelector('label[for="workspace-add-path"]');
   const input = overlay?.querySelector("input#workspace-add-path");
@@ -293,7 +293,7 @@ panelA.dispose();
   addButton.click();
   await flush();
   check("Add grants the typed path", grants.join(",") === "C:\\picked,C:\\typed");
-  check("the dialog dismisses after Add", panelC.element.querySelector(".workspace-add-overlay") === null);
+  check("the dialog dismisses after Add", panelC.element.querySelector(".ws-workspace-add-overlay") === null);
   panelC.dispose();
 }
 
@@ -305,7 +305,7 @@ panelA.dispose();
   window.document.body.appendChild(panelD.element);
   await flush();
 
-  panelD.element.querySelector(".workshop-tree__add").click();
+  panelD.element.querySelector(".ws-workshop-tree__add").click();
   const input = panelD.element.querySelector("input#workspace-add-path");
   const grantsBefore = grants.length;
   const pressEnter = (target) => {
@@ -318,7 +318,7 @@ panelA.dispose();
   check("Enter with an empty field submits nothing", grants.length === grantsBefore);
   check(
     "Enter with an empty field keeps the dialog open",
-    panelD.element.querySelector(".workspace-add-overlay") !== null,
+    panelD.element.querySelector(".ws-workspace-add-overlay") !== null,
   );
 
   input.value = "C:\\entered";
@@ -326,7 +326,7 @@ panelA.dispose();
   pressEnter(input);
   await flush();
   check("Enter with a typed path grants it", grants[grants.length - 1] === "C:\\entered");
-  check("Enter dismisses the dialog", panelD.element.querySelector(".workspace-add-overlay") === null);
+  check("Enter dismisses the dialog", panelD.element.querySelector(".ws-workspace-add-overlay") === null);
 
   // A grant the server refuses (a bad path never validated client-side)
   // paints the status bar and announces no workspace change.
@@ -336,7 +336,7 @@ panelA.dispose();
     json: async () => ({ error: { message: "path is not absolute", code: "not_absolute" } }),
   });
   const changesBefore = workspaceChanges;
-  panelD.element.querySelector(".workshop-tree__add").click();
+  panelD.element.querySelector(".ws-workshop-tree__add").click();
   const retry = panelD.element.querySelector("input#workspace-add-path");
   retry.value = "relative\\path";
   retry.dispatchEvent(new window.Event("input", { bubbles: true }));

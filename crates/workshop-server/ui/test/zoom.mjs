@@ -1,6 +1,6 @@
-// Unit test for the global zoom (src/ui/zoom.ts), its keybindings in
-// src/ui/workshop/shortcuts.ts, and its Window menu entries in
-// src/ui/window-menu.ts. Bundles the TS modules with esbuild into one
+// Unit test for the global zoom (src/ui/chrome/zoom.ts), its keybindings in
+// src/ui/layout/shortcuts.ts, and its Window menu entries in
+// src/ui/menu/window-menu.ts. Bundles the TS modules with esbuild into one
 // module graph - so the menu rows, the keydown listener, and the test all
 // share one zoom state - with "@tauri-apps/api/window" and
 // "@tauri-apps/api/webviewWindow" aliased to recording stubs in
@@ -26,8 +26,8 @@ const html = await readFile(path.join(uiDir, "..", "index.html"), "utf8");
 const bundle = await esbuild.build({
   stdin: {
     contents: `
-      export { installShortcuts } from "./src/ui/workshop/shortcuts.ts";
-      export { setupWindowMenus } from "./src/ui/window-menu.ts";
+      export { installShortcuts } from "./src/ui/layout/shortcuts.ts";
+      export { setupWindowMenus } from "./src/ui/menu/window-menu.ts";
       export {
         getZoom,
         restoreZoom,
@@ -35,7 +35,7 @@ const bundle = await esbuild.build({
         zoomIn,
         zoomOut,
         ZOOM_STORAGE_KEY,
-      } from "./src/ui/zoom.ts";
+      } from "./src/ui/chrome/zoom.ts";
     `,
     resolveDir: path.join(uiDir, ".."),
     loader: "ts",
@@ -252,8 +252,8 @@ async function scenario({ desktop = false } = {}) {
   const windowButton = window.document.querySelector('[data-menu="window"]');
   const popover = windowButton.nextElementSibling;
   const itemByLabel = (label) =>
-    [...popover.querySelectorAll(".window-titlebar__item")].find(
-      (item) => item.querySelector(".window-titlebar__item-label").textContent === label,
+    [...popover.querySelectorAll(".ws-window-titlebar__item")].find(
+      (item) => item.querySelector(".ws-window-titlebar__item-label").textContent === label,
     );
   windowButton.click();
   const zoomInRow = itemByLabel("Zoom In");
@@ -265,9 +265,9 @@ async function scenario({ desktop = false } = {}) {
   );
   check(
     "the zoom rows show their shortcut hints",
-    zoomInRow?.querySelector(".window-titlebar__shortcut")?.textContent === "Ctrl+=" &&
-      zoomOutRow?.querySelector(".window-titlebar__shortcut")?.textContent === "Ctrl+-" &&
-      resetRow?.querySelector(".window-titlebar__shortcut")?.textContent === "Ctrl+0",
+    zoomInRow?.querySelector(".ws-window-titlebar__shortcut")?.textContent === "Ctrl+=" &&
+      zoomOutRow?.querySelector(".ws-window-titlebar__shortcut")?.textContent === "Ctrl+-" &&
+      resetRow?.querySelector(".ws-window-titlebar__shortcut")?.textContent === "Ctrl+0",
   );
   zoomInRow.click();
   check("the menu's Zoom In zooms in", module.getZoom() === 1.1);

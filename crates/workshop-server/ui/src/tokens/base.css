@@ -1,0 +1,34 @@
+/* Tier 1 - base primitives: the only stylesheet where raw values live.
+   Component CSS never hardcodes a color, size, or spacing; it references
+   semantic tokens, which resolve to these primitives. */
+:root {
+  /* Size scale (px primitives, named by value) */
+  --ws-size-1: 1px;
+  --ws-size-2: 2px;
+  --ws-size-4: 4px;
+  --ws-size-5: 5px;
+  --ws-size-6: 6px;
+  --ws-size-8: 8px;
+  --ws-size-11: 11px;
+  --ws-size-16: 16px;
+  --ws-size-18: 18px;
+  --ws-size-22: 22px;
+  --ws-size-24: 24px;
+  --ws-size-26: 26px;
+  --ws-size-150: 150px;
+  --ws-size-180: 180px;
+  --ws-size-200: 200px;
+  --ws-size-240: 240px;
+  --ws-size-260: 260px;
+  --ws-size-320: 320px;
+  --ws-size-360: 360px;
+  --ws-size-560: 560px;
+
+  /* Size scale (rem primitives, named by value) */
+  --ws-size-rem-0-55: 0.55rem;
+  --ws-size-rem-12: 12rem;
+
+  /* Shadow ink */
+  --ws-shadow-color-overlay: rgba(0, 0, 0, 0.35);
+  --ws-shadow-color-scrim: rgba(0, 0, 0, 0.5);
+}

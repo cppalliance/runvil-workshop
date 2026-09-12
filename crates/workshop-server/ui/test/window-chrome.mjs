@@ -1,4 +1,4 @@
-// Unit test for the custom window title bar (src/ui/window-chrome.ts). Bundles
+// Unit test for the custom window title bar (src/ui/chrome/window-chrome.ts). Bundles
 // the TS module with esbuild - with "@tauri-apps/api/window" aliased to the
 // recording stub in test/helpers - imports it via a data URL, and drives it
 // against jsdom built from the real index.html. Covers: without
@@ -19,7 +19,7 @@ const uiDir = path.dirname(fileURLToPath(import.meta.url));
 const html = await readFile(path.join(uiDir, "..", "index.html"), "utf8");
 
 const bundle = await esbuild.build({
-  entryPoints: [path.join(uiDir, "..", "src", "ui", "window-chrome.ts")],
+  entryPoints: [path.join(uiDir, "..", "src", "ui", "chrome", "window-chrome.ts")],
   bundle: true,
   write: false,
   format: "esm",
@@ -65,7 +65,7 @@ function scenario({ desktop }) {
   return {
     window,
     chrome,
-    bar: window.document.querySelector(".window-titlebar"),
+    bar: window.document.querySelector(".ws-window-titlebar"),
     stub: () => window.__TAURI_STUB__,
   };
 }
@@ -75,7 +75,7 @@ function scenario({ desktop }) {
 {
   const { window, bar } = scenario({ desktop: false });
   check("browser mode reveals the bar", bar.hidden === false);
-  const controls = bar.querySelector(".window-titlebar__controls");
+  const controls = bar.querySelector(".ws-window-titlebar__controls");
   check("browser mode hides the window-control cluster", controls.hidden === true);
   check("browser mode never installs the Tauri internals", !("__TAURI_INTERNALS__" in window));
   check("browser mode makes no native call", window.__TAURI_STUB__ === undefined);
@@ -103,7 +103,7 @@ function scenario({ desktop }) {
   check("desktop mode reveals the bar", bar.hidden === false);
   check(
     "desktop mode keeps the window-control cluster visible",
-    bar.querySelector(".window-titlebar__controls").hidden === false,
+    bar.querySelector(".ws-window-titlebar__controls").hidden === false,
   );
 
   const callsAfterClick = (command) => {
@@ -118,7 +118,7 @@ function scenario({ desktop }) {
   );
   check("close calls the window method", callsAfterClick("close") === "close");
 
-  const drag = bar.querySelector(".window-titlebar__drag");
+  const drag = bar.querySelector(".ws-window-titlebar__drag");
   stub().calls.length = 0;
   drag.dispatchEvent(new window.MouseEvent("pointerdown", { button: 0, bubbles: true }));
   check("primary pointerdown in the empty center starts the drag", stub().calls.join(",") === "drag");
@@ -133,8 +133,8 @@ function scenario({ desktop }) {
   // SVGSVGElement has no `hidden` IDL property, and assigning one would
   // only create an inert expando that no stylesheet can see.
   const maximize = bar.querySelector('[data-command="toggle-maximize"]');
-  const maximizeGlyph = maximize.querySelector(".window-titlebar__glyph--maximize");
-  const restoreGlyph = maximize.querySelector(".window-titlebar__glyph--restore");
+  const maximizeGlyph = maximize.querySelector(".ws-window-titlebar__glyph--maximize");
+  const restoreGlyph = maximize.querySelector(".ws-window-titlebar__glyph--restore");
 
   await flush();
   check(

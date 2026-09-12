@@ -1,0 +1,12 @@
+.ws-agent-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--ws-agent-toolbar-gap);
+  min-block-size: var(--height-base);
+  padding: 0;
+  border-block-start: none;
+}
+
+.ws-agent-toolbar > .ws-token-ring {
+  margin-inline-start: auto;
+}

@@ -11,7 +11,7 @@ const bundle = await esbuild.build({
       export {
         createTakeRegistry,
         reduceTakeRegistry,
-      } from "./src/ui/take-registry.ts";
+      } from "./src/ui/take/take-registry.ts";
     `,
     resolveDir: path.join(uiDir, ".."),
     loader: "ts",

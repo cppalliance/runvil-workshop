@@ -17,16 +17,16 @@ await bootWorkbench("models push refreshes the catalog, snapshots move the selec
   // The push must observably reach the Model menu - the onModels ->
   // setModels wiring in main.ts: open the menu and read its rows off the
   // catalog, plus which row carries the checked mark.
-  const modelButton = document.querySelector('.window-titlebar__menu[data-menu="model"]');
+  const modelButton = document.querySelector('.ws-window-titlebar__menu[data-menu="model"]');
   const menuState = () => {
     modelButton.click();
     const rows = [...modelButton.nextElementSibling.querySelectorAll('[role="menuitemradio"]')];
     const labels = rows.map(
-      (row) => row.querySelector(".window-titlebar__item-label")?.textContent ?? "",
+      (row) => row.querySelector(".ws-window-titlebar__item-label")?.textContent ?? "",
     );
     const checked = rows
       .filter((row) => row.getAttribute("aria-checked") === "true")
-      .map((row) => row.querySelector(".window-titlebar__item-label")?.textContent ?? "");
+      .map((row) => row.querySelector(".ws-window-titlebar__item-label")?.textContent ?? "");
     modelButton.click();
     return { labels, checked };
   };

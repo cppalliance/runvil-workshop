@@ -12,8 +12,8 @@ await bootWorkbench("dictation is wired into the booted agent session", async (c
 
   // The session view (and its mic) shows once a session is acknowledged.
   emitAgent({ type: "agent_session", session: "s1", agent: "chat" });
-  const mic = document.querySelector("#dock .agent-session__mic");
-  const input = document.querySelector("#dock .prompt-input__editor");
+  const mic = document.querySelector("#dock .ws-agent-session__mic");
+  const input = document.querySelector("#dock .ws-prompt-input__editor");
   if (!mic || !input) {
     failures.push("the agent session mounted no mic beside its input");
     return;

@@ -1,4 +1,4 @@
-// The token ring (src/ui/token-ring.ts) in jsdom: an SVG gauge with a
+// The token ring (src/ui/chrome/token-ring.ts) in jsdom: an SVG gauge with a
 // track circle and a progress circle whose stroke-dashoffset encodes
 // the context-usage percentage. The default provider stub returns 0%
 // (an empty ring); an injected provider or setPercentage drives
@@ -19,7 +19,7 @@ const bundle = await esbuild.build({
   stdin: {
     contents: `
       export * as lifecycle from "./src/base/lifecycle.ts";
-      export { TokenRing } from "./src/ui/token-ring.ts";
+      export { TokenRing } from "./src/ui/chrome/token-ring.ts";
     `,
     resolveDir: path.join(testDir, ".."),
     loader: "ts",
@@ -71,9 +71,9 @@ await assertNoLeaks(lifecycle, async () => {
     const ring = new TokenRing();
     document.body.appendChild(ring.element);
     check(
-      "the ring is an svg carrying the token-ring class",
+      "the ring is an svg carrying the ws-token-ring class",
       ring.element.tagName === "svg" &&
-        ring.element.getAttribute("class") === "token-ring",
+        ring.element.getAttribute("class") === "ws-token-ring",
     );
     check(
       "the svg uses the 16px viewBox",
@@ -82,8 +82,8 @@ await assertNoLeaks(lifecycle, async () => {
     const [background, progress] = circles(ring);
     check(
       "the ring renders a background circle then a progress circle",
-      background?.getAttribute("class") === "token-ring-background" &&
-        progress?.getAttribute("class") === "token-ring-progress",
+      background?.getAttribute("class") === "ws-token-ring-background" &&
+        progress?.getAttribute("class") === "ws-token-ring-progress",
     );
     check(
       "both circles share the center, radius, and stroke width",
@@ -128,7 +128,7 @@ await assertNoLeaks(lifecycle, async () => {
       closeTo(
         Number(
           ring.element
-            .querySelector(".token-ring-progress")
+            .querySelector(".ws-token-ring-progress")
             ?.getAttribute("stroke-dashoffset"),
         ),
         CIRCUMFERENCE,
@@ -141,7 +141,7 @@ await assertNoLeaks(lifecycle, async () => {
 
   {
     const ring = new TokenRing(() => 25);
-    const progress = ring.element.querySelector(".token-ring-progress");
+    const progress = ring.element.querySelector(".ws-token-ring-progress");
     check(
       "an injected provider sets the initial percentage",
       ring.percentage === 25 && ring.element.getAttribute("aria-valuenow") === "25",
@@ -193,9 +193,9 @@ await assertNoLeaks(lifecycle, async () => {
 });
 
 if (failures.length > 0) {
-  console.error(`token-ring: ${failures.length} failure(s)`);
+  console.error(`ws-token-ring: ${failures.length} failure(s)`);
   for (const failure of failures) console.error(`  - ${failure}`);
   process.exit(1);
 }
-console.log("token-ring: all assertions passed");
+console.log("ws-token-ring: all assertions passed");
 process.exit(0);

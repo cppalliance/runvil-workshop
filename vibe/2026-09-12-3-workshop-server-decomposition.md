@@ -451,7 +451,7 @@ Verification: `cargo clippy --all-targets --all-features -- -D warnings` clean w
 
 <step-6>
 
-### Step 6: SPA directory split, CSS colocation, and design tokens
+### Step 6: SPA directory split, CSS colocation, and design tokens [completed]
 
 - Component: SPA Restructuring
 

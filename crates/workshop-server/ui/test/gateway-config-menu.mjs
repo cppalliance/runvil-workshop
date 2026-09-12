@@ -15,9 +15,9 @@ await bootWorkbench("the Gateway Config menu item opens the panel", async ({ win
   }
   windowButton.click();
   const popover = windowButton.nextElementSibling;
-  const items = [...popover.querySelectorAll(".window-titlebar__item")];
+  const items = [...popover.querySelectorAll(".ws-window-titlebar__item")];
   const labels = items.map(
-    (item) => item.querySelector(".window-titlebar__item-label")?.textContent,
+    (item) => item.querySelector(".ws-window-titlebar__item-label")?.textContent,
   );
   const configItem = items[labels.indexOf("Gateway Config")];
   if (!configItem) {
@@ -31,7 +31,7 @@ await bootWorkbench("the Gateway Config menu item opens the panel", async ({ win
   configItem.click();
   // The panel mounts the iframe synchronously (no async origin probe).
   await sleep(50);
-  const iframe = document.querySelector(".gateway-config-panel__frame");
+  const iframe = document.querySelector(".ws-gateway-config-panel__frame");
   if (!iframe) {
     failures.push("activating Gateway Config never mounted the panel iframe");
     return;
@@ -54,12 +54,12 @@ await bootWorkbench("the Gateway Config menu item opens the panel", async ({ win
 
   // A second activation focuses the existing panel; it never duplicates.
   windowButton.click();
-  const again = [...windowButton.nextElementSibling.querySelectorAll(".window-titlebar__item")].find(
-    (item) => item.querySelector(".window-titlebar__item-label")?.textContent === "Gateway Config",
+  const again = [...windowButton.nextElementSibling.querySelectorAll(".ws-window-titlebar__item")].find(
+    (item) => item.querySelector(".ws-window-titlebar__item-label")?.textContent === "Gateway Config",
   );
   again?.click();
   await sleep(100);
-  const frames = document.querySelectorAll(".gateway-config-panel__frame");
+  const frames = document.querySelectorAll(".ws-gateway-config-panel__frame");
   if (frames.length !== 1) {
     failures.push(`reopening Gateway Config left ${frames.length} iframes, expected 1`);
   }
@@ -77,7 +77,7 @@ await bootWorkbench("the Gateway Config menu item opens the panel", async ({ win
   closeAction.dispatchEvent(new window.PointerEvent("pointerdown", { bubbles: true }));
   closeAction.click();
   await sleep(50);
-  if (document.querySelector(".gateway-config-panel__frame")) {
+  if (document.querySelector(".ws-gateway-config-panel__frame")) {
     failures.push("closing the tab did not remove the panel");
   }
 });

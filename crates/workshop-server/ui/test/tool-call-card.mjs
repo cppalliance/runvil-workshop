@@ -1,4 +1,4 @@
-// The tool-call card (src/ui/tool-call-card.ts) in jsdom: a
+// The tool-call card (src/ui/agent/tool-call-card.ts) in jsdom: a
 // <details>/<summary> card whose header carries the batch's tool name
 // with a call-count badge and a status indicator, whose body shows each
 // call's arguments as Shiki-highlighted JSON (through Step 2's
@@ -18,8 +18,8 @@ const testDir = path.dirname(fileURLToPath(import.meta.url));
 const bundle = await esbuild.build({
   stdin: {
     contents: `
-      export { ToolCallCard } from "./src/ui/tool-call-card.ts";
-      export { markdownReady } from "./src/ui/markdown-render.ts";
+      export { ToolCallCard } from "./src/ui/agent/tool-call-card.ts";
+      export { markdownReady } from "./src/ui/agent/markdown-render.ts";
     `,
     resolveDir: path.join(testDir, ".."),
     loader: "ts",
@@ -75,23 +75,23 @@ function makeItem(overrides = {}) {
 
 {
   const card = new ToolCallCard(makeItem(), { running: false });
-  const summary = card.element.querySelector(".tool-call-card__summary");
+  const summary = card.element.querySelector(".ws-tool-call-card__summary");
   check(
     "the card is a details element whose first child is its summary",
     card.element.tagName === "DETAILS" && card.element.firstElementChild === summary,
   );
   check(
     "the header shows the batch's shared tool name",
-    summary?.querySelector(".tool-call-card__name")?.textContent === "read_file",
+    summary?.querySelector(".ws-tool-call-card__name")?.textContent === "read_file",
   );
   check(
     "the header badge shows the call count",
-    summary?.querySelector(".tool-call-card__count")?.textContent === "2",
+    summary?.querySelector(".ws-tool-call-card__count")?.textContent === "2",
   );
   check(
     "the header carries a status indicator with a text state for assistive tech",
-    summary?.querySelector(".tool-call-card__status") !== null &&
-      summary?.querySelector(".tool-call-card__sr")?.textContent === "Completed",
+    summary?.querySelector(".ws-tool-call-card__status") !== null &&
+      summary?.querySelector(".ws-tool-call-card__sr")?.textContent === "Completed",
   );
 }
 
@@ -107,7 +107,7 @@ function makeItem(overrides = {}) {
   );
   check(
     "a mixed-name batch falls back to a generic header",
-    card.element.querySelector(".tool-call-card__name")?.textContent === "Tool calls",
+    card.element.querySelector(".ws-tool-call-card__name")?.textContent === "Tool calls",
   );
 }
 
@@ -118,7 +118,7 @@ function makeItem(overrides = {}) {
   );
   check(
     "a batch whose only call has no name falls back to a generic header",
-    card.element.querySelector(".tool-call-card__name")?.textContent === "Tool call",
+    card.element.querySelector(".ws-tool-call-card__name")?.textContent === "Tool call",
   );
 }
 
@@ -132,7 +132,7 @@ function makeItem(overrides = {}) {
     }),
     { running: false },
   );
-  const labels = [...card.element.querySelectorAll(".tool-call-card__call-name")];
+  const labels = [...card.element.querySelectorAll(".ws-tool-call-card__call-name")];
   check(
     "a nameless call in a multi-call batch gets a generic label",
     labels[1]?.textContent === "Tool call",
@@ -143,7 +143,7 @@ function makeItem(overrides = {}) {
 
 {
   const card = new ToolCallCard(makeItem(), { running: false });
-  const args = [...card.element.querySelectorAll(".tool-call-card__args pre")];
+  const args = [...card.element.querySelectorAll(".ws-tool-call-card__args pre")];
   check(
     "the body renders one highlighted args block per call",
     args.length === 2 && args.every((pre) => pre.classList.contains("shiki")),
@@ -155,7 +155,7 @@ function makeItem(overrides = {}) {
   );
   check(
     "a multi-call batch labels each call block",
-    card.element.querySelectorAll(".tool-call-card__call-name").length === 2,
+    card.element.querySelectorAll(".ws-tool-call-card__call-name").length === 2,
   );
 }
 
@@ -166,7 +166,7 @@ function makeItem(overrides = {}) {
   );
   check(
     "a call without arguments renders no args block",
-    card.element.querySelector(".tool-call-card__args") === null,
+    card.element.querySelector(".ws-tool-call-card__args") === null,
   );
 }
 
@@ -177,7 +177,7 @@ function makeItem(overrides = {}) {
     }),
     { running: false },
   );
-  const args = card.element.querySelector(".tool-call-card__args");
+  const args = card.element.querySelector(".ws-tool-call-card__args");
   check(
     "hostile markup in call args lands as escaped text, never live elements",
     args?.querySelector("script") === null &&
@@ -191,11 +191,11 @@ function makeItem(overrides = {}) {
   });
   check(
     "an unparsed batch falls back to its raw text",
-    card.element.querySelector(".tool-call-card__raw")?.textContent === "not json at all",
+    card.element.querySelector(".ws-tool-call-card__raw")?.textContent === "not json at all",
   );
   check(
     "an unparsed batch renders no count badge",
-    card.element.querySelector(".tool-call-card__count") === null,
+    card.element.querySelector(".ws-tool-call-card__count") === null,
   );
 }
 
@@ -203,7 +203,7 @@ function makeItem(overrides = {}) {
 
 {
   const card = new ToolCallCard(makeItem(), { running: true });
-  const result = card.element.querySelector(".tool-call-card__result");
+  const result = card.element.querySelector(".ws-tool-call-card__result");
   check("the result block starts hidden while running", result?.hidden === true);
   card.setResult("file contents <script>alert(1)</script>");
   check("setResult reveals the result block", result?.hidden === false);
@@ -218,7 +218,7 @@ function makeItem(overrides = {}) {
 
 {
   const card = new ToolCallCard(makeItem(), { running: false, result: "file contents" });
-  const result = card.element.querySelector(".tool-call-card__result");
+  const result = card.element.querySelector(".ws-tool-call-card__result");
   check(
     "a result passed at construction shows without a setResult call",
     result?.hidden === false && result.textContent === "file contents",
@@ -231,12 +231,12 @@ function makeItem(overrides = {}) {
   const card = new ToolCallCard(makeItem(), { running: true });
   check(
     "a running card auto-opens",
-    card.element.open === true && card.element.classList.contains("tool-call-card--running"),
+    card.element.open === true && card.element.classList.contains("ws-tool-call-card--running"),
   );
   card.setRunning(false);
   check(
     "the card auto-collapses when running flips false",
-    card.element.open === false && !card.element.classList.contains("tool-call-card--running"),
+    card.element.open === false && !card.element.classList.contains("ws-tool-call-card--running"),
   );
 }
 
@@ -271,9 +271,9 @@ function makeItem(overrides = {}) {
 }
 
 if (failures.length > 0) {
-  console.error(`tool-call-card: ${failures.length} failure(s)`);
+  console.error(`ws-tool-call-card: ${failures.length} failure(s)`);
   for (const failure of failures) console.error(`  - ${failure}`);
   process.exit(1);
 }
-console.log("tool-call-card: all assertions passed");
+console.log("ws-tool-call-card: all assertions passed");
 process.exit(0);

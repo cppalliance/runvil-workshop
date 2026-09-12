@@ -1,4 +1,4 @@
-// The model picker trigger (src/ui/model-picker-trigger.ts) in jsdom: a
+// The model picker trigger (src/ui/chrome/model-picker-trigger.ts) in jsdom: a
 // pill button showing the selected model's id. Clicking opens a
 // DropdownMenu of the ModelService catalog; picking one sends the select
 // command through the service and leaves the label for the server's
@@ -23,7 +23,7 @@ const bundle = await esbuild.build({
     contents: `
       export * as lifecycle from "./src/base/lifecycle.ts";
       export { ModelService } from "./src/services/model-service.ts";
-      export { ModelPickerTrigger } from "./src/ui/model-picker-trigger.ts";
+      export { ModelPickerTrigger } from "./src/ui/chrome/model-picker-trigger.ts";
     `,
     resolveDir: path.join(testDir, ".."),
     loader: "ts",
@@ -72,7 +72,7 @@ function menuItems() {
 }
 
 function labelOf(trigger) {
-  return trigger.element.querySelector(".model-picker-trigger__label")?.textContent;
+  return trigger.element.querySelector(".ws-model-picker-trigger__label")?.textContent;
 }
 
 await assertNoLeaks(lifecycle, async () => {
@@ -87,8 +87,8 @@ await assertNoLeaks(lifecycle, async () => {
       trigger.element.tagName === "BUTTON" && trigger.element.type === "button",
     );
     check(
-      "the trigger carries the model-picker-trigger class",
-      trigger.element.classList.contains("model-picker-trigger"),
+      "the trigger carries the ws-model-picker-trigger class",
+      trigger.element.classList.contains("ws-model-picker-trigger"),
     );
     check("no selection shows the placeholder label", labelOf(trigger) === "Select model");
     check("no selection carries no tooltip", trigger.element.getAttribute("title") === null);
@@ -236,9 +236,9 @@ await assertNoLeaks(lifecycle, async () => {
 });
 
 if (failures.length > 0) {
-  console.error(`model-picker-trigger: ${failures.length} failure(s)`);
+  console.error(`ws-model-picker-trigger: ${failures.length} failure(s)`);
   for (const failure of failures) console.error(`  - ${failure}`);
   process.exit(1);
 }
-console.log("model-picker-trigger: all assertions passed");
+console.log("ws-model-picker-trigger: all assertions passed");
 process.exit(0);

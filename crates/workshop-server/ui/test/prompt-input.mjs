@@ -1,4 +1,4 @@
-// The prompt input (src/ui/prompt-input.ts) in jsdom: a Tiptap/
+// The prompt input (src/ui/agent/prompt-input.ts) in jsdom: a Tiptap/
 // ProseMirror editor framed as the chat box. Covers: the editor mounts
 // inside the framed container with an accessible editable region; the
 // placeholder decorates the empty paragraph and lifts once content
@@ -25,7 +25,7 @@ const bundle = await esbuild.build({
   stdin: {
     contents: `
       export * as lifecycle from "./src/base/lifecycle.ts";
-      export { PromptInput, clampPromptInputHeight } from "./src/ui/prompt-input.ts";
+      export { PromptInput, clampPromptInputHeight } from "./src/ui/agent/prompt-input.ts";
     `,
     resolveDir: path.join(testDir, ".."),
     loader: "ts",
@@ -75,7 +75,7 @@ function pressEnter(target, init = {}) {
 }
 
 function editorElement(input) {
-  return input.element.querySelector(".prompt-input__editor");
+  return input.element.querySelector(".ws-prompt-input__editor");
 }
 
 await assertNoLeaks(lifecycle, () => {
@@ -86,7 +86,7 @@ await assertNoLeaks(lifecycle, () => {
     const editor = editorElement(input);
     check(
       "the editor mounts a ProseMirror region inside the framed container",
-      input.element.classList.contains("prompt-input") &&
+      input.element.classList.contains("ws-prompt-input") &&
         editor !== null &&
         editor.classList.contains("ProseMirror"),
     );
@@ -386,14 +386,14 @@ await assertNoLeaks(lifecycle, () => {
     check(
       "setReadOnly locks the editor and marks the frame",
       editor.getAttribute("contenteditable") === "false" &&
-        input.element.classList.contains("stt-input--recording"),
+        input.element.classList.contains("ws-stt-input--recording"),
     );
     input.setEditable(false);
     input.setReadOnly(false);
     check(
       "lifting the take lock under a closed gate stays non-editable",
       editor.getAttribute("contenteditable") === "false" &&
-        !input.element.classList.contains("stt-input--recording"),
+        !input.element.classList.contains("ws-stt-input--recording"),
     );
     input.setReadOnly(true);
     input.setEditable(true);
@@ -473,9 +473,9 @@ await assertNoLeaks(lifecycle, () => {
 });
 
 if (failures.length > 0) {
-  console.error(`prompt-input: ${failures.length} failure(s)`);
+  console.error(`ws-prompt-input: ${failures.length} failure(s)`);
   for (const failure of failures) console.error(`  - ${failure}`);
   process.exit(1);
 }
-console.log("prompt-input: all assertions passed");
+console.log("ws-prompt-input: all assertions passed");
 process.exit(0);

@@ -28,10 +28,10 @@ const style = window.document.createElement("style");
 style.textContent = css;
 window.document.head.appendChild(style);
 
-const barEl = window.document.querySelector(".window-titlebar");
+const barEl = window.document.querySelector(".ws-window-titlebar");
 check("title bar present in the shipped markup", barEl !== null);
 if (barEl) {
-  const order = [...barEl.querySelectorAll(".window-titlebar__control")].map((button) =>
+  const order = [...barEl.querySelectorAll(".ws-window-titlebar__control")].map((button) =>
     button.getAttribute("aria-label"),
   );
   check(
@@ -67,8 +67,8 @@ if (barEl) {
       window.getComputedStyle(button).outlineStyle === "none",
     );
   }
-  const restoreGlyph = barEl.querySelector(".window-titlebar__glyph--restore");
-  const maximizeGlyph = barEl.querySelector(".window-titlebar__glyph--maximize");
+  const restoreGlyph = barEl.querySelector(".ws-window-titlebar__glyph--restore");
+  const maximizeGlyph = barEl.querySelector(".ws-window-titlebar__glyph--maximize");
   check(
     "the restore glyph ships with the hidden attribute",
     restoreGlyph !== null && restoreGlyph.hasAttribute("hidden"),

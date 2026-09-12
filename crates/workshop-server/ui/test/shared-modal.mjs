@@ -152,7 +152,7 @@ check("the backdrop fires onDismiss", dismissed === 2);
 let fieldValue = null;
 openModal({
   host,
-  classPrefix: "workspace-add",
+  classPrefix: "ws-workspace-add",
   titleId: "workspace-add-title",
   title: "Add Folder",
   message: "Enter the path.",
@@ -163,10 +163,10 @@ openModal({
   ],
 });
 const input = host.querySelector("#workspace-add-path");
-const addButton = [...host.querySelectorAll(".workspace-add__button")].find(
+const addButton = [...host.querySelectorAll(".ws-workspace-add__button")].find(
   (button) => button.textContent === "Add",
 );
-check("the field renders with its label", host.querySelector(".workspace-add__label") !== null);
+check("the field renders with its label", host.querySelector(".ws-workspace-add__label") !== null);
 check("focus lands on the field", window.document.activeElement === input);
 check("the gated button starts disabled", addButton?.disabled === true);
 pressKey(input, "Enter");
@@ -176,7 +176,7 @@ input.dispatchEvent(new window.Event("input", { bubbles: true }));
 check("typing enables the gated button", addButton?.disabled === false);
 pressKey(input, "Enter");
 check("Enter submits the trimmed value", fieldValue === "C:\\models");
-check("the submission dismissed the dialog", host.querySelector(".workspace-add-overlay") === null);
+check("the submission dismissed the dialog", host.querySelector(".ws-workspace-add-overlay") === null);
 
 if (failures.length > 0) {
   console.error(`shared-modal: ${failures.length} failure(s)`);

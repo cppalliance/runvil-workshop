@@ -28,10 +28,10 @@ const bundle = await esbuild.build({
       export { Emitter } from "./src/base/event.ts";
       export { ModelService } from "./src/services/model-service.ts";
       export { WorkshopSocket } from "./src/services/workshop-socket.ts";
-      export { StatusBar } from "./src/ui/status-bar.ts";
-      export { setupWindowMenus } from "./src/ui/window-menu.ts";
-      export { EditorPanel } from "./src/ui/workshop/editor-panel.ts";
-      export { createPanelTabComponent, PERMANENT_TAB } from "./src/ui/workshop/panel-types.ts";
+      export { StatusBar } from "./src/ui/status/status-bar.ts";
+      export { setupWindowMenus } from "./src/ui/menu/window-menu.ts";
+      export { EditorPanel } from "./src/ui/editor/editor-panel.ts";
+      export { createPanelTabComponent, PERMANENT_TAB } from "./src/ui/layout/panel-types.ts";
     `,
     resolveDir: path.join(uiDir, ".."),
     loader: "ts",
@@ -235,12 +235,12 @@ check(
 );
 check(
   "disposal removes the menu popovers",
-  window.document.querySelectorAll(".window-titlebar__popover").length === 0,
+  window.document.querySelectorAll(".ws-window-titlebar__popover").length === 0,
 );
 fileButton.click();
 check(
   "a disposed menu button no longer opens anything",
-  window.document.querySelectorAll(".window-titlebar__popover").length === 0,
+  window.document.querySelectorAll(".ws-window-titlebar__popover").length === 0,
 );
 
 // EditorPanel: the surface child disposed once, the dirty subscription severed.

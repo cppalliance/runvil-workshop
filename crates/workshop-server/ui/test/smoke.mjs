@@ -8,11 +8,11 @@ import { bootWorkbench } from "./helpers/boot.mjs";
 await bootWorkbench("the bundled app boots the workbench", async (ctx) => {
   const { document, sockets, statusText, failures } = ctx;
 
-  if (!document.querySelector("#dock .workshop-tree")) {
+  if (!document.querySelector("#dock .ws-workshop-tree")) {
     failures.push("the Workshop tree did not mount in the dock");
   }
-  if (!document.querySelector("#dock .agent-panel")) {
-    failures.push("the agent-session panel did not mount in the dock");
+  if (!document.querySelector("#dock .ws-agent-panel")) {
+    failures.push("the ws-agent-session panel did not mount in the dock");
   }
   if (statusText.textContent !== "Ready") {
     failures.push(`the boot status push did not render: "${statusText.textContent}"`);

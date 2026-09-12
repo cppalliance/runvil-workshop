@@ -20,11 +20,11 @@ await bootWorkbench("the bundled app mounts the whole workbench", async (ctx) =>
   if (!document.querySelector("#dock .dv-groupview")) {
     failures.push("dockview rendered no panel groups");
   }
-  if (!document.querySelector("#dock .workshop-tree")) {
+  if (!document.querySelector("#dock .ws-workshop-tree")) {
     failures.push("the Workshop tree panel did not mount in the dock");
   }
   if (!agentPanel) {
-    failures.push("the agent-session panel did not mount in the dock");
+    failures.push("the ws-agent-session panel did not mount in the dock");
   } else {
     const contextMenu = new document.defaultView.MouseEvent("contextmenu", {
       bubbles: true,
@@ -34,28 +34,28 @@ await bootWorkbench("the bundled app mounts the whole workbench", async (ctx) =>
     if (!contextMenu.defaultPrevented) {
       failures.push("the workshop did not suppress the native WebView context menu");
     }
-    const view = agentPanel.querySelector(".agent-session");
-    if (!view) failures.push("the agent-session view did not mount inside the agent panel");
+    const view = agentPanel.querySelector(".ws-agent-session");
+    if (!view) failures.push("the ws-agent-session view did not mount inside the agent panel");
     if (view?.hidden) {
       failures.push("the session view must be visible immediately (auto-launch skips the menu)");
     }
-    const input = view?.querySelector(".prompt-input__editor");
+    const input = view?.querySelector(".ws-prompt-input__editor");
     if (!input) {
-      failures.push("the agent-session input did not mount");
+      failures.push("the ws-agent-session input did not mount");
     } else if (input.getAttribute("contenteditable") !== "false") {
       failures.push("the agent input must start disabled with no pending wait");
     }
-    const toolbar = view?.querySelector(".agent-toolbar");
+    const toolbar = view?.querySelector(".ws-agent-toolbar");
     if (!toolbar) {
-      failures.push("the agent-session toolbar did not mount");
+      failures.push("the ws-agent-session toolbar did not mount");
     } else {
-      if (!toolbar.querySelector(".mode-chip")) {
+      if (!toolbar.querySelector(".ws-mode-chip")) {
         failures.push("the toolbar mounted no mode chip");
       }
-      if (!toolbar.querySelector(".token-ring")) {
+      if (!toolbar.querySelector(".ws-token-ring")) {
         failures.push("the toolbar mounted no context ring");
       }
-      const pickerLabel = toolbar.querySelector(".model-picker-trigger__label")?.textContent;
+      const pickerLabel = toolbar.querySelector(".ws-model-picker-trigger__label")?.textContent;
       if (pickerLabel !== "test-model") {
         failures.push(
           `the toolbar's model picker reads "${pickerLabel}", expected the snapshot's "test-model"`,

@@ -17,7 +17,7 @@ const bundle = await esbuild.build({
       export * as lifecycle from "./src/base/lifecycle.ts";
       export { RealtimeTranscriptionService } from "./src/services/realtime-transcription.ts";
       export { SpeechCaptureService } from "./src/services/speech-capture.ts";
-      export { setupStt, textareaSttTarget } from "./src/ui/stt.ts";
+      export { setupStt, textareaSttTarget } from "./src/ui/stt/stt.ts";
     `,
     resolveDir: path.join(uiDir, ".."),
     loader: "ts",

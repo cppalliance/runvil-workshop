@@ -1,4 +1,4 @@
-// The mention chip (src/ui/workshop/mention-chip.ts) in jsdom: the
+// The mention chip (src/ui/agent/mention-chip.ts) in jsdom: the
 // configured Mention extension renamed to mentionNode with a vanilla-DOM
 // NodeView pill. Covers: a mention node renders as a pill with icon
 // slot, label, and a labelled remove button; the pill carries the
@@ -25,8 +25,8 @@ const bundle = await esbuild.build({
   stdin: {
     contents: `
       export * as lifecycle from "./src/base/lifecycle.ts";
-      export { PromptInput } from "./src/ui/prompt-input.ts";
-      export { MentionChip } from "./src/ui/workshop/mention-chip.ts";
+      export { PromptInput } from "./src/ui/agent/prompt-input.ts";
+      export { MentionChip } from "./src/ui/agent/mention-chip.ts";
       export { Editor } from "@tiptap/core";
       export { StarterKit } from "@tiptap/starter-kit";
     `,
@@ -96,15 +96,15 @@ await assertNoLeaks(lifecycle, () => {
 
   {
     const editor = createEditor();
-    const chip = editor.view.dom.querySelector(".mention-chip");
+    const chip = editor.view.dom.querySelector(".ws-mention-chip");
     check("a mention node renders as a pill inside the editor", chip !== null);
     check(
       "the pill shows the mention label",
-      chip?.querySelector(".mention-chip__label")?.textContent === "README.md",
+      chip?.querySelector(".ws-mention-chip__label")?.textContent === "README.md",
     );
     check(
       "the pill carries an icon slot",
-      chip?.querySelector(".mention-chip__icon") !== null,
+      chip?.querySelector(".ws-mention-chip__icon") !== null,
     );
     check(
       "the pill is non-editable",
@@ -112,7 +112,7 @@ await assertNoLeaks(lifecycle, () => {
     );
     check(
       "the pill carries a labelled remove button",
-      chip?.querySelector('button.mention-chip__remove[aria-label="Remove"]') !== null,
+      chip?.querySelector('button.ws-mention-chip__remove[aria-label="Remove"]') !== null,
     );
     check(
       "the pill carries the mention's rendered data attributes",
@@ -137,7 +137,7 @@ await assertNoLeaks(lifecycle, () => {
     });
     check(
       "a mention without a label falls back to its id",
-      editor.view.dom.querySelector(".mention-chip__label")?.textContent === "src/main.ts",
+      editor.view.dom.querySelector(".ws-mention-chip__label")?.textContent === "src/main.ts",
     );
     editor.destroy();
   }
@@ -162,11 +162,11 @@ await assertNoLeaks(lifecycle, () => {
 
   {
     const editor = createEditor();
-    const button = editor.view.dom.querySelector(".mention-chip__remove");
+    const button = editor.view.dom.querySelector(".ws-mention-chip__remove");
     button?.click();
     check(
       "the remove button deletes the mention node",
-      editor.view.dom.querySelector(".mention-chip") === null && !mentionInDoc(editor),
+      editor.view.dom.querySelector(".ws-mention-chip") === null && !mentionInDoc(editor),
     );
     check(
       "the surrounding text survives the removal",
@@ -184,21 +184,21 @@ await assertNoLeaks(lifecycle, () => {
     });
     check(
       "PromptInput renders a mention node as a pill",
-      input.element.querySelector(".mention-chip") !== null,
+      input.element.querySelector(".ws-mention-chip") !== null,
     );
-    input.element.querySelector(".mention-chip__remove")?.click();
+    input.element.querySelector(".ws-mention-chip__remove")?.click();
     check(
       "the remove button deletes the chip inside PromptInput",
-      input.element.querySelector(".mention-chip") === null,
+      input.element.querySelector(".ws-mention-chip") === null,
     );
     input.dispose();
   }
 });
 
 if (failures.length > 0) {
-  console.error(`mention-chip: ${failures.length} failure(s)`);
+  console.error(`ws-mention-chip: ${failures.length} failure(s)`);
   for (const failure of failures) console.error(`  - ${failure}`);
   process.exit(1);
 }
-console.log("mention-chip: all assertions passed");
+console.log("ws-mention-chip: all assertions passed");
 process.exit(0);

@@ -11,7 +11,7 @@
 import { bootWorkbench } from "./helpers/boot.mjs";
 
 await bootWorkbench("the title bar works in browser mode without ipc", async ({ window, document, failures }) => {
-  const titlebar = document.querySelector(".window-titlebar");
+  const titlebar = document.querySelector(".ws-window-titlebar");
   if (!titlebar) {
     failures.push("window title bar missing");
   } else {
@@ -24,13 +24,13 @@ await bootWorkbench("the title bar works in browser mode without ipc", async ({ 
     if (titlebar.hidden) {
       failures.push("the title bar must be visible after boot in browser mode");
     }
-    const controlsCluster = titlebar.querySelector(".window-titlebar__controls");
+    const controlsCluster = titlebar.querySelector(".ws-window-titlebar__controls");
     if (!controlsCluster) {
       failures.push("title bar window-control cluster missing");
     } else if (!controlsCluster.hidden) {
       failures.push("the window-control cluster must stay hidden in browser mode");
     }
-    const icon = titlebar.querySelector(".window-titlebar__icon");
+    const icon = titlebar.querySelector(".ws-window-titlebar__icon");
     if (!icon) {
       failures.push("title bar program icon missing");
     } else {
@@ -47,16 +47,16 @@ await bootWorkbench("the title bar works in browser mode without ipc", async ({ 
         failures.push("the title bar icon must carry width and height");
       }
     }
-    const menuLabels = [...titlebar.querySelectorAll(".window-titlebar__menu")].map(
+    const menuLabels = [...titlebar.querySelectorAll(".ws-window-titlebar__menu")].map(
       (button) => button.textContent,
     );
     if (menuLabels.join(",") !== "File,Edit,Model,Window,Help") {
       failures.push(`title bar menus are "${menuLabels.join(",")}", expected "File,Edit,Model,Window,Help"`);
     }
-    for (const button of titlebar.querySelectorAll(".window-titlebar__menu")) {
+    for (const button of titlebar.querySelectorAll(".ws-window-titlebar__menu")) {
       if (button.tagName !== "BUTTON") failures.push("a title bar menu is not a <button>");
     }
-    const popovers = titlebar.querySelectorAll(".window-titlebar__popover");
+    const popovers = titlebar.querySelectorAll(".ws-window-titlebar__popover");
     if (popovers.length !== 5) {
       failures.push(`browser mode built ${popovers.length} menu popovers, expected 5`);
     }
@@ -64,7 +64,7 @@ await bootWorkbench("the title bar works in browser mode without ipc", async ({ 
     if (fileButton) {
       fileButton.click();
       const filePopover = fileButton.nextElementSibling;
-      if (!filePopover || !filePopover.classList.contains("window-titlebar__popover") || filePopover.hidden) {
+      if (!filePopover || !filePopover.classList.contains("ws-window-titlebar__popover") || filePopover.hidden) {
         failures.push("clicking the File menu button does not open its popover in browser mode");
       }
       if (fileButton.getAttribute("aria-expanded") !== "true") {
@@ -72,10 +72,10 @@ await bootWorkbench("the title bar works in browser mode without ipc", async ({ 
       }
       fileButton.click();
     }
-    if (!titlebar.querySelector(".window-titlebar__drag")) {
+    if (!titlebar.querySelector(".ws-window-titlebar__drag")) {
       failures.push("title bar drag region missing");
     }
-    const controls = [...titlebar.querySelectorAll(".window-titlebar__control")];
+    const controls = [...titlebar.querySelectorAll(".ws-window-titlebar__control")];
     const controlLabels = controls.map((button) => button.getAttribute("aria-label"));
     if (controlLabels.join(",") !== "Minimize,Maximize,Close") {
       failures.push(

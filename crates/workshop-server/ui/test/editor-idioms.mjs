@@ -1,4 +1,4 @@
-// Editor idiom test (step 16, src/ui/workshop/editor-surface.ts): the
+// Editor idiom test (step 16, src/ui/editor/editor-surface.ts): the
 // readOnly toggle runs through a Compartment - one reconfigure dispatch,
 // so document text, dirty tracking, and the live view all survive a
 // toggle - and reloads into a live view dispatch a transaction tagged
@@ -24,7 +24,7 @@ const bundle = await esbuild.build({
         CodeMirrorSurface,
         externalUpdate,
         isExternalUpdate,
-      } from "./src/ui/workshop/editor-surface.ts";
+      } from "./src/ui/editor/editor-surface.ts";
       export { redo, undo, undoDepth } from "@codemirror/commands";
     `,
     resolveDir: path.join(uiDir, ".."),

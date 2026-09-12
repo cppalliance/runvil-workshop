@@ -273,13 +273,13 @@ export async function bootWorkbench(name, run) {
   // loudly here. The agent panel mounts a beat after the dock, so poll.
   let agentPanel = null;
   for (let i = 0; i < 100 && !agentPanel; i++) {
-    agentPanel = window.document.querySelector("#dock .agent-panel");
+    agentPanel = window.document.querySelector("#dock .ws-agent-panel");
     if (!agentPanel) await sleep(20);
   }
   const missing = [
     ["the status bar", statusBar],
-    ["the agent-session panel", agentPanel],
-    ["the Workshop tree", window.document.querySelector("#dock .workshop-tree")],
+    ["the ws-agent-session panel", agentPanel],
+    ["the Workshop tree", window.document.querySelector("#dock .ws-workshop-tree")],
   ]
     .filter(([, node]) => !node)
     .map(([what]) => what);

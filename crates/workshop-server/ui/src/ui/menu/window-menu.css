@@ -1,0 +1,128 @@
+/* Styles for window-menu.ts, which imports this file; esbuild bundles it
+   into dist/app.css. Themed values come from the :root tokens in shared-ui/tokens.css. */
+
+/* Menu buttons: text items flush with the bar's left edge. */
+.ws-window-titlebar__menus {
+  position: relative; /* popover positioning context */
+  flex: none;
+  display: flex;
+  align-items: center;
+}
+
+.ws-window-titlebar__menu {
+  display: flex;
+  align-items: center;
+  height: var(--ws-control-height-compact);
+  padding: 0 var(--space-md);
+  background: none;
+  border: none;
+  border-radius: var(--ws-menu-item-radius);
+  color: var(--titlebar-foreground);
+  font: inherit;
+  cursor: pointer;
+  user-select: none;
+}
+
+.ws-window-titlebar__menu:hover,
+.ws-window-titlebar__menu[aria-expanded="true"] {
+  background: var(--titlebar-hover);
+}
+
+.ws-window-titlebar__menu:focus-visible {
+  outline: none;
+  background: var(--titlebar-hover);
+}
+
+/* Menu popovers: slightly raised near-black surfaces below the bar,
+   absolutely positioned so they never participate in layout. Rows are
+   compact - label left, shortcut right in muted text - and the purple
+   accent is reserved for the focus/selection ring. */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.ws-window-titlebar__popover {
+  position: absolute;
+  top: 100%;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  min-width: var(--titlebar-popover-min-width);
+  padding: var(--space-xs) 0;
+  background: var(--bg-raised);
+  border: var(--ws-border-width) solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--titlebar-popover-shadow);
+  animation: fadeIn 0.083s linear;
+}
+
+.ws-window-titlebar__popover[hidden] {
+  display: none;
+}
+
+.ws-window-titlebar__item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-xl);
+  height: 2em;
+  padding: 0 var(--ws-size-8);
+  margin: 0 var(--ws-size-4);
+  border-radius: var(--ws-size-4);
+  background: none;
+  border: none;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+}
+
+.ws-window-titlebar__item:hover {
+  background: var(--bg-hover);
+}
+
+.ws-window-titlebar__item:focus-visible {
+  outline: none;
+  background: var(--bg-hover);
+}
+
+.ws-window-titlebar__item[aria-disabled="true"] {
+  color: var(--text-muted);
+  cursor: default;
+}
+
+.ws-window-titlebar__item[aria-disabled="true"]:hover {
+  background: none;
+}
+
+.ws-window-titlebar__shortcut {
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+}
+
+/* Checkable rows (the Model menu): a fixed-width check column keeps the
+   labels aligned whether or not the row is the selected one. */
+.ws-window-titlebar__item--checkable {
+  justify-content: flex-start;
+}
+
+.ws-window-titlebar__item-check {
+  width: 1.2em;
+  flex: none;
+  color: var(--accent);
+}
+
+/* The pending mark: an ellipsis on the profile a switch is loading,
+   muted where the settled check is accented. */
+.ws-window-titlebar__item-check--pending {
+  color: var(--text-muted);
+}
+
+.ws-window-titlebar__separator {
+  height: var(--ws-size-1);
+  margin: var(--ws-size-5) 0;
+  background: var(--border);
+}

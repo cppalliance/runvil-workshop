@@ -1,4 +1,4 @@
-// The agent toolbar (src/ui/agent-toolbar.ts) in jsdom: a role=toolbar
+// The agent toolbar (src/ui/agent/agent-toolbar.ts) in jsdom: a role=toolbar
 // flex row composing ModeChip, ModelPickerTrigger, and TokenRing. The picker
 // reads the constructor's ModelService; dispose() cascades to all three
 // children. Runs under the shared leak check: an undisposed toolbar or child
@@ -19,7 +19,7 @@ const bundle = await esbuild.build({
     contents: `
       export * as lifecycle from "./src/base/lifecycle.ts";
       export { ModelService } from "./src/services/model-service.ts";
-      export { AgentToolbar } from "./src/ui/agent-toolbar.ts";
+      export { AgentToolbar } from "./src/ui/agent/agent-toolbar.ts";
     `,
     resolveDir: path.join(testDir, ".."),
     loader: "ts",
@@ -71,8 +71,8 @@ await assertNoLeaks(lifecycle, async () => {
     const toolbar = new AgentToolbar(service);
     document.body.appendChild(toolbar.element);
     check(
-      "the toolbar carries the agent-toolbar class",
-      toolbar.element.classList.contains("agent-toolbar"),
+      "the toolbar carries the ws-agent-toolbar class",
+      toolbar.element.classList.contains("ws-agent-toolbar"),
     );
     check(
       "the toolbar is a named toolbar landmark",
@@ -94,20 +94,20 @@ await assertNoLeaks(lifecycle, async () => {
     check(
       "the toolbar composes the chip, the picker, and the ring in order",
       children.length === 3 &&
-        children[0]?.classList.contains("mode-chip") &&
-        children[1]?.classList.contains("model-picker-trigger") &&
-        children[2]?.classList.contains("token-ring"),
+        children[0]?.classList.contains("ws-mode-chip") &&
+        children[1]?.classList.contains("ws-model-picker-trigger") &&
+        children[2]?.classList.contains("ws-token-ring"),
     );
     check(
       "the ring is the last child so the stylesheet can pin it to the trailing edge",
-      toolbar.element.lastElementChild?.classList.contains("token-ring") === true,
+      toolbar.element.lastElementChild?.classList.contains("ws-token-ring") === true,
     );
     check(
       "each child renders its own control",
-      toolbar.element.querySelector(".mode-chip__label")?.textContent === "Agent" &&
-        toolbar.element.querySelector(".model-picker-trigger__label")?.textContent ===
+      toolbar.element.querySelector(".ws-mode-chip__label")?.textContent === "Agent" &&
+        toolbar.element.querySelector(".ws-model-picker-trigger__label")?.textContent ===
           "Select model" &&
-        toolbar.element.querySelector(".token-ring")?.getAttribute("aria-valuenow") ===
+        toolbar.element.querySelector(".ws-token-ring")?.getAttribute("aria-valuenow") ===
           "0",
     );
     for (const button of toolbar.element.querySelectorAll("button")) {
@@ -131,7 +131,7 @@ await assertNoLeaks(lifecycle, async () => {
     service.applySelected("alpha");
     check(
       "the picker reads the toolbar's model service",
-      toolbar.element.querySelector(".model-picker-trigger__label")?.textContent ===
+      toolbar.element.querySelector(".ws-model-picker-trigger__label")?.textContent ===
         "alpha",
     );
     toolbar.dispose();
@@ -145,8 +145,8 @@ await assertNoLeaks(lifecycle, async () => {
     const service = new ModelService(() => true);
     const toolbar = new AgentToolbar(service);
     document.body.appendChild(toolbar.element);
-    const chip = toolbar.element.querySelector(".mode-chip");
-    const picker = toolbar.element.querySelector(".model-picker-trigger");
+    const chip = toolbar.element.querySelector(".ws-mode-chip");
+    const picker = toolbar.element.querySelector(".ws-model-picker-trigger");
     chip?.click();
     check("a chip menu is open before dispose", menuEl() !== null);
     toolbar.dispose();
@@ -168,9 +168,9 @@ await assertNoLeaks(lifecycle, async () => {
 });
 
 if (failures.length > 0) {
-  console.error(`agent-toolbar: ${failures.length} failure(s)`);
+  console.error(`ws-agent-toolbar: ${failures.length} failure(s)`);
   for (const failure of failures) console.error(`  - ${failure}`);
   process.exit(1);
 }
-console.log("agent-toolbar: all assertions passed");
+console.log("ws-agent-toolbar: all assertions passed");
 process.exit(0);

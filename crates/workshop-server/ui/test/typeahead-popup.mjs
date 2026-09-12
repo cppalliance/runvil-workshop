@@ -1,4 +1,4 @@
-// The mention typeahead popup (src/ui/workshop/typeahead-popup.ts) in
+// The mention typeahead popup (src/ui/agent/typeahead-popup.ts) in
 // jsdom, driven through a real editor over the MentionChip wiring from
 // mention-chip.ts. Covers: the stub source filters its three canned
 // entries by query; typing "@" opens the popup with listbox semantics,
@@ -31,9 +31,9 @@ const bundle = await esbuild.build({
   stdin: {
     contents: `
       export * as lifecycle from "./src/base/lifecycle.ts";
-      export { PromptInput } from "./src/ui/prompt-input.ts";
-      export { MentionChip } from "./src/ui/workshop/mention-chip.ts";
-      export { mentionTypeaheadItems } from "./src/ui/workshop/typeahead-popup.ts";
+      export { PromptInput } from "./src/ui/agent/prompt-input.ts";
+      export { MentionChip } from "./src/ui/agent/mention-chip.ts";
+      export { mentionTypeaheadItems } from "./src/ui/agent/typeahead-popup.ts";
       export { Editor } from "@tiptap/core";
       export { StarterKit } from "@tiptap/starter-kit";
     `,
@@ -119,15 +119,15 @@ function pressKey(target, key) {
 }
 
 function popup() {
-  return document.body.querySelector(".typeahead-popup");
+  return document.body.querySelector(".ws-typeahead-popup");
 }
 
 function popupItems() {
-  return [...(popup()?.querySelectorAll(".typeahead-popup__item") ?? [])];
+  return [...(popup()?.querySelectorAll(".ws-typeahead-popup__item") ?? [])];
 }
 
 function selectedItem() {
-  return popup()?.querySelector(".typeahead-popup__item--selected") ?? null;
+  return popup()?.querySelector(".ws-typeahead-popup__item--selected") ?? null;
 }
 
 function mentionInDoc(editor) {
@@ -193,7 +193,7 @@ await assertNoLeaks(lifecycle, async () => {
     check(
       "the first item opens highlighted",
       items[0] !== undefined &&
-        items[0].classList.contains("typeahead-popup__item--selected") &&
+        items[0].classList.contains("ws-typeahead-popup__item--selected") &&
         items[0].getAttribute("aria-selected") === "true" &&
         items[1]?.getAttribute("aria-selected") === "false",
     );
@@ -353,7 +353,7 @@ await assertNoLeaks(lifecycle, async () => {
       },
     });
     document.body.appendChild(input.element);
-    const editorDom = input.element.querySelector(".prompt-input__editor");
+    const editorDom = input.element.querySelector(".ws-prompt-input__editor");
     // Tiptap stamps the Editor instance on the view DOM (dom.editor);
     // the test drives commands through it because PromptInput does not
     // expose its editor.
@@ -363,7 +363,7 @@ await assertNoLeaks(lifecycle, async () => {
     pressKey(editorDom, "Enter");
     check(
       "Enter with the typeahead open selects instead of submitting",
-      submitted === 0 && input.element.querySelector(".mention-chip") !== null,
+      submitted === 0 && input.element.querySelector(".ws-mention-chip") !== null,
     );
     check("the selection closed the popup", popup() === null);
     pressKey(editorDom, "Enter");
@@ -374,9 +374,9 @@ await assertNoLeaks(lifecycle, async () => {
 });
 
 if (failures.length > 0) {
-  console.error(`typeahead-popup: ${failures.length} failure(s)`);
+  console.error(`ws-typeahead-popup: ${failures.length} failure(s)`);
   for (const failure of failures) console.error(`  - ${failure}`);
   process.exit(1);
 }
-console.log("typeahead-popup: all assertions passed");
+console.log("ws-typeahead-popup: all assertions passed");
 process.exit(0);

@@ -1,4 +1,4 @@
-// The mode chip (src/ui/mode-chip.ts) in jsdom: a button showing the
+// The mode chip (src/ui/agent/mode-chip.ts) in jsdom: a button showing the
 // current mode's icon, label, and chevron. Clicking opens a DropdownMenu
 // of Cursor's five modes; picking one updates the chip and fires
 // "agent-mode-changed" on document with the mode as detail; re-picking
@@ -19,7 +19,7 @@ const bundle = await esbuild.build({
   stdin: {
     contents: `
       export * as lifecycle from "./src/base/lifecycle.ts";
-      export { AGENT_MODE_CHANGED_EVENT, ModeChip, UNIFIED_MODES } from "./src/ui/mode-chip.ts";
+      export { AGENT_MODE_CHANGED_EVENT, ModeChip, UNIFIED_MODES } from "./src/ui/agent/mode-chip.ts";
     `,
     resolveDir: path.join(testDir, ".."),
     loader: "ts",
@@ -93,15 +93,15 @@ await assertNoLeaks(lifecycle, async () => {
       chip.element.tagName === "BUTTON" && chip.element.type === "button",
     );
     check(
-      "the chip carries the mode-chip class",
-      chip.element.classList.contains("mode-chip"),
+      "the chip carries the ws-mode-chip class",
+      chip.element.classList.contains("ws-mode-chip"),
     );
     check("the chip starts on the agent mode", chip.mode === "agent");
     check(
       "the chip shows the current mode's label and icon",
-      chip.element.querySelector(".mode-chip__label")?.textContent === "Agent" &&
-        chip.element.querySelector(".mode-chip__icon svg") !== null &&
-        chip.element.querySelector(".mode-chip__chevron svg") !== null,
+      chip.element.querySelector(".ws-mode-chip__label")?.textContent === "Agent" &&
+        chip.element.querySelector(".ws-mode-chip__icon svg") !== null &&
+        chip.element.querySelector(".ws-mode-chip__chevron svg") !== null,
     );
     chip.dispose();
     chip.element.remove();
@@ -149,17 +149,17 @@ await assertNoLeaks(lifecycle, async () => {
     const onModeChanged = (event) => events.push(event);
     document.addEventListener(AGENT_MODE_CHANGED_EVENT, onModeChanged);
 
-    const agentIconHtml = chip.element.querySelector(".mode-chip__icon")?.innerHTML;
+    const agentIconHtml = chip.element.querySelector(".ws-mode-chip__icon")?.innerHTML;
     chip.element.click();
     menuItems()[1]?.click();
     check(
       "selecting a mode changes the chip label",
-      chip.element.querySelector(".mode-chip__label")?.textContent === "Plan",
+      chip.element.querySelector(".ws-mode-chip__label")?.textContent === "Plan",
     );
     check(
       "selecting a mode changes the chip icon",
-      chip.element.querySelector(".mode-chip__icon svg") !== null &&
-        chip.element.querySelector(".mode-chip__icon")?.innerHTML !== agentIconHtml,
+      chip.element.querySelector(".ws-mode-chip__icon svg") !== null &&
+        chip.element.querySelector(".ws-mode-chip__icon")?.innerHTML !== agentIconHtml,
     );
     check("selecting a mode updates the chip's mode", chip.mode === "plan");
     check(
@@ -197,9 +197,9 @@ await assertNoLeaks(lifecycle, async () => {
 });
 
 if (failures.length > 0) {
-  console.error(`mode-chip: ${failures.length} failure(s)`);
+  console.error(`ws-mode-chip: ${failures.length} failure(s)`);
   for (const failure of failures) console.error(`  - ${failure}`);
   process.exit(1);
 }
-console.log("mode-chip: all assertions passed");
+console.log("ws-mode-chip: all assertions passed");
 process.exit(0);

@@ -1,0 +1,47 @@
+/* Tier 3 - per-component tokens: one named slot per component sizing
+   decision, mapped to semantic aliases or base primitives. A component's
+   CSS references only its own slots and the semantic tier. */
+:root {
+  /* Agent session feed */
+  --ws-agent-meta-min-width: var(--ws-size-150);
+  --ws-agent-cursor-width: var(--ws-size-2);
+  --ws-agent-toolbar-gap: var(--ws-size-rem-0-55);
+  --ws-feed-block-max-height: var(--ws-size-rem-12);
+
+  /* Tool call card */
+  --ws-tool-card-dot-size: var(--ws-size-8);
+  --ws-tool-card-name-min-width: var(--ws-size-16);
+
+  /* Prompt input */
+  --ws-prompt-chip-max-width: var(--ws-size-240);
+
+  /* Mention typeahead */
+  --ws-typeahead-min-width: var(--ws-size-180);
+  --ws-typeahead-max-width: var(--ws-size-320);
+
+  /* Chrome: about dialog, model picker, update view */
+  --ws-about-min-width: var(--ws-size-320);
+  --ws-model-trigger-max-width: var(--ws-size-200);
+  --ws-update-banner-offset: var(--ws-size-22);
+  --ws-update-banner-width: var(--ws-size-360);
+  --ws-update-screen-width: var(--ws-size-560);
+  --ws-update-log-max-height: var(--ws-size-180);
+
+  /* Editor dialogs */
+  --ws-editor-dialog-max-width: var(--ws-size-360);
+
+  /* Layout: workshop tree and workspace dialog */
+  --ws-tree-indent: var(--ws-size-8);
+  --ws-workspace-dialog-min-width: var(--ws-size-260);
+
+  /* Menus */
+  --ws-menu-item-radius: var(--ws-size-5);
+
+  /* STT mic recording ring and bloom */
+  --ws-stt-mic-shadow:
+    0 0 0 var(--ws-size-1) var(--danger),
+    0 0 var(--ws-size-6) color-mix(in oklab, var(--danger) 55%, transparent);
+  --ws-stt-mic-shadow-recording:
+    0 0 0 var(--ws-size-1) var(--danger),
+    0 0 var(--ws-size-8) color-mix(in oklab, var(--danger) 70%, transparent);
+}

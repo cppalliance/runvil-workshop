@@ -1,4 +1,4 @@
-// The agent menu (src/ui/agent-menu.ts) in jsdom against a scripted
+// The agent menu (src/ui/agent/agent-menu.ts) in jsdom against a scripted
 // delegate: discovered agents render as launch buttons; an empty
 // discovery shows the empty note; clicking launches through the
 // delegate and disables the buttons until an error frees them; a launch
@@ -20,7 +20,7 @@ const bundle = await esbuild.build({
     contents: `
       export * as lifecycle from "./src/base/lifecycle.ts";
       export { Emitter } from "./src/base/event.ts";
-      export { AgentMenu } from "./src/ui/agent-menu.ts";
+      export { AgentMenu } from "./src/ui/agent/agent-menu.ts";
     `,
     resolveDir: path.join(testDir, ".."),
     loader: "ts",
@@ -81,9 +81,9 @@ function makeDelegate(agents = []) {
   };
 }
 
-const buttonsOf = (menu) => [...menu.element.querySelectorAll(".agent-menu__launch")];
-const emptyOf = (menu) => menu.element.querySelector(".agent-menu__empty");
-const errorOf = (menu) => menu.element.querySelector(".agent-menu__error");
+const buttonsOf = (menu) => [...menu.element.querySelectorAll(".ws-agent-menu__launch")];
+const emptyOf = (menu) => menu.element.querySelector(".ws-agent-menu__empty");
+const errorOf = (menu) => menu.element.querySelector(".ws-agent-menu__error");
 
 await assertNoLeaks(lifecycle, () => {
   // --- Discovery renders as launch buttons; empty shows the note -----------
@@ -169,9 +169,9 @@ await assertNoLeaks(lifecycle, () => {
 });
 
 if (failures.length > 0) {
-  console.error(`agent-menu: ${failures.length} failure(s)`);
+  console.error(`ws-agent-menu: ${failures.length} failure(s)`);
   for (const failure of failures) console.error(`  - ${failure}`);
   process.exit(1);
 }
-console.log("agent-menu: all assertions passed");
+console.log("ws-agent-menu: all assertions passed");
 process.exit(0);

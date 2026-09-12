@@ -1,4 +1,4 @@
-// Save-race test for the editor panel (src/ui/workshop/editor-panel.ts,
+// Save-race test for the editor panel (src/ui/editor/editor-panel.ts,
 // editor-surface.ts): the saved baseline is the text the write persisted,
 // not whatever the editor holds when the PUT resolves. Keystrokes typed
 // while a write is in flight must stay dirty - previously markSaved()
@@ -21,7 +21,7 @@ const bundle = await esbuild.build({
   stdin: {
     contents: `
       export * as lifecycle from "./src/base/lifecycle.ts";
-      export { EditorPanel } from "./src/ui/workshop/editor-panel.ts";
+      export { EditorPanel } from "./src/ui/editor/editor-panel.ts";
       export { ModifiedConflictError } from "./src/services/workspace-api.ts";
     `,
     resolveDir: path.join(uiDir, ".."),
@@ -214,9 +214,9 @@ await assertNoLeaks(lifecycle, async () => {
   closePanel.requestClose();
   check(
     "a dirty panel opens the unsaved-changes dialog",
-    closePanel.element.querySelector(".editor-close-overlay") !== null,
+    closePanel.element.querySelector(".ws-editor-close-overlay") !== null,
   );
-  const saveButton = [...closePanel.element.querySelectorAll(".editor-close__button")].find(
+  const saveButton = [...closePanel.element.querySelectorAll(".ws-editor-close__button")].find(
     (button) => button.textContent === "Save",
   );
   saveButton.click();
@@ -262,10 +262,10 @@ await assertNoLeaks(lifecycle, async () => {
   await conflictPanel.save();
   check(
     "a conflicted save opens the conflict dialog",
-    conflictPanel.element.querySelector(".editor-conflict-overlay") !== null,
+    conflictPanel.element.querySelector(".ws-editor-conflict-overlay") !== null,
   );
 
-  const overwriteButton = [...conflictPanel.element.querySelectorAll(".editor-conflict__button")]
+  const overwriteButton = [...conflictPanel.element.querySelectorAll(".ws-editor-conflict__button")]
     .find((button) => button.textContent === "Overwrite");
   overwriteButton.click();
   await flush();

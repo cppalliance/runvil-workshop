@@ -1,4 +1,4 @@
-// Unit test for the update view (src/ui/update-view.ts): the shared toast
+// Unit test for the update view (src/ui/chrome/update-view.ts): the shared toast
 // stack fires once when an update becomes available, a re-render in the
 // same phase does not re-toast, a failed install toasts the error, and
 // the install overlay carries the shared inline progress bar. Bundles the
@@ -26,7 +26,7 @@ const bundle = await esbuild.build({
     contents: `
       export * as lifecycle from "./src/base/lifecycle.ts";
       export { UpdateService } from "./src/services/update-service.ts";
-      export { UpdateView } from "./src/ui/update-view.ts";
+      export { UpdateView } from "./src/ui/chrome/update-view.ts";
     `,
     resolveDir: path.join(uiDir, ".."),
     loader: "ts",
@@ -78,7 +78,7 @@ async function waitForPhase(service, phase) {
 }
 
 function updateNowButton() {
-  return [...window.document.querySelectorAll(".update-banner button")].find(
+  return [...window.document.querySelectorAll(".ws-update-banner button")].find(
     (button) => button.textContent === "Update now",
   );
 }
@@ -107,7 +107,7 @@ await assertNoLeaks(lifecycle, async () => {
       toasts.shown[0]?.kind === "info" &&
       toasts.shown[0]?.message === "PromptForge 0.3.0 is available",
   );
-  const banner = window.document.querySelector(".update-banner");
+  const banner = window.document.querySelector(".ws-update-banner");
   check("the banner keeps the actionable available state", banner?.hidden === false);
 
   // Clicking Update now re-renders the same phase before the install's
@@ -116,7 +116,7 @@ await assertNoLeaks(lifecycle, async () => {
   await waitForPhase(service, "restarting");
   check("the same phase never re-toasts", toasts.shown.length === 1);
   check("the install reached restarting", service.snapshot.phase === "restarting");
-  const overlay = window.document.querySelector(".update-screen");
+  const overlay = window.document.querySelector(".ws-update-screen");
   check("the install overlay shows", overlay?.hidden === false);
   check(
     "the overlay carries the shared inline progress bar",

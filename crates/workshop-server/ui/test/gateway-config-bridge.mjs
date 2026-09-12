@@ -1,6 +1,6 @@
 // Unit test for the Gateway Config panel's workshop side: the
-// window-level postMessage bridge (src/ui/gateway-config-bridge.ts) and
-// the iframe host panel (src/ui/workshop/gateway-config-panel.ts).
+// window-level postMessage bridge (src/ui/gateway/gateway-config-bridge.ts) and
+// the iframe host panel (src/ui/gateway/gateway-config-panel.ts).
 // Bundles the TS modules with esbuild and drives them in jsdom. Covers:
 // origin pinning (the iframe is proxied same-origin, so a message from
 // any foreign origin - the gateway's own port included - is ignored and
@@ -22,8 +22,8 @@ const uiDir = path.dirname(fileURLToPath(import.meta.url));
 const result = await esbuild.build({
   stdin: {
     contents: `
-      export { setupGatewayConfigBridge } from "./src/ui/gateway-config-bridge.ts";
-      export { GatewayConfigPanel } from "./src/ui/workshop/gateway-config-panel.ts";
+      export { setupGatewayConfigBridge } from "./src/ui/gateway/gateway-config-bridge.ts";
+      export { GatewayConfigPanel } from "./src/ui/gateway/gateway-config-panel.ts";
     `,
     resolveDir: path.join(uiDir, ".."),
     loader: "ts",

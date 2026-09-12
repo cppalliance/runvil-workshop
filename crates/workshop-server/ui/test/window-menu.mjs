@@ -1,5 +1,5 @@
-// Unit test for the application menus (src/ui/window-menu.ts) and the About
-// dialog (src/ui/about-dialog.ts). Bundles the TS modules with esbuild -
+// Unit test for the application menus (src/ui/menu/window-menu.ts) and the About
+// dialog (src/ui/chrome/about-dialog.ts). Bundles the TS modules with esbuild -
 // with "@tauri-apps/api/window" aliased to the recording stub in
 // test/helpers - imports them via data URLs, and drives them against jsdom
 // built from the real index.html with the Tauri internals present. Covers:
@@ -47,8 +47,8 @@ async function bundle(entry) {
   return import(`data:text/javascript;base64,${Buffer.from(code).toString("base64")}`);
 }
 
-const { setupWindowMenus } = await bundle(path.join("ui", "window-menu.ts"));
-const { setupWindowChrome } = await bundle(path.join("ui", "window-chrome.ts"));
+const { setupWindowMenus } = await bundle(path.join("ui", "menu", "window-menu.ts"));
+const { setupWindowChrome } = await bundle(path.join("ui", "chrome", "window-chrome.ts"));
 const { ModelService } = await bundle(path.join("services", "model-service.ts"));
 
 const failures = [];
@@ -101,14 +101,14 @@ function scenario({ desktop = true, modelMenu, profileMenu } = {}) {
   globalThis.Node = window.Node;
   const commands = setupWindowMenus({ agents, workshop, modelMenu, profileMenu });
   const menus = {};
-  for (const button of window.document.querySelectorAll(".window-titlebar__menu")) {
+  for (const button of window.document.querySelectorAll(".ws-window-titlebar__menu")) {
     menus[button.dataset.menu] = button;
   }
   const popoverOf = (id) => menus[id].nextElementSibling;
-  const itemsOf = (id) => [...popoverOf(id).querySelectorAll(".window-titlebar__item")];
+  const itemsOf = (id) => [...popoverOf(id).querySelectorAll(".ws-window-titlebar__item")];
   const itemByLabel = (id, label) =>
     itemsOf(id).find((item) =>
-      item.querySelector(".window-titlebar__item-label").textContent === label,
+      item.querySelector(".ws-window-titlebar__item-label").textContent === label,
     );
   const isOpen = (id) => !popoverOf(id).hidden;
   const keydown = (key) =>
@@ -234,7 +234,7 @@ function scenario({ desktop = true, modelMenu, profileMenu } = {}) {
   check("the Window menu lists Workshop Panel", workshopItem !== undefined);
   check(
     "Workshop Panel shows the Ctrl+B shortcut hint",
-    workshopItem?.querySelector(".window-titlebar__shortcut")?.textContent === "Ctrl+B",
+    workshopItem?.querySelector(".ws-window-titlebar__shortcut")?.textContent === "Ctrl+B",
   );
   workshopItem.click();
   check("Workshop Panel dispatches the workshop toggle", stats().workshopToggles === 1);
@@ -259,7 +259,7 @@ function scenario({ desktop = true, modelMenu, profileMenu } = {}) {
   menus.window.click();
   const configItem = itemByLabel("window", "Gateway Config");
   check("the Window menu lists Gateway Config", configItem !== undefined);
-  const rowLabel = (row) => row.querySelector(".window-titlebar__item-label").textContent;
+  const rowLabel = (row) => row.querySelector(".ws-window-titlebar__item-label").textContent;
   const labels = itemsOf("window").map(rowLabel);
   check(
     "Gateway Config sits next to Workshop Panel",
@@ -277,7 +277,7 @@ function scenario({ desktop = true, modelMenu, profileMenu } = {}) {
   menus.window.click();
   const agentItem = itemByLabel("window", "New Agent");
   check("the Window menu lists New Agent", agentItem !== undefined);
-  const rowLabel = (row) => row.querySelector(".window-titlebar__item-label").textContent;
+  const rowLabel = (row) => row.querySelector(".ws-window-titlebar__item-label").textContent;
   const labels = itemsOf("window").map(rowLabel);
   check(
     "New Agent sits next to Gateway Config",
@@ -344,7 +344,7 @@ function scenario({ desktop = true, modelMenu, profileMenu } = {}) {
   menus.model.click();
   check("the Model menu opens", isOpen("model"));
   const rows = itemsOf("model");
-  const rowLabel = (row) => row.querySelector(".window-titlebar__item-label").textContent;
+  const rowLabel = (row) => row.querySelector(".ws-window-titlebar__item-label").textContent;
   check(
     "the Model menu lists the catalog entries",
     rows.map(rowLabel).join(",") === "alpha,beta",
@@ -356,8 +356,8 @@ function scenario({ desktop = true, modelMenu, profileMenu } = {}) {
   );
   check(
     "the selected model shows the checkmark",
-    rows[0].querySelector(".window-titlebar__item-check").textContent === "✓" &&
-      rows[1].querySelector(".window-titlebar__item-check").textContent === "",
+    rows[0].querySelector(".ws-window-titlebar__item-check").textContent === "✓" &&
+      rows[1].querySelector(".ws-window-titlebar__item-check").textContent === "",
   );
   check(
     "the model description becomes the row tooltip",
@@ -383,7 +383,7 @@ function scenario({ desktop = true, modelMenu, profileMenu } = {}) {
   check(
     "an empty catalog shows one disabled row",
     rows.length === 1 &&
-      rows[0].querySelector(".window-titlebar__item-label").textContent === "No models available" &&
+      rows[0].querySelector(".ws-window-titlebar__item-label").textContent === "No models available" &&
       rows[0].getAttribute("aria-disabled") === "true",
   );
   rows[0].click();
@@ -404,14 +404,14 @@ function scenario({ desktop = true, modelMenu, profileMenu } = {}) {
   const { menus, popoverOf, itemsOf, isOpen } = scenario({ modelMenu, profileMenu });
   menus.model.click();
   const rows = itemsOf("model");
-  const rowLabel = (row) => row.querySelector(".window-titlebar__item-label").textContent;
+  const rowLabel = (row) => row.querySelector(".ws-window-titlebar__item-label").textContent;
   check(
     "the Model menu appends the Profiles section after the catalog",
     rows.map(rowLabel).join(",") === "alpha,Profiles,main,qwen38",
   );
   check(
     "the sections are divided by a separator",
-    popoverOf("model").querySelector(".window-titlebar__separator") !== null,
+    popoverOf("model").querySelector(".ws-window-titlebar__separator") !== null,
   );
   check(
     "the Profiles header is an inert label",
@@ -424,8 +424,8 @@ function scenario({ desktop = true, modelMenu, profileMenu } = {}) {
   );
   check(
     "the active profile shows the checkmark",
-    rows[2].querySelector(".window-titlebar__item-check").textContent === "✓" &&
-      rows[3].querySelector(".window-titlebar__item-check").textContent === "",
+    rows[2].querySelector(".ws-window-titlebar__item-check").textContent === "✓" &&
+      rows[3].querySelector(".ws-window-titlebar__item-check").textContent === "",
   );
   rows[3].click();
   check("clicking a profile row dispatches switchTo", switches.join(",") === "qwen38");
@@ -457,7 +457,7 @@ function scenario({ desktop = true, modelMenu, profileMenu } = {}) {
   const { menus, itemsOf } = scenario({ modelMenu: new ModelService(() => true), profileMenu });
   menus.model.click();
   const rows = itemsOf("model");
-  const rowLabel = (row) => row.querySelector(".window-titlebar__item-label").textContent;
+  const rowLabel = (row) => row.querySelector(".ws-window-titlebar__item-label").textContent;
   check(
     "an empty catalog still lists the profiles",
     rows.map(rowLabel).join(",") === "No models available,Profiles,main,qwen38",
@@ -483,7 +483,7 @@ function scenario({ desktop = true, modelMenu, profileMenu } = {}) {
   const { menus, itemsOf, isOpen } = scenario({ modelMenu, profileMenu });
   menus.model.click();
   const rows = itemsOf("model");
-  const markOf = (row) => row.querySelector(".window-titlebar__item-check");
+  const markOf = (row) => row.querySelector(".ws-window-titlebar__item-check");
   check(
     "a switch in flight disables every model and profile row",
     rows.every((row) => row.getAttribute("aria-disabled") === "true"),
@@ -491,7 +491,7 @@ function scenario({ desktop = true, modelMenu, profileMenu } = {}) {
   check(
     "the switch target shows the pending mark instead of a check",
     markOf(rows[3]).textContent === "…" &&
-      markOf(rows[3]).classList.contains("window-titlebar__item-check--pending"),
+      markOf(rows[3]).classList.contains("ws-window-titlebar__item-check--pending"),
   );
   check(
     "the still-active profile keeps its check while the switch runs",
@@ -539,7 +539,7 @@ function scenario({ desktop = true, modelMenu, profileMenu } = {}) {
   profileMenu.switching = "qwen38";
   for (const listener of listeners) listener();
   let rows = itemsOf("model");
-  const markOf = (row) => row.querySelector(".window-titlebar__item-check");
+  const markOf = (row) => row.querySelector(".ws-window-titlebar__item-check");
   check(
     "a snapshot while open disables the rows without reopening",
     isOpen("model") && rows.every((row) => row.getAttribute("aria-disabled") === "true"),
@@ -599,7 +599,7 @@ function scenario({ desktop = true, modelMenu, profileMenu } = {}) {
     switchTo: () => {},
   };
   const { window, menus, itemsOf, keydown } = scenario({ modelMenu, profileMenu });
-  const rowLabel = (row) => row.querySelector(".window-titlebar__item-label").textContent;
+  const rowLabel = (row) => row.querySelector(".ws-window-titlebar__item-label").textContent;
   menus.model.click();
   // No row focused yet: a snapshot must not grab focus into the popover.
   const before = window.document.activeElement;
@@ -647,7 +647,7 @@ function scenario({ desktop = true, modelMenu, profileMenu } = {}) {
   menus.help.click();
   itemByLabel("help", "About PromptForge").click();
   check("running About closes the menu", !isOpen("help"));
-  const dialog = window.document.querySelector(".about-dialog");
+  const dialog = window.document.querySelector(".ws-about-dialog");
   check("the About dialog opens", dialog !== null);
   if (dialog) {
     check("the dialog is a modal dialog", dialog.getAttribute("role") === "dialog" &&
@@ -659,11 +659,11 @@ function scenario({ desktop = true, modelMenu, profileMenu } = {}) {
     );
     check(
       "the version line renders the build-time define",
-      dialog.querySelector(".about-dialog__line").textContent === "Version 0.0.0-test",
+      dialog.querySelector(".ws-about-dialog__line").textContent === "Version 0.0.0-test",
     );
-    const update = dialog.querySelector(".about-dialog__check");
+    const update = dialog.querySelector(".ws-about-dialog__check");
     check("the dialog carries the desktop update control", update?.disabled === true);
-    const close = dialog.querySelector(".about-dialog__close");
+    const close = dialog.querySelector(".ws-about-dialog__close");
     check("focus moves into the dialog", window.document.activeElement === close);
     window.document.dispatchEvent(
       new window.KeyboardEvent("keydown", { key: "Tab", bubbles: true }),
@@ -676,7 +676,7 @@ function scenario({ desktop = true, modelMenu, profileMenu } = {}) {
     window.document.dispatchEvent(
       new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
     );
-    check("Escape dismisses the dialog", !window.document.querySelector(".about-dialog"));
+    check("Escape dismisses the dialog", !window.document.querySelector(".ws-about-dialog"));
     check(
       "dismissal returns focus to the invoker",
       window.document.activeElement === menus.help,
@@ -721,7 +721,7 @@ function scenario({ desktop = true, modelMenu, profileMenu } = {}) {
   const { window, commands, menus, itemByLabel, isOpen, nativeCalls, stats } = scenario({ desktop: false });
   check(
     "browser mode builds every popover",
-    window.document.querySelectorAll(".window-titlebar__popover").length === 5,
+    window.document.querySelectorAll(".ws-window-titlebar__popover").length === 5,
   );
   menus.file.click();
   check("clicking File opens its popover in browser mode", isOpen("file"));

@@ -1,5 +1,5 @@
-// The markdown renderer (src/ui/markdown-render.ts) in jsdom: marked
-// output lands under a .markdown-content root with the right elements for
+// The markdown renderer (src/ui/agent/markdown-render.ts) in jsdom: marked
+// output lands under a .ws-markdown-content root with the right elements for
 // headings, paragraphs, emphasis, links, lists, blockquotes, tables, and
 // images (including the =WxH dimension suffix); fenced code blocks carry
 // Shiki's theme colors once markdownReady resolves; and model-authored
@@ -19,7 +19,7 @@ const testDir = path.dirname(fileURLToPath(import.meta.url));
 const bundle = await esbuild.build({
   stdin: {
     contents: `
-      export { renderMarkdown, highlightCode, markdownReady } from "./src/ui/markdown-render.ts";
+      export { renderMarkdown, highlightCode, markdownReady } from "./src/ui/agent/markdown-render.ts";
     `,
     resolveDir: path.join(testDir, ".."),
     loader: "ts",
@@ -58,7 +58,7 @@ function check(name, condition) {
   if (!condition) failures.push(name);
 }
 
-// Renders text into a host element and returns the .markdown-content root.
+// Renders text into a host element and returns the .ws-markdown-content root.
 function render(text, options) {
   const host = document.createElement("div");
   host.append(renderMarkdown(text, options));
@@ -69,8 +69,8 @@ function render(text, options) {
 
 {
   const root = render("# Title\n\nA paragraph of prose.");
-  check("the rendered fragment's root carries the markdown-content class",
-    root?.classList.contains("markdown-content"));
+  check("the rendered fragment's root carries the ws-markdown-content class",
+    root?.classList.contains("ws-markdown-content"));
   check("a level-1 heading renders as an h1 with its text",
     root?.querySelector("h1")?.textContent === "Title");
   check("a paragraph renders as a p with its text",

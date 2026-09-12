@@ -1,4 +1,4 @@
-// The agent-session view (src/ui/agent-session-view.ts) in jsdom, driven
+// The agent-session view (src/ui/agent/agent-session-view.ts) in jsdom, driven
 // through the real AgentSessionService over a scripted wire: durable
 // events paint semantic feed rows (user text, model-labelled replies as
 // sanitized markdown, collapsible reasoning, collapsible tool cards,
@@ -26,7 +26,7 @@ const bundle = await esbuild.build({
       export { Emitter } from "./src/base/event.ts";
       export { AgentSessionService } from "./src/services/agent-session.ts";
       export { ModelService } from "./src/services/model-service.ts";
-      export { AgentSessionView } from "./src/ui/agent-session-view.ts";
+      export { AgentSessionView } from "./src/ui/agent/agent-session-view.ts";
     `,
     resolveDir: path.join(testDir, ".."),
     loader: "ts",
@@ -141,14 +141,14 @@ function harness() {
   const service = new AgentSessionService(wire);
   const view = new AgentSessionView(service, silentStatus);
   window.document.body.appendChild(view.element);
-  const rows = () => [...view.element.querySelectorAll(".agent-item")];
+  const rows = () => [...view.element.querySelectorAll(".ws-agent-item")];
   // The ProseMirror prompt box: content and selection are driven through
   // the component (the DOM alone sets neither), and the pending-wait
   // gate shows on the editor's contenteditable attribute.
   const input = view.promptInput;
-  const editorEl = view.element.querySelector(".prompt-input__editor");
+  const editorEl = view.element.querySelector(".ws-prompt-input__editor");
   const editable = () => editorEl.getAttribute("contenteditable") === "true";
-  const send = view.element.querySelector(".agent-session__send");
+  const send = view.element.querySelector(".ws-agent-session__send");
   const dispose = () => {
     view.dispose();
     service.dispose();
@@ -178,53 +178,53 @@ await assertNoLeaks(lifecycle, () => {
     const [user, reply, reasoning, toolCall, toolResult] = rows();
     check(
       "a user event paints a user row with its origin line",
-      user?.classList.contains("agent-item--user") === true &&
-        user.querySelector(".agent-item__meta")?.textContent === "You",
+      user?.classList.contains("ws-agent-item--user") === true &&
+        user.querySelector(".ws-agent-item__meta")?.textContent === "You",
     );
     check(
       "untrusted content lands as text, never markup",
       user?.querySelector("b") === null &&
-        user?.querySelector(".agent-item__text")?.textContent === "hi <b>there</b>",
+        user?.querySelector(".ws-agent-item__text")?.textContent === "hi <b>there</b>",
     );
     check(
       "a reply row carries its model label and renders markdown",
-      reply?.classList.contains("agent-item--reply") === true &&
-        reply.querySelector(".agent-item__meta")?.textContent === "llama-3" &&
-        reply.querySelector(".markdown-content")?.textContent === "hello back",
+      reply?.classList.contains("ws-agent-item--reply") === true &&
+        reply.querySelector(".ws-agent-item__meta")?.textContent === "llama-3" &&
+        reply.querySelector(".ws-markdown-content")?.textContent === "hello back",
     );
-    const details = reasoning?.querySelector("details.agent-item__reasoning");
+    const details = reasoning?.querySelector("details.ws-agent-item__reasoning");
     check(
       "a thought paints a collapsible reasoning block naming its model",
       details !== null &&
         details?.querySelector("summary")?.textContent === "Reasoning (llama-3)" &&
-        details?.querySelector(".markdown-content")?.textContent === "step one",
+        details?.querySelector(".ws-markdown-content")?.textContent === "step one",
     );
     check("a settled reasoning block is collapsed", details?.open === false);
-    const card = toolCall?.querySelector("details.tool-call-card");
+    const card = toolCall?.querySelector("details.ws-tool-call-card");
     check(
       "a tool-call batch paints a card naming the tool with a call-count badge",
       card !== null &&
-        card?.querySelector(".tool-call-card__name")?.textContent === "read" &&
-        card?.querySelector(".tool-call-card__count")?.textContent === "1",
+        card?.querySelector(".ws-tool-call-card__name")?.textContent === "read" &&
+        card?.querySelector(".ws-tool-call-card__count")?.textContent === "1",
     );
     check(
       "the card body renders the call's arguments",
-      card?.querySelector(".tool-call-card__args")?.textContent?.includes('{"path":"a"}') === true,
+      card?.querySelector(".ws-tool-call-card__args")?.textContent?.includes('{"path":"a"}') === true,
     );
     check(
       "a card whose result already landed starts collapsed",
-      card?.open === false && card?.classList.contains("tool-call-card--running") === false,
+      card?.open === false && card?.classList.contains("ws-tool-call-card--running") === false,
     );
     check(
       "a tool result paints its call id and preformatted output",
-      toolResult?.querySelector(".agent-item__meta")?.textContent === "Tool result (call_1)" &&
-        toolResult?.querySelector("pre.agent-item__output")?.textContent === "the file body",
+      toolResult?.querySelector(".ws-agent-item__meta")?.textContent === "Tool result (call_1)" &&
+        toolResult?.querySelector("pre.ws-agent-item__output")?.textContent === "the file body",
     );
     const markdownRow = rows()[5];
     check(
       "a reply renders its markdown formatting, not the raw source",
-      markdownRow?.querySelector(".markdown-content strong")?.textContent === "bold" &&
-        markdownRow?.querySelector(".markdown-content code")?.textContent === "code",
+      markdownRow?.querySelector(".ws-markdown-content strong")?.textContent === "bold" &&
+        markdownRow?.querySelector(".ws-markdown-content code")?.textContent === "code",
     );
     check(
       "model-authored markup is sanitized before it lands",
@@ -245,9 +245,9 @@ await assertNoLeaks(lifecycle, () => {
     check(
       "reasoning deltas paint one pending open block",
       rows().length === 2 &&
-        pendingReasoning?.classList.contains("agent-item--pending") === true &&
+        pendingReasoning?.classList.contains("ws-agent-item--pending") === true &&
         pendingReasoning.querySelector("details")?.open === true &&
-        pendingReasoning.querySelector(".markdown-content")?.textContent === "let me think",
+        pendingReasoning.querySelector(".ws-markdown-content")?.textContent === "let me think",
     );
     wire.fire.event("agent_thought", "let me think", { model: "m", reply: 0 });
     wire.fire.delta("text", "the ans", 0);
@@ -255,15 +255,15 @@ await assertNoLeaks(lifecycle, () => {
     check(
       "text deltas paint one pending reply after the settled thought",
       rows().length === 3 &&
-        rows()[2]?.classList.contains("agent-item--pending") === true &&
-        rows()[2]?.querySelector(".markdown-content")?.textContent === "the answer",
+        rows()[2]?.classList.contains("ws-agent-item--pending") === true &&
+        rows()[2]?.querySelector(".ws-markdown-content")?.textContent === "the answer",
     );
     wire.fire.event("agent_message", "the answer", { model: "m", reply: 0 });
     check(
       "the durable reply settles the pending row",
       rows().length === 3 &&
-        rows()[2]?.classList.contains("agent-item--pending") === false &&
-        rows()[2]?.querySelector(".agent-item__meta")?.textContent === "m",
+        rows()[2]?.classList.contains("ws-agent-item--pending") === false &&
+        rows()[2]?.querySelector(".ws-agent-item__meta")?.textContent === "m",
     );
     check(
       "settled history is never rebuilt: the user row is the same node",
@@ -281,10 +281,10 @@ await assertNoLeaks(lifecycle, () => {
       reply: 0,
     });
     const cardRow = rows()[0];
-    const card = cardRow?.querySelector("details.tool-call-card");
+    const card = cardRow?.querySelector("details.ws-tool-call-card");
     check(
       "a tool card auto-opens while its call is running",
-      card?.open === true && card.classList.contains("tool-call-card--running"),
+      card?.open === true && card.classList.contains("ws-tool-call-card--running"),
     );
     wire.fire.event("tool_call_update", "the file body", { tool_call_id: "call_9" });
     check(
@@ -292,11 +292,11 @@ await assertNoLeaks(lifecycle, () => {
       rows()[0] === cardRow &&
         rows().length === 2 &&
         card?.open === false &&
-        card.classList.contains("tool-call-card--running") === false,
+        card.classList.contains("ws-tool-call-card--running") === false,
     );
     check(
       "the result still paints its own row",
-      rows()[1]?.querySelector("pre.agent-item__output")?.textContent === "the file body",
+      rows()[1]?.querySelector("pre.ws-agent-item__output")?.textContent === "the file body",
     );
     dispose();
   }
@@ -306,13 +306,13 @@ await assertNoLeaks(lifecycle, () => {
   {
     const { wire, rows, dispose } = harness();
     wire.fire.event("tool_call", "not json at all", { model: "m", reply: 0 });
-    const card = rows()[0]?.querySelector("details.tool-call-card");
+    const card = rows()[0]?.querySelector("details.ws-tool-call-card");
     check(
       "an unparsed batch paints a collapsed card carrying its raw text",
       card !== null &&
-        card?.querySelector(".tool-call-card__raw")?.textContent === "not json at all" &&
+        card?.querySelector(".ws-tool-call-card__raw")?.textContent === "not json at all" &&
         card?.open === false &&
-        card?.classList.contains("tool-call-card--running") === false,
+        card?.classList.contains("ws-tool-call-card--running") === false,
     );
     dispose();
   }
@@ -325,9 +325,9 @@ await assertNoLeaks(lifecycle, () => {
     const row = rows()[0];
     check(
       "an error paints an error row with a visible label, not color alone",
-      row?.classList.contains("agent-item--error") === true &&
+      row?.classList.contains("ws-agent-item--error") === true &&
         row.querySelector("strong")?.textContent === "Error: " &&
-        row.querySelector(".agent-item__text")?.textContent === "Error: the model call failed",
+        row.querySelector(".ws-agent-item__text")?.textContent === "Error: the model call failed",
     );
     dispose();
   }
@@ -402,8 +402,8 @@ await assertNoLeaks(lifecycle, () => {
     const view = new AgentSessionView(service, status, modelService);
     window.document.body.appendChild(view.element);
     const input = view.promptInput;
-    const editorEl = view.element.querySelector(".prompt-input__editor");
-    const send = view.element.querySelector(".agent-session__send");
+    const editorEl = view.element.querySelector(".ws-prompt-input__editor");
+    const send = view.element.querySelector(".ws-agent-session__send");
     wire.fire.inputRequired("model-gated");
     input.setText("keep this draft");
     check(
@@ -484,7 +484,7 @@ await assertNoLeaks(lifecycle, () => {
     const { view, dispose } = harness();
     check(
       "a view built without a model service mounts no toolbar",
-      view.element.querySelector(".agent-toolbar") === null,
+      view.element.querySelector(".ws-agent-toolbar") === null,
     );
     dispose();
   }
@@ -499,20 +499,20 @@ await assertNoLeaks(lifecycle, () => {
     const service = new AgentSessionService(wire);
     const view = new AgentSessionView(service, silentStatus, modelService);
     window.document.body.appendChild(view.element);
-    const toolbar = view.element.querySelector(".agent-toolbar");
-    const bar = view.element.querySelector(".agent-session__bar");
+    const toolbar = view.element.querySelector(".ws-agent-toolbar");
+    const bar = view.element.querySelector(".ws-agent-session__bar");
     check(
       "the toolbar mounts inside the input card after the prompt",
       toolbar !== null &&
         bar !== null &&
         toolbar.parentElement === bar &&
-        toolbar.previousElementSibling?.classList.contains("prompt-input") === true,
+        toolbar.previousElementSibling?.classList.contains("ws-prompt-input") === true,
     );
     check(
       "the toolbar composes the mode chip, the model picker, and the context ring",
-      toolbar?.querySelector(".mode-chip__label")?.textContent === "Agent" &&
-        toolbar?.querySelector(".model-picker-trigger__label")?.textContent === "Select model" &&
-        toolbar?.querySelector(".token-ring")?.getAttribute("aria-valuenow") === "0",
+      toolbar?.querySelector(".ws-mode-chip__label")?.textContent === "Agent" &&
+        toolbar?.querySelector(".ws-model-picker-trigger__label")?.textContent === "Select model" &&
+        toolbar?.querySelector(".ws-token-ring")?.getAttribute("aria-valuenow") === "0",
     );
     modelService.setModels([
       { id: "alpha", description: "first" },
@@ -521,9 +521,9 @@ await assertNoLeaks(lifecycle, () => {
     modelService.applySelected("alpha");
     check(
       "the picker shows the service's current model",
-      toolbar?.querySelector(".model-picker-trigger__label")?.textContent === "alpha",
+      toolbar?.querySelector(".ws-model-picker-trigger__label")?.textContent === "alpha",
     );
-    toolbar?.querySelector(".model-picker-trigger")?.click();
+    toolbar?.querySelector(".ws-model-picker-trigger")?.click();
     const modelItems = [...document.querySelectorAll(".menu-item")];
     check(
       "the picker dropdown lists the catalog",
@@ -540,7 +540,7 @@ await assertNoLeaks(lifecycle, () => {
       modeEvent = event.detail;
     };
     document.addEventListener("agent-mode-changed", onMode);
-    toolbar?.querySelector(".mode-chip")?.click();
+    toolbar?.querySelector(".ws-mode-chip")?.click();
     const planItem = [...document.querySelectorAll(".menu-item")].find(
       (item) => item.querySelector(".menu-item__label")?.textContent === "Plan",
     );
@@ -549,7 +549,7 @@ await assertNoLeaks(lifecycle, () => {
     check(
       "picking a mode fires agent-mode-changed and updates the chip",
       modeEvent === "plan" &&
-        toolbar?.querySelector(".mode-chip__label")?.textContent === "Plan",
+        toolbar?.querySelector(".ws-mode-chip__label")?.textContent === "Plan",
     );
     view.dispose();
     service.dispose();

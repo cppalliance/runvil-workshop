@@ -1,0 +1,41 @@
+/* The mode selector chip trigger (mode-chip.ts imports this file;
+   esbuild bundles it into dist/app.css). The dropdown it opens is
+   styled by workshop/dropdown.css; these rules cover only the trigger.
+   Themed values come from the :root tokens in shared-ui/tokens.css. */
+
+.ws-mode-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  block-size: var(--height-sm);
+  padding-block: 0;
+  padding-inline: var(--space-2);
+  font: inherit;
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-sm);
+  color: var(--cursor-text-primary);
+  background: var(--cursor-bg-secondary);
+  border: none;
+  border-radius: var(--radius-full);
+  cursor: pointer;
+  opacity: 0.8;
+  white-space: nowrap;
+}
+
+/* The open state keeps the hover wash: DropdownMenu sets aria-expanded
+   on the trigger while its menu is up. */
+.ws-mode-chip:hover,
+.ws-mode-chip[aria-expanded="true"] {
+  opacity: 1;
+}
+
+.ws-mode-chip:focus-visible {
+  outline: none;
+}
+
+.ws-mode-chip__icon,
+.ws-mode-chip__chevron {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}

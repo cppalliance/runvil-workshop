@@ -1,5 +1,5 @@
 // Integration test for the workshop zone registry and file tree
-// (src/ui/workshop/zones.ts, panel-types.ts, workshop-panel.ts). Bundles the
+// (src/ui/layout/zones.ts, panel-types.ts, workshop-panel.ts). Bundles the
 // modules with esbuild, mounts a real Dockview dock in jsdom against the
 // real index.html, and drives the public API. Covers: the agent-session
 // and Workshop panels mount through the registry; the agent panel is a
@@ -31,8 +31,8 @@ const bundle = await esbuild.build({
         panelIdFor,
         setZoneOverride,
         zoneOfPanel,
-      } from "./src/ui/workshop/zones.ts";
-      export { createPanelComponent, createPanelTabComponent, isPanelType } from "./src/ui/workshop/panel-types.ts";
+      } from "./src/ui/layout/zones.ts";
+      export { createPanelComponent, createPanelTabComponent, isPanelType } from "./src/ui/layout/panel-types.ts";
     `,
     resolveDir: path.join(uiDir, ".."),
     loader: "ts",
@@ -233,7 +233,7 @@ async function flush() {
 }
 
 function rowByText(text) {
-  return [...window.document.querySelectorAll(".workshop-tree__row")].find(
+  return [...window.document.querySelectorAll(".ws-workshop-tree__row")].find(
     (row) => row.textContent === text,
   );
 }
@@ -260,8 +260,8 @@ const treePanel = openInZone("tree", {});
 await flush();
 
 check("boot opens exactly the agent and tree panels", dock.panels.length === 2);
-check("the agent panel mounts its session surface", !!window.document.querySelector("#dock .agent-panel"));
-check("the Workshop tree panel mounts", !!window.document.querySelector("#dock .workshop-tree"));
+check("the agent panel mounts its session surface", !!window.document.querySelector("#dock .ws-agent-panel"));
+check("the Workshop tree panel mounts", !!window.document.querySelector("#dock .ws-workshop-tree"));
 check("the agent opens in the right zone", zoneOfPanel(agentPanel) === "right");
 check("the tree opens in the left zone", zoneOfPanel(treePanel) === "left");
 check("boot renders two zone groups", dock.groups.length === 2);
@@ -345,7 +345,7 @@ const expandUrl = `/workspace/tree?path=${encodeURIComponent(ROOT)}`;
 check("expanding a directory requests its path", calls.includes(expandUrl));
 check("expansion marks the row expanded", projectRow.getAttribute("aria-expanded") === "true");
 const childNames = [
-  ...window.document.querySelectorAll(".workshop-tree__children .workshop-tree__name"),
+  ...window.document.querySelectorAll(".ws-workshop-tree__children .ws-workshop-tree__name"),
 ].map((span) => span.textContent);
 check(
   "children render folders before files in server order",
@@ -367,7 +367,7 @@ check(
 );
 check(
   "the editor panel mounts its CodeMirror surface",
-  !!editorA && !!editorA.api && !!window.document.querySelector(".editor-panel .cm-editor"),
+  !!editorA && !!editorA.api && !!window.document.querySelector(".ws-editor-panel .cm-editor"),
 );
 
 // A second editor lands within the same main group (affinity, not a new zone).
@@ -433,7 +433,7 @@ check(
   "the reopened tree keeps the root expanded",
   reopenedProjectRow?.getAttribute("aria-expanded") === "true",
 );
-const reopenedChildList = reopenedProjectRow?.closest("li")?.querySelector(".workshop-tree__children");
+const reopenedChildList = reopenedProjectRow?.closest("li")?.querySelector(".ws-workshop-tree__children");
 check(
   "the reopened tree shows the cached children",
   !!reopenedChildList && !reopenedChildList.hidden && !!rowByText("a.txt"),
@@ -449,8 +449,8 @@ const brokenRow = rowByText("broken");
 check("a directory whose listing will fail renders as a row", !!brokenRow);
 brokenRow.click();
 await flush();
-const brokenChildren = brokenRow?.closest("li")?.querySelector(".workshop-tree__children");
-const errorRow = brokenChildren?.querySelector(".workshop-tree__error");
+const brokenChildren = brokenRow?.closest("li")?.querySelector(".ws-workshop-tree__children");
+const errorRow = brokenChildren?.querySelector(".ws-workshop-tree__error");
 check("a failed expansion renders an error row", !!errorRow);
 check(
   "the error row is visible rather than hidden with the collapsed list",

@@ -1,5 +1,5 @@
 // Dictation on the agent session input (src/ui/agent-session-view.ts
-// mounting src/ui/stt.ts), driven through the real AgentSessionService
+// mounting src/ui/stt/stt.ts), driven through the real AgentSessionService
 // over a scripted wire, canonical Realtime events, production capture,
 // and a recording status sink in jsdom. It pins local gating and status,
 // replacement snapshots, authoritative completion, overlapping items,
@@ -78,7 +78,7 @@ const bundle = await esbuild.build({
       export * as lifecycle from "./src/base/lifecycle.ts";
       export { Emitter } from "./src/base/event.ts";
       export { AgentSessionService } from "./src/services/agent-session.ts";
-      export { AgentSessionView } from "./src/ui/agent-session-view.ts";
+      export { AgentSessionView } from "./src/ui/agent/agent-session-view.ts";
     `,
     resolveDir: path.join(testDir, ".."),
     loader: "ts",
@@ -377,16 +377,16 @@ async function harness() {
   realtime.message(
     canonicalMessage("hypothesis_negotiation", "server", "session.updated"),
   );
-  const mic = view.element.querySelector(".agent-session__mic");
+  const mic = view.element.querySelector(".ws-agent-session__mic");
   // The ProseMirror prompt box: content and selection are driven through
   // the component (the DOM alone sets neither). The pending-wait gate
   // and a take's read-only both show on the editor's contenteditable
-  // attribute; the take alone marks the frame with stt-input--recording.
+  // attribute; the take alone marks the frame with ws-stt-input--recording.
   const input = view.promptInput;
-  const editorEl = view.element.querySelector(".prompt-input__editor");
+  const editorEl = view.element.querySelector(".ws-prompt-input__editor");
   const editable = () => editorEl.getAttribute("contenteditable") === "true";
-  const recording = () => input.element.classList.contains("stt-input--recording");
-  const send = view.element.querySelector(".agent-session__send");
+  const recording = () => input.element.classList.contains("ws-stt-input--recording");
+  const send = view.element.querySelector(".ws-agent-session__send");
   // Clicks the mic and waits for the take's Realtime socket to open and
   // send "start"; null when no take began within the wait.
   async function startTake() {
