@@ -3,8 +3,12 @@
 use std::fmt;
 use std::sync::Arc;
 
+use crate::push::Push;
 use crate::slot::ProxySlot;
-use crate::traits::{BackgroundTasks, RouteRegistrar, ShutdownHook, StateProvider, StatusChannel};
+use crate::traits::{
+    BackgroundTasks, CatalogSink, MenuSink, RouteRegistrar, ShutdownHook, StateProvider,
+    StatusChannel, StatusSink,
+};
 
 /// The central registry subsystems self-register into.
 ///
@@ -17,6 +21,9 @@ pub struct Registry {
     tasks: ProxySlot<dyn BackgroundTasks>,
     status: ProxySlot<dyn StatusChannel>,
     shutdown: ProxySlot<dyn ShutdownHook>,
+    status_sink: ProxySlot<dyn StatusSink>,
+    catalog_sink: ProxySlot<dyn CatalogSink>,
+    menu_sink: ProxySlot<dyn MenuSink>,
 }
 
 impl Registry {
@@ -30,6 +37,9 @@ impl Registry {
             tasks: ProxySlot::new(),
             status: ProxySlot::new(),
             shutdown: ProxySlot::new(),
+            status_sink: ProxySlot::new(),
+            catalog_sink: ProxySlot::new(),
+            menu_sink: ProxySlot::new(),
         }
     }
 
@@ -74,6 +84,35 @@ impl Registry {
     pub fn status_channel(&self) -> Option<Arc<dyn StatusChannel>> {
         self.status.get()
     }
+
+    /// The status producer slot: the status subsystem registers its
+    /// receiving end, and same-tier producers emit through it.
+    #[must_use]
+    pub fn status_sink(&self) -> &ProxySlot<dyn StatusSink> {
+        &self.status_sink
+    }
+
+    /// The catalog producer slot: the menu subsystem registers its
+    /// catalog channel's receiving end.
+    #[must_use]
+    pub fn catalog_sink(&self) -> &ProxySlot<dyn CatalogSink> {
+        &self.catalog_sink
+    }
+
+    /// The menu producer slot: the menu subsystem registers its
+    /// workbench mutators' receiving end.
+    #[must_use]
+    pub fn menu_sink(&self) -> &ProxySlot<dyn MenuSink> {
+        &self.menu_sink
+    }
+
+    /// The intent-named push facade over the producer sink slots, for
+    /// subsystems that report what happened without naming another
+    /// subsystem's bus.
+    #[must_use]
+    pub fn push(&self) -> Push {
+        Push::new(self.clone())
+    }
 }
 
 impl Default for Registry {
@@ -90,6 +129,9 @@ impl Clone for Registry {
             tasks: self.tasks.clone(),
             status: self.status.clone(),
             shutdown: self.shutdown.clone(),
+            status_sink: self.status_sink.clone(),
+            catalog_sink: self.catalog_sink.clone(),
+            menu_sink: self.menu_sink.clone(),
         }
     }
 }
@@ -103,6 +145,9 @@ impl fmt::Debug for Registry {
             .field("tasks", &self.tasks)
             .field("status", &self.status)
             .field("shutdown", &self.shutdown)
+            .field("status_sink", &self.status_sink)
+            .field("catalog_sink", &self.catalog_sink)
+            .field("menu_sink", &self.menu_sink)
             .finish()
     }
 }

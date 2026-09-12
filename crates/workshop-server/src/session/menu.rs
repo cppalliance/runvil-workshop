@@ -12,7 +12,7 @@ use crate::gateway::{
     GatewayClient, GatewayError, GatewayResponse, SwitchEvent, SwitchResponse, switch_events,
 };
 use crate::heartbeat::{refresh_catalog, refresh_profiles};
-use crate::menu::SwitchOutcome;
+use crate::menu::{MenuBus, SwitchOutcome};
 use crate::push::Push;
 use crate::relay::value_from_bytes;
 use workshop_protocol::Activity;
@@ -67,9 +67,10 @@ pub(super) async fn start_switch(
     // disconnects mid-switch.
     let client = state.gateway_snapshot().client().clone();
     let push = state.push();
+    let menu = state.menu().clone();
     let name = name.to_string();
     tokio::spawn(async move {
-        run_switch(&client, &push, &name).await;
+        run_switch(&client, &push, &menu, &name).await;
     });
 }
 
@@ -84,7 +85,7 @@ const SWITCH_STAGES: u64 = 3;
 /// selected and `chat_ready` recomputed on success, the truthful
 /// pre-switch state restored on failure - before pushing the idle or
 /// failure status.
-async fn run_switch(client: &GatewayClient, push: &Push, name: &str) {
+async fn run_switch(client: &GatewayClient, push: &Push, menu: &MenuBus, name: &str) {
     let outcome = drive_switch(client, push, name).await;
     // The gateway's serving state may have changed even on a failed
     // switch (its documented degraded state can lose local children),
@@ -96,11 +97,11 @@ async fn run_switch(client: &GatewayClient, push: &Push, name: &str) {
     );
     match outcome {
         Ok(()) => {
-            push.menu().finish_switch(SwitchOutcome::Completed);
+            menu.finish_switch(SwitchOutcome::Completed);
             push.push_idle();
         }
         Err(failure) => {
-            push.menu().finish_switch(SwitchOutcome::Failed);
+            menu.finish_switch(SwitchOutcome::Failed);
             push.push_failure(
                 "Profile switch failed",
                 failure.to_string(),
@@ -147,6 +148,9 @@ async fn drive_switch(
         Ok(SwitchResponse::Buffered(refusal)) => {
             return Err(SwitchFailure::Refused(switch_refusal(&refusal)));
         }
+        // A variant this build does not know: the gateway may grow
+        // response shapes, and a lost switch never degrades the server.
+        Ok(_) => return Err(SwitchFailure::StreamEnded),
         Err(error) => return Err(SwitchFailure::Transport(error)),
     };
     let mut events = switch_events(payloads);
@@ -155,6 +159,9 @@ async fn drive_switch(
             Ok(SwitchEvent::Stage { stage }) => push_stage(push, name, &stage),
             Ok(SwitchEvent::Ready { .. }) => return Ok(()),
             Ok(SwitchEvent::Error { message }) => return Err(SwitchFailure::Failed(message)),
+            // An event variant this build does not know is skipped, the
+            // same degradation a malformed payload gets.
+            Ok(_) => {}
             Err(error) => return Err(SwitchFailure::Transport(error)),
         }
     }

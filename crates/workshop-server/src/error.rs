@@ -294,7 +294,8 @@ mod tests {
         let unreachable = AppError::GatewayUnreachable;
         assert_eq!(unreachable.status(), StatusCode::BAD_GATEWAY);
         assert_eq!(unreachable.code(), Some("gateway_unreachable"));
-        let transport = AppError::Gateway(GatewayError::Transport(Box::new(injected_io())));
+        let transport =
+            AppError::Gateway(GatewayError::transport_for_test(Box::new(injected_io())));
         assert_eq!(transport.status(), StatusCode::BAD_GATEWAY);
         assert_eq!(transport.code(), Some("gateway_unreachable"));
     }
@@ -452,7 +453,7 @@ mod tests {
             "file cannot be read",
             "production bodies carry no source detail"
         );
-        let gateway = AppError::Gateway(GatewayError::Transport(Box::new(injected_io())));
+        let gateway = AppError::Gateway(GatewayError::transport_for_test(Box::new(injected_io())));
         assert_eq!(
             render_message(&gateway, false),
             "gateway transport error",

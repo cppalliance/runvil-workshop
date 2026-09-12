@@ -544,7 +544,10 @@ mod tests {
     #[test]
     fn server_handle_reports_the_identity_initially_published_into_state() {
         let dir = tempfile::TempDir::new().expect("tempdir");
-        let gateway = crate::test_gateway::ValidatedGateway::spawn("initial-key");
+        let gateway = crate::test_gateway::ValidatedGateway::spawn_in(
+            "initial-key",
+            "fixtures::validated_gateway_fixture_process",
+        );
         let identity = gateway.validate("initial-key", 1_778_000_001, "2026-09-08T18:00:01Z");
         let resolved = ResolvedGateway::from_validated(identity.clone());
         let server = spawn_inner(

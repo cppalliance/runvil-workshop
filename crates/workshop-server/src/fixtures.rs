@@ -55,6 +55,16 @@ pub fn spawn_heartbeat(
     )
 }
 
+/// The named child-process half of [`ValidatedGateway`]: the fixture
+/// spawns a copy of this test binary with this test's name, so the name
+/// must stay in sync with the `spawn_in` call sites.
+#[cfg(test)]
+#[test]
+#[ignore = "runs only as a named child process"]
+fn validated_gateway_fixture_process() {
+    run_validated_gateway_fixture_process();
+}
+
 /// Spawns a Workshop test server against the explicit configured Gateway.
 #[cfg(feature = "test-fixtures")]
 pub fn spawn(config: crate::Config) -> Result<crate::ServerHandle, crate::SpawnError> {

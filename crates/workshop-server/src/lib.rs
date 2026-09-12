@@ -10,29 +10,35 @@
 
 mod app;
 mod assets;
-mod catalog;
 mod cross_site;
 mod csp;
 mod error;
-mod gateway;
-mod gateway_binding;
-mod gateway_progress;
-mod heartbeat;
 mod input;
-mod menu;
-mod observer;
-mod progress;
-mod push;
 mod relay;
-mod resolve;
 mod routes;
 mod serve;
 mod session;
 mod session_agents;
-mod status;
-#[cfg(any(test, feature = "test-fixtures"))]
-mod test_gateway;
 mod workspace;
+
+// The extracted subsystem crates, aliased at their pre-decomposition
+// module paths so the shell's internals read as they did before the
+// split. The tier graph is enforced by `cargo test -p xtask`.
+pub use workshop_gateway::{
+    gateway, gateway_binding, gateway_progress, heartbeat, observer, resolve,
+};
+pub use workshop_menu::{catalog, menu};
+pub use workshop_status::{progress, status};
+
+/// The intent-named push facade over the registry's producer sink slots:
+/// business code reports what happened and never chooses a severity or
+/// builds a bus payload.
+pub mod push {
+    pub use workshop_registry::Push;
+}
+
+#[cfg(any(test, feature = "test-fixtures"))]
+pub use workshop_gateway::test_gateway;
 
 /// Crate-internal test seams, re-exported to the integration-test binary.
 /// The socket behavior tests drive the status, catalog, and menu buses,

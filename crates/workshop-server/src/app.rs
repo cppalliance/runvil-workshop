@@ -7,7 +7,7 @@ use axum::Router;
 
 use shared_progress::ProgressHub;
 
-use workshop_registry::{Registration, Registry, StatusChannel, StatusChannelAdapter};
+use workshop_registry::{CatalogSink, MenuSink, Registration, Registry, StatusChannel, StatusSink};
 use workshop_support::{Config, DEFAULT_DEADLINE, ReconnectBackoff, with_deadline};
 
 use crate::catalog::CatalogBus;
@@ -40,10 +40,19 @@ pub struct AppState {
     pub(crate) workspace: Workspace,
     pub(crate) agents: AgentSessions,
     registry: Registry,
-    // Keeps the status bus's self-registration alive; dropping the last
-    // state clone deregisters it.
-    _status_registration: Arc<Registration<dyn StatusChannel>>,
+    // Keeps the subsystems' self-registrations alive; dropping the last
+    // state clone deregisters them.
+    _registrations: Registrations,
 }
+
+/// The registration guards keeping the subsystems' self-registrations
+/// alive: the status push channel and the three producer sinks.
+type Registrations = (
+    Arc<Registration<dyn StatusChannel>>,
+    Arc<Registration<dyn StatusSink>>,
+    Arc<Registration<dyn CatalogSink>>,
+    Arc<Registration<dyn MenuSink>>,
+);
 
 impl AppState {
     /// Builds shared state from the loaded configuration, resolving the
@@ -74,11 +83,11 @@ impl AppState {
         &self.progress
     }
 
-    /// The push facade over the status, catalog, and menu buses, held by
-    /// every subsystem that reports what happened.
+    /// The push facade over the status, catalog, and menu sink slots,
+    /// held by every subsystem that reports what happened.
     #[must_use]
     pub fn push(&self) -> Push {
-        Push::new(self.status.clone(), self.catalog.clone(), self.menu.clone())
+        self.registry.push()
     }
 
     /// One atomic Gateway endpoint and credential generation.
@@ -184,23 +193,20 @@ pub fn state_with_gateway(
     // known and quiet, so it is swept here.
     workshop_support::sweep_orphaned_temps(state_dir);
     let menu = MenuBus::new(catalog.clone(), Some(state_dir));
-    let push = Push::new(status.clone(), catalog.clone(), menu.clone());
-    // The status bus is the proof-of-concept self-registrant: the `/ws`
-    // session loop discovers its channel through the registry's slot
-    // instead of naming the bus.
+    // The subsystems self-register: the `/ws` session loop discovers the
+    // status channel through the registry's slot instead of naming the
+    // bus, and same-tier producers (the gateway heartbeat's refreshes)
+    // reach the buses through the sink slots behind the push facade.
     let registry = Registry::new();
-    let status_registration = Arc::new(registry.status().register(Arc::new(
-        StatusChannelAdapter::new(
-            {
-                let bus = status.clone();
-                move || bus.subscribe()
-            },
-            {
-                let bus = status.clone();
-                move || bus.latest()
-            },
-        ),
-    )));
+    let (status_channel, status_sink) = workshop_status::register(&registry, &status);
+    let (catalog_sink, menu_sink) = workshop_menu::register(&registry, &catalog, &menu);
+    let registrations = (
+        Arc::new(status_channel),
+        Arc::new(status_sink),
+        Arc::new(catalog_sink),
+        Arc::new(menu_sink),
+    );
+    let push = registry.push();
     // Startup phases are reported as they run; with no client connected
     // yet these land on an empty bus, ready for the first session.
     crate::resolve::report(gateway, &push);
@@ -237,7 +243,7 @@ pub fn state_with_gateway(
         workspace,
         agents,
         registry,
-        _status_registration: status_registration,
+        _registrations: registrations,
     })
 }
 

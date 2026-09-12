@@ -31,3 +31,23 @@ pub struct CatalogFrame<'a> {
     kind: &'static str,
     models: &'a [serde_json::Value],
 }
+
+/// Whether one gateway catalog row can back a chat model binding.
+///
+/// This is wire semantics - it interprets the gateway's catalog shape -
+/// so it lives here rather than in any one subsystem: the menu filters
+/// its picker by it, and the gateway subsystem's catalog refresh reads
+/// readiness from it.
+#[must_use]
+pub fn is_chat_capable(model: &serde_json::Value) -> bool {
+    let has_id = model
+        .get("id")
+        .and_then(serde_json::Value::as_str)
+        .is_some_and(|id| !id.is_empty());
+    let chat_kind = match model.get("kind") {
+        None => true,
+        Some(serde_json::Value::String(kind)) => kind == "chat",
+        Some(_) => false,
+    };
+    has_id && chat_kind
+}

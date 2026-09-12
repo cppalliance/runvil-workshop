@@ -67,6 +67,37 @@ pub trait ShutdownHook: Sealed + Send + Sync {
     fn shutdown(&self);
 }
 
+/// The status producer sink: the status subsystem's receiving end for
+/// [`StatusBarUpdate`]s emitted by subsystems in other crates. The
+/// [`Push`](crate::Push) facade builds the frames; the sink only
+/// accepts them, so a producer in a same-tier crate never names the
+/// status bus's type.
+pub trait StatusSink: Sealed + Send + Sync {
+    /// Emits one update onto the status bus.
+    fn emit(&self, update: StatusBarUpdate);
+}
+
+/// The catalog producer sink: the menu subsystem's receiving end for
+/// refreshed model catalogs published by the gateway subsystem.
+pub trait CatalogSink: Sealed + Send + Sync {
+    /// Publishes one complete model catalog snapshot.
+    fn publish(&self, models: Vec<serde_json::Value>);
+}
+
+/// The menu producer sink: the menu subsystem's receiving end for the
+/// workbench mutators the gateway subsystem drives - reachability
+/// verdicts, profile state, and selection restores.
+pub trait MenuSink: Sealed + Send + Sync {
+    /// Records the heartbeat's verdict on gateway reachability.
+    fn set_gateway_reachable(&self, reachable: bool);
+    /// Records the gateway's profile list and active profile.
+    fn set_profiles(&self, profiles: Vec<String>, active: Option<String>);
+    /// Restores a boot-time selection when none is applied.
+    fn restore_selection(&self);
+    /// Revalidates the selection against the catalog just published.
+    fn reconcile_catalog(&self);
+}
+
 /// A [`StatusChannel`] backed by two closures over the status bus: the
 /// registration adapter for the status subsystem. The registry's traits
 /// are sealed, so the registrant plugs its bus in through this adapter
@@ -111,5 +142,140 @@ where
 impl<S, L> fmt::Debug for StatusChannelAdapter<S, L> {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.debug_struct("StatusChannelAdapter").finish()
+    }
+}
+
+/// A [`StatusSink`] backed by one closure over the status bus: the
+/// registration adapter for the status subsystem's producer side. The
+/// registry's traits are sealed, so the registrant plugs its bus in
+/// through this adapter rather than implementing the trait itself.
+pub struct StatusSinkAdapter<E> {
+    emit: E,
+}
+
+impl<E> StatusSinkAdapter<E>
+where
+    E: Fn(StatusBarUpdate) + Send + Sync,
+{
+    /// Builds the adapter from the bus's emit closure.
+    pub fn new(emit: E) -> Self {
+        Self { emit }
+    }
+}
+
+impl<E> Sealed for StatusSinkAdapter<E> where E: Fn(StatusBarUpdate) + Send + Sync {}
+
+impl<E> StatusSink for StatusSinkAdapter<E>
+where
+    E: Fn(StatusBarUpdate) + Send + Sync,
+{
+    fn emit(&self, update: StatusBarUpdate) {
+        (self.emit)(update);
+    }
+}
+
+impl<E> fmt::Debug for StatusSinkAdapter<E> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.debug_struct("StatusSinkAdapter").finish()
+    }
+}
+
+/// A [`CatalogSink`] backed by one closure over the catalog bus: the
+/// registration adapter for the menu subsystem's catalog channel.
+pub struct CatalogSinkAdapter<P> {
+    publish: P,
+}
+
+impl<P> CatalogSinkAdapter<P>
+where
+    P: Fn(Vec<serde_json::Value>) + Send + Sync,
+{
+    /// Builds the adapter from the bus's publish closure.
+    pub fn new(publish: P) -> Self {
+        Self { publish }
+    }
+}
+
+impl<P> Sealed for CatalogSinkAdapter<P> where P: Fn(Vec<serde_json::Value>) + Send + Sync {}
+
+impl<P> CatalogSink for CatalogSinkAdapter<P>
+where
+    P: Fn(Vec<serde_json::Value>) + Send + Sync,
+{
+    fn publish(&self, models: Vec<serde_json::Value>) {
+        (self.publish)(models);
+    }
+}
+
+impl<P> fmt::Debug for CatalogSinkAdapter<P> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.debug_struct("CatalogSinkAdapter").finish()
+    }
+}
+
+/// A [`MenuSink`] backed by closures over the menu bus's mutators: the
+/// registration adapter for the menu subsystem's workbench state.
+pub struct MenuSinkAdapter<R, P, S, C> {
+    reachable: R,
+    profiles: P,
+    restore: S,
+    reconcile: C,
+}
+
+impl<R, P, S, C> MenuSinkAdapter<R, P, S, C>
+where
+    R: Fn(bool) + Send + Sync,
+    P: Fn(Vec<String>, Option<String>) + Send + Sync,
+    S: Fn() + Send + Sync,
+    C: Fn() + Send + Sync,
+{
+    /// Builds the adapter from the menu bus's mutator closures, in the
+    /// [`MenuSink`] trait's method order.
+    pub fn new(reachable: R, profiles: P, restore: S, reconcile: C) -> Self {
+        Self {
+            reachable,
+            profiles,
+            restore,
+            reconcile,
+        }
+    }
+}
+
+impl<R, P, S, C> Sealed for MenuSinkAdapter<R, P, S, C>
+where
+    R: Fn(bool) + Send + Sync,
+    P: Fn(Vec<String>, Option<String>) + Send + Sync,
+    S: Fn() + Send + Sync,
+    C: Fn() + Send + Sync,
+{
+}
+
+impl<R, P, S, C> MenuSink for MenuSinkAdapter<R, P, S, C>
+where
+    R: Fn(bool) + Send + Sync,
+    P: Fn(Vec<String>, Option<String>) + Send + Sync,
+    S: Fn() + Send + Sync,
+    C: Fn() + Send + Sync,
+{
+    fn set_gateway_reachable(&self, reachable: bool) {
+        (self.reachable)(reachable);
+    }
+
+    fn set_profiles(&self, profiles: Vec<String>, active: Option<String>) {
+        (self.profiles)(profiles, active);
+    }
+
+    fn restore_selection(&self) {
+        (self.restore)();
+    }
+
+    fn reconcile_catalog(&self) {
+        (self.reconcile)();
+    }
+}
+
+impl<R, P, S, C> fmt::Debug for MenuSinkAdapter<R, P, S, C> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.debug_struct("MenuSinkAdapter").finish()
     }
 }

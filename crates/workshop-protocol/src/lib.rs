@@ -135,7 +135,7 @@ mod status;
 mod workbench;
 
 pub use agent::{AgentDeltaFrame, AgentDeltaKind, AgentEventFrame, AgentSessionFrame, AgentsFrame};
-pub use catalog::{CatalogFrame, CatalogPush};
+pub use catalog::{CatalogFrame, CatalogPush, is_chat_capable};
 pub use error::{ErrorEnvelope, ErrorFrame};
 pub use input::{InputFrame, InputResponse};
 pub use status::{Activity, Progress, Severity, StatusBarUpdate, StatusFrame};

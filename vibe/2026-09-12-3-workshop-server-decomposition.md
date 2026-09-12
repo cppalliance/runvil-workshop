@@ -411,17 +411,17 @@ Verification: `cargo clippy -p workshop-protocol -p workshop-support -p workshop
 
 <step-4>
 
-### Step 4: Extract service crates
+### Step 4: Extract service crates [completed]
 
 - Component: Server Decomposition
 
 Extract all three domain service crates. These depend only on tier-0 vocabulary crates.
 
-**workshop-gateway** (~4.5k lines): Extract from `workshop-server/src/gateway.rs`, `workshop-server/src/gateway_binding.rs`, `workshop-server/src/gateway_progress.rs`, `workshop-server/src/resolve.rs`, `workshop-server/src/heartbeat.rs`, `workshop-server/src/observer.rs`. HTTP client, endpoint binding, discovery, heartbeat, progress subscriber, relay, test seam. Domain crate never exposes an axum type in its public API. Self-registers routes, state handle, and background tasks (heartbeat, progress) into `workshop-registry`.
+**workshop-gateway** (~4.5k lines): Extract from `workshop-server/src/gateway.rs`, `workshop-server/src/gateway_binding.rs`, `workshop-server/src/gateway_progress.rs`, `workshop-server/src/resolve.rs`, `workshop-server/src/heartbeat.rs`, `workshop-server/src/observer.rs`. HTTP client, endpoint binding, discovery, heartbeat, progress subscriber, relay, test seam. Domain crate never exposes an axum type in its public API. Reports through the registry's push facade; its route, state-handle, and background-task (heartbeat, progress) registration into `workshop-registry` is deferred to step 5, which owns the composition-root `register()` calls.
 
-**workshop-status** (~1.7k lines): Extract from `workshop-server/src/status.rs`, `workshop-server/src/progress.rs`. Status-bar broadcast bus (now backed by generic `RetainedBus<StatusEvent>`), progress renderer, event log. Self-registers push channel and state handle.
+**workshop-status** (~1.7k lines): Extract from `workshop-server/src/status.rs`, `workshop-server/src/progress.rs`. Status-bar broadcast bus (now backed by generic `RetainedBus<StatusEvent>`), progress renderer, event log. Self-registers push channel and producer sink; state-handle registration is deferred to step 5's AppState decomposition.
 
-**workshop-menu** (~1.1k lines): Extract from `workshop-server/src/menu.rs`, `workshop-server/src/catalog.rs`. Model menu snapshot, catalog channel (backed by `RetainedBus<CatalogEvent>`). Self-registers push channel and state handle.
+**workshop-menu** (~1.1k lines): Extract from `workshop-server/src/menu.rs`, `workshop-server/src/catalog.rs`. Model menu snapshot, catalog channel (backed by `RetainedBus<CatalogEvent>`). Self-registers push channel and producer sinks; state-handle registration is deferred to step 5's AppState decomposition.
 
 Each crate gets its own concrete error type derived with `thiserror`, `#[non_exhaustive]`. Update `workshop-server` to depend on all three service crates. Update `xtask` allowed-dependency tables.
 

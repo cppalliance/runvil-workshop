@@ -808,6 +808,19 @@ mod tests {
 
     use super::*;
 
+    /// A push facade wired to the real buses through the registry, with
+    /// the registrations kept alive by the returned guards.
+    fn wired_push(
+        status: &crate::status::StatusBus,
+        catalog: &CatalogBus,
+        menu: &MenuBus,
+    ) -> (Push, impl std::fmt::Debug + Send + Sync + 'static) {
+        let registry = workshop_registry::Registry::new();
+        let status_guards = workshop_status::register(&registry, status);
+        let menu_guards = workshop_menu::register(&registry, catalog, menu);
+        (registry.push(), (status_guards, menu_guards))
+    }
+
     #[test]
     fn discovery_lists_sorted_lua_stems_and_tolerates_a_missing_dir() {
         let dir = tempfile::TempDir::new().expect("tempdir");
@@ -975,17 +988,14 @@ mod tests {
         std::fs::write(dir.path().join("echo.lua"), "return 1").expect("seed echo");
         let catalog = CatalogBus::default();
         let menu = MenuBus::new(catalog.clone(), None);
+        let (push, _guards) = wired_push(&crate::status::StatusBus::new(), &catalog, &menu);
         let sessions = AgentSessions::new(
             dir.path().to_path_buf(),
             dir.path().join("sessions"),
             GatewayBinding::new("http://127.0.0.1:1", "")
                 .expect("the unusable model binding still builds its HTTP client"),
             SessionHost {
-                push: Push::new(
-                    crate::status::StatusBus::new(),
-                    catalog.clone(),
-                    menu.clone(),
-                ),
+                push,
                 backoff: ReconnectBackoff::new(),
                 menu,
                 workspace: Workspace::new(),
@@ -1013,13 +1023,14 @@ mod tests {
         let mut status_rx = status.subscribe();
         let catalog = CatalogBus::new();
         let menu = MenuBus::new(catalog.clone(), None);
+        let (push, _guards) = wired_push(&status, &catalog, &menu);
         let (errors, mut errors_rx) = broadcast::channel(ERROR_CAPACITY);
         let (supervisor_events, _events) = mpsc::unbounded_channel();
         let (cancellations, _cancellation_events) = mpsc::channel(lifecycle::CANCELLATION_CAPACITY);
         let observer = SessionObserver {
             log: Arc::new(WorkshopObserver::new(None).expect("a memory log")),
             rounds: Arc::new(AtomicU64::new(0)),
-            push: Push::new(status, catalog, menu),
+            push,
             backoff: ReconnectBackoff::new(),
             errors,
             lifecycle: Arc::new(RunLifecycle::new(supervisor_events, cancellations)),

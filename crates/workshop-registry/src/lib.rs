@@ -16,17 +16,21 @@
 //!   only this crate implements them: registrants plug in through the
 //!   adapters provided here, never by implementing a trait downstream.
 //! - An unregistered slot is a graceful no-op, never an error:
-//!   consumers branch on `None` and continue degraded.
+//!   consumers branch on `None` and continue degraded, and the [`Push`]
+//!   facade drops intents whose sink slot is empty.
 //! - A registration is alive exactly as long as its guard: dropping the
 //!   guard deregisters the subsystem.
 
+mod push;
 mod registry;
 mod slot;
 mod traits;
 
+pub use push::{MenuPush, Push};
 pub use registry::Registry;
 pub use slot::{ProxySlot, Registration};
 pub use traits::{
-    BackgroundTasks, RouteRegistrar, ShutdownHook, StateProvider, StatusChannel,
-    StatusChannelAdapter,
+    BackgroundTasks, CatalogSink, CatalogSinkAdapter, MenuSink, MenuSinkAdapter, RouteRegistrar,
+    ShutdownHook, StateProvider, StatusChannel, StatusChannelAdapter, StatusSink,
+    StatusSinkAdapter,
 };
