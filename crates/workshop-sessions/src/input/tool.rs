@@ -1,81 +1,19 @@
-//! The session's input tools: the Workshop's `user_input` tool and the
-//! generic input broker, each suspending an agent program until its
-//! operator answers, each guarded so a dying wait is an outcome, never
+//! The session's input broker: suspends an agent program until its
+//! operator answers, guarded so a dying wait is an outcome, never
 //! silence.
 
 use std::sync::Arc;
 
 use promptforge_core::input::{InputBroker, InputError, InputOutcome};
-use promptforge_tools::{Tool, ToolError, ToolErrorKind, ToolId, ToolOutput};
 use tokio::sync::broadcast;
 
 use workshop_protocol::InputFrame;
 
 use super::WaitRegistry;
 
-/// The Workshop's `user_input` tool: suspends an agent program until its
-/// operator types into the session's input box.
-///
-/// A host-primitive [`Tool`] the session constructs per agent session -
-/// it is never advertised to a model (the agent driver advertises only
-/// the aliases a `models.chat` call names, and host primitives are
-/// excluded from that set), and only the agent program itself calls it.
-/// `call()` opens a wait in the session's [`WaitRegistry`], pushes the
-/// `input_required` frame itself, and suspends until the wait resolves;
-/// `run_agent` has no user-input awareness because this tool is the
-/// caller's own code.
-///
-/// The output is **trusted and structured**: a JSON object with `text`
-/// (the operator's input, byte-exact - the operator is not an attacker of
-/// their own session, so no nonce envelope ever wraps it) and `images`
-/// (present and always empty until SPA attachments land). The session
-/// binds this tool with the structured output kind, so the object resumes
-/// into Lua as a table - `result.text`, `result.images` - through the
-/// serde boundary; structured output stays restricted to trusted tools.
-///
-/// # Examples
-/// ```
-/// use std::sync::Arc;
-///
-/// use promptforge_tools::Tool;
-/// use workshop_sessions::{UserInputTool, WaitRegistry};
-///
-/// let (frames, _receiver) = tokio::sync::broadcast::channel(8);
-/// let tool = UserInputTool::new(Arc::new(WaitRegistry::new()), frames);
-/// assert_eq!(tool.wire_name(), "user_input");
-/// ```
-#[derive(Debug)]
-pub struct UserInputTool {
-    /// The session's wait registry, shared with the session loop that
-    /// completes and cancels waits.
-    registry: Arc<WaitRegistry>,
-    /// Where `input_required` and `input_cancelled` frames are pushed;
-    /// the session's socket loop forwards them to the SPA.
-    frames: broadcast::Sender<InputFrame>,
-}
-
-impl UserInputTool {
-    /// Builds the tool over the session's wait registry and frame sender.
-    ///
-    /// # Examples
-    /// ```
-    /// use std::sync::Arc;
-    ///
-    /// use workshop_sessions::{UserInputTool, WaitRegistry};
-    ///
-    /// let registry = Arc::new(WaitRegistry::new());
-    /// let (frames, _receiver) = tokio::sync::broadcast::channel(8);
-    /// let _tool = UserInputTool::new(registry, frames);
-    /// ```
-    #[must_use]
-    pub fn new(registry: Arc<WaitRegistry>, frames: broadcast::Sender<InputFrame>) -> Self {
-        Self { registry, frames }
-    }
-}
-
 /// Guarantees a dying wait is an outcome, not silence: unless disarmed by
 /// a delivered value, dropping the guard removes the wait from the
-/// registry and pushes `input_cancelled` for its token. The tool future
+/// registry and pushes `input_cancelled` for its token. The broker future
 /// is dropped by the shared dispatch's cancel race on turn-cancel, so
 /// this guard is what keeps a cancelled turn from leaking its wait or
 /// leaving the SPA prompting against a dead token.
@@ -115,8 +53,8 @@ impl Drop for WaitGuard {
 /// One broker per run: `user_input` opens a wait in the session's
 /// [`WaitRegistry`], announces it with the durable `input_required` frame,
 /// and suspends on the receiver until the session delivers the operator's
-/// answer or the wait dies. A dying wait is an outcome, never silence -
-/// the same drop-guard rule as the legacy tool: a future dropped by a
+/// answer or the wait dies. A dying wait is an outcome, never silence:
+/// a future dropped by a
 /// turn-cancel removes the entry and pushes `input_cancelled`, so the SPA
 /// never pins its input box to a dead token.
 ///
@@ -200,80 +138,6 @@ impl InputBroker for SessionInputBroker {
             // `input_cancelled` on scope exit, so this path clears the
             // SPA prompt too.
             Err(_) => Err(InputError::message("the user-input wait was cancelled")),
-        }
-    }
-}
-
-#[async_trait::async_trait]
-impl Tool for UserInputTool {
-    fn id(&self) -> ToolId {
-        ToolId::from_validated("workshop", "user_input")
-    }
-
-    #[expect(
-        clippy::unnecessary_literal_bound,
-        reason = "the Tool trait fixes this return type to &str, so the &'static str suggestion cannot be applied"
-    )]
-    fn wire_name(&self) -> &str {
-        "user_input"
-    }
-
-    #[expect(
-        clippy::unnecessary_literal_bound,
-        reason = "the Tool trait fixes this return type to &str, so the &'static str suggestion cannot be applied"
-    )]
-    fn description(&self) -> &str {
-        "Waits for the workshop operator to type into the session's input box."
-    }
-
-    fn parameters_schema(&self) -> serde_json::Value {
-        serde_json::json!({ "type": "object", "properties": {} })
-    }
-
-    /// Structured: the JSON object resumes into Lua as a table
-    /// (`result.text`, `result.images`), which is safe here because the
-    /// output is trusted - the untrusted wrap that would break a JSON
-    /// parse never applies.
-    fn structured_output(&self) -> bool {
-        true
-    }
-
-    /// Opens a wait, announces it, and suspends until it resolves.
-    ///
-    /// Arguments are ignored: the tool takes none. On cancellation - the
-    /// future dropped mid-await, or the wait cancelled out of the
-    /// registry - the drop guard removes the wait and pushes
-    /// `input_cancelled`, so no path leaks a wait or a stale prompt.
-    ///
-    /// # Errors
-    /// Returns a [`ToolErrorKind::Cancelled`] error when the wait dies
-    /// before the operator answers.
-    async fn call(&self, _args: serde_json::Value) -> Result<ToolOutput, ToolError> {
-        let (token, receiver) = self.registry.create();
-        let mut guard = WaitGuard {
-            registry: Arc::clone(&self.registry),
-            frames: self.frames.clone(),
-            token,
-            armed: true,
-        };
-        // No receiver means no socket is attached right now. Not a
-        // failure: the registry retains the wait and the session resends
-        // it on reconnect, so the lost push is repaired.
-        let _ = self.frames.send(InputFrame::Required {
-            token: guard.token.clone(),
-        });
-        match receiver.await {
-            Ok(text) => {
-                guard.armed = false;
-                let table = serde_json::json!({ "text": text, "images": [] });
-                Ok(ToolOutput::trusted(table.to_string()))
-            }
-            // The sender died without a value: the wait was cancelled out
-            // of the registry. The still-armed guard pushes
-            // `input_cancelled` on scope exit, so this path clears the
-            // SPA prompt too.
-            Err(_) => Err(ToolError::message("the user-input wait was cancelled")
-                .with_kind(ToolErrorKind::Cancelled)),
         }
     }
 }

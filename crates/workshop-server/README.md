@@ -135,7 +135,7 @@ The variables:
 
 ## Agent input waits
 
-`WaitRegistry` holds an agent session's unresolved user-input waits behind single-use cryptographic tokens, retained across socket loss and resent on reconnect. `UserInputTool` is the Workshop's `user_input` tool - never advertised to a model - whose `call()` registers a wait, pushes the durable `input_required` frame itself, and suspends until `deliver_input_response` fires `on_user_input` byte-exact and completes the wait; its output is trusted, structured JSON (`text` byte-exact, `images` present and empty). A drop guard turns every dying wait into a durable `input_cancelled` frame, so a cancelled turn never leaks a wait or leaves a stale prompt.
+`WaitRegistry` holds an agent session's unresolved user-input waits behind single-use cryptographic tokens, retained across socket loss and resent on reconnect. `SessionInputBroker` is the session's input broker behind the script-side `user_input()` - never advertised to a model - which registers a wait, pushes the durable `input_required` frame itself, and suspends until `deliver_input_response` fires `on_user_input` byte-exact and completes the wait. A drop guard turns every dying wait into a durable `input_cancelled` frame, so a cancelled turn never leaks a wait or leaves a stale prompt.
 
 ## Agent sessions
 

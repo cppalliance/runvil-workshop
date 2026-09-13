@@ -3,7 +3,7 @@
 //! Holds the `workshop.toml` configuration, the PromptForge gateway client,
 //! and the axum router so `src/main.rs` stays a thin shell. Start at
 //! [`Config::load`] for configuration, [`WorkshopObserver`] for the run
-//! event log, [`WaitRegistry`] and [`UserInputTool`] for agent input
+//! event log, [`WaitRegistry`] and [`SessionInputBroker`] for agent input
 //! waits, [`AgentSessions`] for the agent-session registry behind
 //! `/agents/ws`, and [`router`] for the HTTP API; [`spawn`] runs the whole
 //! server in-process on its own thread for embedding binaries.
@@ -77,8 +77,7 @@ pub use resolve::{GatewaySource, ResolveError, ResolvedGateway};
 pub use serve::{ServerHandle, SpawnError, Termination, spawn};
 pub use workshop_protocol::{Activity, InputFrame, InputResponse};
 pub use workshop_sessions::{
-    AgentSessions, SessionInputBroker, UserInputTool, WaitError, WaitRegistry,
-    deliver_input_response,
+    AgentSessions, SessionInputBroker, WaitError, WaitRegistry, deliver_input_response,
 };
 pub use workshop_support::{
     AgentsConfig, Config, ConfigError, DEFAULT_CONFIG_PATH, GatewayConfig, ServerConfig,

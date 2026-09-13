@@ -1,10 +1,10 @@
 //! The user-input wait: the [`WaitRegistry`] of single-use wait tokens,
-//! the Workshop's `user_input` tool, and the `input_response` producer
-//! that completes a wait.
+//! the session's input broker behind the script-side `user_input()`, and
+//! the `input_response` producer that completes a wait.
 //!
-//! An agent program asks its operator for input by calling the
-//! `user_input` tool - session-supplied code, never advertised to a
-//! model. Its `call()` registers a wait, announces it with a durable
+//! An agent program asks its operator for input through the session's
+//! input broker - session-supplied code, never advertised to a model. The
+//! broker registers a wait, announces it with a durable
 //! `input_required` frame, and suspends on the wait's receiver until the
 //! session delivers the operator's answer ([`deliver_input_response`]) or
 //! the wait dies. A dying wait is an outcome, never silence: every path
@@ -24,7 +24,7 @@ use tokio::sync::{broadcast, oneshot};
 
 use workshop_protocol::{InputFrame, InputResponse};
 
-pub use tool::{SessionInputBroker, UserInputTool};
+pub use tool::SessionInputBroker;
 
 /// One unresolved wait: its single-use token, and the sender that resumes
 /// the suspended `user_input` call with the operator's text.

@@ -4,33 +4,10 @@ use std::sync::Arc;
 
 use promptforge_core::input::{InputBroker, InputOutcome};
 use promptforge_core_support::observe::Observation;
-use promptforge_tools::{OutputTrust, Tool, ToolErrorKind};
 
 /// Hostile operator text covering the bytes most likely to be mangled
 /// by an envelope or codec.
 const GNARLY: &str = "line1\r\nline2 \"quoted\" {\"text\":\"decoy\"} \\slash \u{1F980}";
-
-/// A fresh tool, registry, and channel with no subscribers.
-fn tool_fixture() -> (
-    UserInputTool,
-    Arc<WaitRegistry>,
-    broadcast::Sender<InputFrame>,
-) {
-    let registry = Arc::new(WaitRegistry::new());
-    let (frames, _) = broadcast::channel(8);
-    let tool = UserInputTool::new(Arc::clone(&registry), frames.clone());
-    (tool, registry, frames)
-}
-
-async fn registered_token(registry: &WaitRegistry) -> String {
-    for _ in 0..1024 {
-        if let Some(token) = registry.unresolved().first().cloned() {
-            return token;
-        }
-        tokio::task::yield_now().await;
-    }
-    panic!("the tool call never registered its wait");
-}
 
 async fn required_token(socket: &mut broadcast::Receiver<InputFrame>) -> String {
     let frame = socket.recv().await.expect("a frame arrives");
@@ -132,143 +109,6 @@ fn the_registry_debug_shows_the_count_and_never_a_token() {
         !rendered.contains(&token),
         "a token in a log would let the log's reader answer the prompt"
     );
-}
-
-#[test]
-fn the_tool_declares_structured_output() {
-    let (tool, _registry, _frames) = tool_fixture();
-    assert!(
-        tool.structured_output(),
-        "user_input must bind structured so its JSON resumes as a Lua table"
-    );
-}
-
-#[tokio::test]
-async fn the_tool_emits_input_required_carrying_its_wait_token() {
-    let (tool, registry, frames) = tool_fixture();
-    let mut socket = frames.subscribe();
-    let call = tokio::spawn(async move { tool.call(serde_json::json!({})).await });
-    let token = required_token(&mut socket).await;
-    assert_eq!(
-        registry.unresolved(),
-        vec![token.clone()],
-        "the announced token names the retained wait"
-    );
-    registry
-        .complete(&token, "done".to_owned())
-        .expect("the wait completes");
-    let output = call
-        .await
-        .expect("the task joins")
-        .expect("the call succeeds");
-    assert_eq!(output.trust(), OutputTrust::Trusted);
-}
-
-#[tokio::test]
-async fn the_resumed_output_is_a_trusted_table_with_byte_exact_text_and_empty_images() {
-    let (tool, registry, frames) = tool_fixture();
-    let mut socket = frames.subscribe();
-    let call = tokio::spawn(async move { tool.call(serde_json::json!({})).await });
-    let token = required_token(&mut socket).await;
-    registry
-        .complete(&token, GNARLY.to_owned())
-        .expect("the wait completes");
-    let output = call
-        .await
-        .expect("the task joins")
-        .expect("the call succeeds");
-    assert_eq!(
-        output.trust(),
-        OutputTrust::Trusted,
-        "operator input is first-party: no nonce envelope may wrap it"
-    );
-    let table: serde_json::Value =
-        serde_json::from_str(output.text()).expect("a structured tool returns JSON");
-    assert_eq!(
-        table["text"].as_str().expect("text is a string"),
-        GNARLY,
-        "result.text is the SPA text byte-exact and envelope-free"
-    );
-    assert_eq!(
-        table["images"],
-        serde_json::json!([]),
-        "result.images is present and empty in the gate"
-    );
-    assert!(
-        matches!(
-            socket.try_recv(),
-            Err(broadcast::error::TryRecvError::Empty)
-        ),
-        "a completed wait dies silently: no input_cancelled follows"
-    );
-}
-
-#[tokio::test]
-async fn dropping_the_tool_future_removes_the_wait_and_emits_input_cancelled() {
-    let (tool, registry, frames) = tool_fixture();
-    let mut socket = frames.subscribe();
-    let call = tokio::spawn(async move { tool.call(serde_json::json!({})).await });
-    let token = required_token(&mut socket).await;
-    call.abort();
-    let joined = call.await;
-    assert!(
-        joined.is_err_and(|error| error.is_cancelled()),
-        "abort drops the suspended call"
-    );
-    assert!(
-        registry.unresolved().is_empty(),
-        "a dropped future may not leak its wait"
-    );
-    let frame = socket.recv().await.expect("the cancellation frame arrives");
-    assert_eq!(
-        frame,
-        InputFrame::Cancelled { token },
-        "the SPA is told exactly which prompt died"
-    );
-}
-
-#[tokio::test]
-async fn a_registry_cancel_fails_the_call_as_cancelled_and_emits_input_cancelled() {
-    let (tool, registry, frames) = tool_fixture();
-    let mut socket = frames.subscribe();
-    let call = tokio::spawn(async move { tool.call(serde_json::json!({})).await });
-    let token = required_token(&mut socket).await;
-    registry.cancel(&token);
-    let error = call
-        .await
-        .expect("the task joins")
-        .expect_err("a cancelled wait fails the call");
-    assert_eq!(error.kind(), ToolErrorKind::Cancelled);
-    let frame = socket.recv().await.expect("the cancellation frame arrives");
-    assert_eq!(
-        frame,
-        InputFrame::Cancelled { token },
-        "cancellation is an outcome on the wire, not silence"
-    );
-}
-
-#[tokio::test]
-async fn a_disconnected_socket_does_not_cancel_the_wait() {
-    let (tool, registry, frames) = tool_fixture();
-    // No subscriber exists at all: the session's socket is gone.
-    drop(frames);
-    let call = tokio::spawn(async move { tool.call(serde_json::json!({})).await });
-    let token = registered_token(&registry).await;
-    assert_eq!(
-        registry.unresolved(),
-        vec![token.clone()],
-        "the wait outlives the absent socket"
-    );
-    registry
-        .complete(&token, "typed after reconnect".to_owned())
-        .expect("the retained wait still completes");
-    let output = call
-        .await
-        .expect("the task joins")
-        .expect("the call succeeds");
-    let table: serde_json::Value =
-        serde_json::from_str(output.text()).expect("a structured tool returns JSON");
-    assert_eq!(table["text"], "typed after reconnect");
 }
 
 #[tokio::test]

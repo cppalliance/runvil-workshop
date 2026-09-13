@@ -33,7 +33,5 @@ mod session;
 pub mod state;
 
 pub use agents::{AgentSessions, SessionHost};
-pub use input::{
-    SessionInputBroker, UserInputTool, WaitError, WaitRegistry, deliver_input_response,
-};
+pub use input::{SessionInputBroker, WaitError, WaitRegistry, deliver_input_response};
 pub use state::{SessionsState, register, routes};
