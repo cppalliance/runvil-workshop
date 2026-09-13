@@ -347,7 +347,7 @@ One step, built expand-migrate-contract inside so the tree compiles at every che
 
 <step-5>
 
-### Step 5: Correct the decomposition records
+### Step 5: Correct the decomposition records [completed]
 
 - Component: records-correction
 

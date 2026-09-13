@@ -8,4 +8,5 @@ This crate owns the desktop shell and its product lifecycle.
 - Gateway launch is detached from the shell through the shared-sidecar launch contract. The shell never hosts the Gateway in-process.
 - The shell does not read Gateway configuration, own the Gateway discovery file, or kill the Gateway as part of ordinary shell teardown.
 - Quit requests authenticated shutdown only for a sidecar-attached Gateway. A LAN-configured Gateway remains running.
+- The gateway supervisor (`src/gateway/supervisor.rs`) stays in this crate. Porting it to a shared crate defers to the headless agent mode plan, which shapes the shared API.
 - Build the window capability programmatically for the exact bound port. Do not replace it with a wildcard-port capability file.
