@@ -40,11 +40,6 @@ fn capability_replacement_publishes_one_coherent_snapshot() {
     assert_eq!(new.client().api_key, "new-key");
     assert_eq!(new.base_url(), format!("http://127.0.0.1:{port}"));
     assert_eq!(new.api_key(), "new-key");
-    assert!(
-        format!("{:?}", new.model_client().expect("the model client builds"))
-            .contains(&format!("http://127.0.0.1:{port}/v1")),
-        "the model client carries the same endpoint"
-    );
     let identity = new
         .identity
         .as_ref()

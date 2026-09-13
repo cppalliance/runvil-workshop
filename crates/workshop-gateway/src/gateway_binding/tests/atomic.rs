@@ -31,20 +31,12 @@ fn synchronized_reads_never_observe_a_torn_replacement_snapshot() {
                         assert_eq!(snapshot.base_url(), "http://127.0.0.1:54375");
                         assert_eq!(snapshot.api_key(), "old-key");
                         assert!(snapshot.identity.is_none());
-                        assert!(
-                            format!("{:?}", snapshot.model_client().expect("old model client"))
-                                .contains("http://127.0.0.1:54375/v1")
-                        );
                     } else {
                         assert_eq!(snapshot.client().base_url, reader_url);
                         assert_eq!(snapshot.client().api_key, "new-key");
                         assert_eq!(snapshot.base_url(), reader_url);
                         assert_eq!(snapshot.api_key(), "new-key");
                         assert_eq!(snapshot.identity.as_ref(), Some(&reader_validated));
-                        assert!(
-                            format!("{:?}", snapshot.model_client().expect("new model client"))
-                                .contains(&format!("{reader_url}/v1"))
-                        );
                     }
                     if snapshot.generation() >= target_generation {
                         break;

@@ -2,13 +2,14 @@
 
 use std::sync::Arc;
 
+use promptforge_api::client::GatewayClient as ModelClient;
 use promptforge_api::execute::RunErrorKind;
 use promptforge_api::{Prompt, ResolutionContext, RunConfig};
-use promptforge_model_client::client::{GatewayClient as ModelClient, StreamDelta};
 use promptforge_model_client::model::ModelCatalog;
 use promptforge_tool_picker::{Config, ToolPicker};
 use shared_promptforge_api::observe::Observer;
 use shared_promptforge_api::tools::ToolCatalog;
+use shared_promptforge_api::wire::StreamDelta;
 use shared_vfs::VfsRef;
 
 use workshop_gateway::GatewaySnapshot;
@@ -16,7 +17,7 @@ use workshop_menu::ChatCatalog;
 use workshop_protocol::Activity;
 
 use crate::agents::{
-    AgentSession, AgentSource, SessionHost, SessionObserver, delta_stamp, ui_provider,
+    AgentSession, AgentSource, SessionHost, SessionObserver, agent_client, delta_stamp, ui_provider,
 };
 use crate::input::SessionInputBroker;
 
@@ -288,7 +289,7 @@ impl EffectExecutor {
             );
             return failed_relaunch(relaunch.run);
         };
-        let Some(client) = gateway.model_client() else {
+        let Some(client) = agent_client(gateway.base_url(), gateway.api_key()) else {
             report_failure(
                 &self.session,
                 &self.host,

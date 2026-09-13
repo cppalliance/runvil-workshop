@@ -228,14 +228,14 @@ async fn a_failed_model_turn_pushes_a_terminal_failure_status() {
 #[test]
 fn the_model_client_requires_a_usable_key_and_url() {
     assert!(
-        workshop_gateway::gateway_binding::model_client("http://127.0.0.1:8081", "k").is_some(),
+        agent_client("http://127.0.0.1:8081", "k").is_some(),
         "a keyed gateway builds the agent model client"
     );
     assert!(
-        workshop_gateway::gateway_binding::model_client("http://127.0.0.1:8081", "").is_none(),
+        agent_client("http://127.0.0.1:8081", "").is_none(),
         "an empty key cannot authenticate: agents report it at launch"
     );
-    assert!(workshop_gateway::gateway_binding::model_client("not a url", "k").is_none());
+    assert!(agent_client("not a url", "k").is_none());
 }
 
 /// Runs the embedded chat prompt on the unified runtime with the given

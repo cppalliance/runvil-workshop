@@ -38,6 +38,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use tokio::sync::{broadcast, mpsc};
 
+use promptforge_api::client::{GatewayClient, GatewayEndpoint, SecretString};
 use workshop_gateway::{GatewayBinding, WorkshopObserver};
 use workshop_menu::{CatalogBus, MenuBus};
 use workshop_registry::{Push, Registry};
@@ -237,7 +238,8 @@ impl AgentSessions {
         // chat, but an agent run would fail its first model round - or
         // silently resolve a different gateway from the environment - so
         // the launch refuses instead.
-        if self.inner.gateway.snapshot().model_client().is_none() {
+        let snapshot = self.inner.gateway.snapshot();
+        if agent_client(snapshot.base_url(), snapshot.api_key()).is_none() {
             return Err(LaunchRefusal::GatewayUnusable);
         }
         let source = agent_source(&self.inner.agents_dir, name)
@@ -359,6 +361,30 @@ pub(crate) enum LaunchRefusal {
         #[source]
         source: io::Error,
     },
+}
+
+/// Builds the agent completion client from one Gateway snapshot's base
+/// URL and bearer, through the `promptforge-api` client re-exports.
+/// `None` - reported as [`LaunchRefusal::GatewayUnusable`] at launch and
+/// as a failed relaunch by the supervisor - when the key or URL cannot
+/// build a client.
+pub(crate) fn agent_client(base_url: &str, api_key: &str) -> Option<GatewayClient> {
+    let key = match SecretString::new(api_key) {
+        Ok(key) => key,
+        Err(error) => {
+            tracing::warn!(%error, "agent sessions disabled: gateway API key unusable");
+            return None;
+        }
+    };
+    let root = format!("{}/v1", base_url.trim_end_matches('/'));
+    let endpoint = match GatewayEndpoint::new(&root) {
+        Ok(endpoint) => endpoint,
+        Err(error) => {
+            tracing::warn!(%error, "agent sessions disabled: gateway URL unusable");
+            return None;
+        }
+    };
+    Some(GatewayClient::new(endpoint, key))
 }
 
 /// Lists the launchable agent names: the `.md` file stems under `dir`

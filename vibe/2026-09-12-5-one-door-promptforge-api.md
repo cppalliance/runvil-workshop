@@ -507,7 +507,7 @@ Pieces within each component are sequential: each step's commit must compile and
 
 <step-11>
 
-### Step 11: Migrate workshop-gateway and workshop-protocol edges
+### Step 11: Migrate workshop-gateway and workshop-protocol edges [completed]
 
 - Component: consumer-migration
 - Piece: small-consumers (sequential after progress-reimplementation: dropping the model-client edge requires the new progress path)

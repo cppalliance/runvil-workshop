@@ -1,7 +1,7 @@
 //! Atomically replaceable Gateway endpoint and credential state.
 //!
 //! Every Gateway-dependent Workshop path loads one immutable snapshot
-//! containing the HTTP client, model client, base URL, bearer, and generation.
+//! containing the HTTP client, base URL, bearer, and generation.
 //! A local-sidecar replacement builds the complete next snapshot before one
 //! atomic store, then notifies long-lived tasks to reconnect. Explicitly
 //! configured endpoints never receive an updater from the desktop shell.
@@ -13,9 +13,6 @@ use std::fmt;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use arc_swap::ArcSwap;
-use promptforge_model_client::client::{
-    GatewayClient as ModelClient, GatewayEndpoint, SecretString,
-};
 use tokio::sync::watch;
 
 use crate::gateway::{GatewayClient, GatewayError};
@@ -29,8 +26,6 @@ pub struct GatewaySnapshot {
     /// Bearer paired with `client`, exposed for consumers that authenticate
     /// outside the HTTP client.
     api_key: String,
-    /// Agent completion client built from the same URL and bearer.
-    model_client: Option<ModelClient>,
     /// Monotonic generation assigned before this snapshot is published.
     generation: u64,
     /// Proven local Gateway boot, absent for an explicitly configured endpoint.
@@ -44,7 +39,6 @@ impl fmt::Debug for GatewaySnapshot {
             .field("client", &self.client)
             .field("base_url", &self.base_url)
             .field("api_key", &"<redacted>")
-            .field("model_client", &"<redacted>")
             .field("generation", &self.generation)
             .field("identity", &self.identity)
             .finish_non_exhaustive()
@@ -56,12 +50,6 @@ impl GatewaySnapshot {
     #[must_use]
     pub fn client(&self) -> &GatewayClient {
         &self.client
-    }
-
-    /// The agent model client from the same endpoint and credential pair.
-    #[must_use]
-    pub fn model_client(&self) -> Option<ModelClient> {
-        self.model_client.clone()
     }
 
     /// The Gateway base URL in this generation.
@@ -152,14 +140,12 @@ impl GatewayBinding {
     /// Builds a binding around a client carrying test-specific timeouts.
     #[must_use]
     pub fn from_client(client: GatewayClient) -> Self {
-        let model_client = model_client(&client.base_url, &client.api_key);
         let base_url = client.base_url.clone();
         let api_key = client.api_key.clone();
         let snapshot = Arc::new(GatewaySnapshot {
             client,
             base_url,
             api_key,
-            model_client,
             generation: 0,
             identity: None,
         });
@@ -342,35 +328,13 @@ fn build_snapshot(
 ) -> Result<GatewaySnapshot, GatewayError> {
     let client = GatewayClient::new(base_url, api_key)?;
     let base_url = client.base_url().to_owned();
-    let model_client = model_client(&base_url, api_key);
     Ok(GatewaySnapshot {
         client,
         base_url,
         api_key: api_key.to_owned(),
-        model_client,
         generation,
         identity,
     })
-}
-
-/// Builds the agent model client carried in a Gateway snapshot.
-pub fn model_client(base_url: &str, api_key: &str) -> Option<ModelClient> {
-    let key = match SecretString::new(api_key) {
-        Ok(key) => key,
-        Err(error) => {
-            tracing::warn!(%error, "agent sessions disabled: gateway API key unusable");
-            return None;
-        }
-    };
-    let root = format!("{}/v1", base_url.trim_end_matches('/'));
-    let endpoint = match GatewayEndpoint::new(&root) {
-        Ok(endpoint) => endpoint,
-        Err(error) => {
-            tracing::warn!(%error, "agent sessions disabled: gateway URL unusable");
-            return None;
-        }
-    };
-    Some(ModelClient::new(endpoint, key))
 }
 
 #[cfg(test)]
