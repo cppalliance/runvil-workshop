@@ -40,14 +40,10 @@ async fn a_full_turn_streams_deltas_and_indexed_events_sharing_the_reply_id() {
         .collect();
     assert_eq!(
         kinds,
-        [
-            "user_message",
-            "tool_call_update",
-            "agent_thought",
-            "agent_message"
-        ],
-        "the durable record of one turn: input, the user_input tool's own \
-         result, thinking, reply"
+        ["user_message", "agent_thought", "agent_message"],
+        "the durable record of one turn: input, thinking, reply - the \
+         direct user_input call is not a tool call, so no tool_call_update \
+         exists"
     );
     let indices: Vec<u64> = turn
         .events
@@ -56,7 +52,7 @@ async fn a_full_turn_streams_deltas_and_indexed_events_sharing_the_reply_id() {
         .collect();
     assert_eq!(
         indices,
-        [0, 1, 2, 3],
+        [0, 1, 2],
         "durable frames carry monotonically increasing log indices"
     );
     assert_eq!(turn.events[0]["event"]["content"], "ping");
@@ -64,17 +60,13 @@ async fn a_full_turn_streams_deltas_and_indexed_events_sharing_the_reply_id() {
         turn.events[0].get("reply").is_none(),
         "a user_message settles no deltas and carries no reply id"
     );
-    assert!(
-        turn.events[1].get("reply").is_none(),
-        "a tool result settles no deltas and carries no reply id"
-    );
     assert_eq!(
-        turn.events[2]["reply"], 0,
+        turn.events[1]["reply"], 0,
         "the thinking event supersedes the reasoning deltas of its round"
     );
-    assert_eq!(turn.events[3]["event"]["content"], "echo:ping");
+    assert_eq!(turn.events[2]["event"]["content"], "echo:ping");
     assert_eq!(
-        turn.events[3]["reply"], 0,
+        turn.events[2]["reply"], 0,
         "deltas and the completed reply share the superseding event id"
     );
 
@@ -93,8 +85,8 @@ async fn a_full_turn_streams_deltas_and_indexed_events_sharing_the_reply_id() {
         .iter()
         .filter_map(|event| event["index"].as_u64())
         .collect();
-    assert_eq!(indices, [4, 5, 6, 7], "indices continue across turns");
-    assert_eq!(turn.events[3]["reply"], 1);
+    assert_eq!(indices, [3, 4, 5], "indices continue across turns");
+    assert_eq!(turn.events[2]["reply"], 1);
     socket.close().await;
 }
 

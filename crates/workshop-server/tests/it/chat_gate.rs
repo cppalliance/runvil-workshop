@@ -27,7 +27,6 @@ use futures_util::StreamExt as _;
 use serde_json::json;
 use tokio::sync::broadcast;
 
-use promptforge_agent::AgentError;
 use promptforge_core::execute::RunErrorKind;
 use promptforge_core::{Prompt, ResolutionContext, RunConfig};
 use promptforge_core_support::cancel::CancelHandle;
@@ -50,6 +49,20 @@ use crate::common::{JsonSocket, spawn_gateway};
 
 /// The embedded built-in chat prompt, exactly what a `chat` launch runs.
 const CHAT_MD: &str = include_str!("../../../workshop-sessions/agents/chat.md");
+
+/// The relaunch harness's terminal outcome, mirroring the supervisor's
+/// `AgentRunError`: cancellation maps to `Interrupted`, and every other
+/// run failure carries its rendered message.
+#[derive(Debug)]
+enum AgentError {
+    /// The run's cancel handle fired.
+    Interrupted,
+    /// The prompt run failed.
+    Program {
+        /// The failure's rendered message.
+        message: String,
+    },
+}
 
 /// Every completion request body the gate mock received, in arrival
 /// order: the gate's proof of exactly what the model was shown.
@@ -371,7 +384,6 @@ fn spawn_restored_chat(
             }
             Err(error) => Err(AgentError::Program {
                 message: error.to_string(),
-                source: Some(Box::new(error)),
             }),
         }
     });

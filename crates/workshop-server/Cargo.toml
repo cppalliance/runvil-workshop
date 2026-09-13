@@ -63,7 +63,6 @@ workshop-server = { path = ".", features = ["test-fixtures"] }
 shared-sidecar = { workspace = true, features = ["test-fixtures"] }
 # The socket integration tests drive agent programs on the runtime engine
 # directly, so the engine crates are test-only dependencies of the shell.
-promptforge-agent.workspace = true
 promptforge-core.workspace = true
 promptforge-core-support.workspace = true
 promptforge-model-client.workspace = true

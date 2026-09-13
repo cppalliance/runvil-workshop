@@ -405,7 +405,7 @@ Pieces within each component are sequential: each step's commit must compile and
 
 <step-3>
 
-### Step 3: Delete the promptforge-agent crate
+### Step 3: Delete the promptforge-agent crate [completed]
 
 - Component: lua-path-removal
 - Piece: agent-crate-deletion
@@ -525,7 +525,6 @@ Pieces within each component are sequential: each step's commit must compile and
 - [crates/workshop-sessions/Cargo.toml](crates/workshop-sessions/Cargo.toml): collapse the seven promptforge deps to two edges, `promptforge-api` and `shared-promptforge-api`; rewrite all imports.
 - Delete empty-`ToolPicker`, empty-`ToolCatalog`, and `vfs: VfsRef` field construction in [crates/workshop-sessions/src/agents/supervisor/effects.rs](crates/workshop-sessions/src/agents/supervisor/effects.rs) and [crates/workshop-sessions/src/agents.rs](crates/workshop-sessions/src/agents.rs), using the Step 9 defaults.
 - [crates/workshop-server/Cargo.toml](crates/workshop-server/Cargo.toml): dev-dependencies reference only `promptforge-api` and `shared-promptforge-api`.
-- Migrate the `workshop-server` integration-test agent fixtures from `.lua` to `.md` (11 `agents::*` tests fail against Step 1's `.md`-only discovery until the fixtures move).
 - Tests in the same commit: the workshop-sessions suite and workshop-server integration tests pass.
 
 </step-12>

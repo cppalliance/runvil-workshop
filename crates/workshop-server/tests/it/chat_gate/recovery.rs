@@ -153,10 +153,13 @@ async fn gate_restart_reloads_the_jsonl_and_resumes_waiting_for_input() {
     // Teardown: the loop is back on user_input; cancellation ends it.
     relaunch.cancel.cancel();
     let result = relaunch.run.await.expect("the relaunched run joins");
-    assert!(
-        matches!(result, Err(AgentError::Interrupted)),
-        "cancellation ends the relaunched run cleanly, got {result:?}"
-    );
+    match result {
+        Err(AgentError::Interrupted) => {}
+        Err(AgentError::Program { message }) => {
+            panic!("the relaunched run failed instead of interrupting: {message}");
+        }
+        Ok(()) => panic!("cancellation ends the relaunched run cleanly, got Ok(())"),
+    }
 }
 
 /// GATE 6 - error survival. Current-chat behavior: a failed completion

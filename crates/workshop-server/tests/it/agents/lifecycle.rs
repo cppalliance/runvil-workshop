@@ -30,7 +30,7 @@ async fn two_sessions_do_not_cross_talk() {
             .collect();
         assert_eq!(
             indices,
-            [0, 1, 2, 3],
+            [0, 1, 2],
             "each session's log is its own: no foreign entries shift the indices"
         );
     }
@@ -132,8 +132,22 @@ async fn a_terminal_agent_failure_reaches_the_socket_as_an_error_frame() {
     // An agent that dies after its first input, so the socket is attached
     // and subscribed long before the failure fires.
     std::fs::write(
-        dir.path().join("agents").join("boom.lua"),
-        "tools.call('user_input', {})\nerror('kaboom')",
+        dir.path().join("agents").join("boom.md"),
+        r"---
+name: boom
+description: The terminally failing test agent.
+promptforge: 0
+---
+
+# Boom
+
+## Conversation
+
+```lua
+user_input()
+error('kaboom')
+```
+",
     )
     .expect("the boom agent writes");
     let mut socket = JsonSocket::connect(&format!("{base}/agents/ws")).await;

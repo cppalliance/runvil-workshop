@@ -32,15 +32,33 @@ use workshop_server::{
 
 use crate::common::{JsonSocket, spawn_gateway};
 
-/// The echo agent: loops on `user_input`, runs one chat round per input,
-/// and returns on `quit`.
-const ECHO_AGENT: &str = r"
-models.use('test-model')
+/// The echo agent: a Markdown prompt on the unified runtime that loops
+/// on `user_input`, runs one chat round per input against the fixture's
+/// `test-model`, and returns on `quit`.
+const ECHO_MD: &str = r"---
+name: echo
+description: The echo test agent on the unified runtime.
+promptforge: 0
+---
+
+# Echo
+
+## Conversation
+
+```lua
+local history = messages.new()
 while true do
-    local input = tools.call('user_input', {})
-    if input.text == 'quit' then return end
-    models.chat({ { role = 'user', content = input.text } })
+    local text, available = user_input()
+    if not available then
+        return
+    end
+    if text == 'quit' then
+        return
+    end
+    history:user(text)
+    models.loop(models.get('test-model'), history)
 end
+```
 ";
 
 /// Streams `echo:<last user message>` as an SSE completion: a reasoning
@@ -146,7 +164,7 @@ async fn spawn_agent_server_for_gateway(base_url: String) -> (String, tempfile::
     let dir = tempfile::TempDir::new().expect("tempdir");
     let agents_dir = dir.path().join("agents");
     std::fs::create_dir(&agents_dir).expect("the agents directory creates");
-    std::fs::write(agents_dir.join("echo.lua"), ECHO_AGENT).expect("the echo agent writes");
+    std::fs::write(agents_dir.join("echo.md"), ECHO_MD).expect("the echo agent writes");
     let config = Config {
         gateway: GatewayConfig {
             base_url,
