@@ -251,7 +251,7 @@ Single piece, single step.
 
 <step-2>
 
-### Step 2: Facades and enforcement scope
+### Step 2: Facades and enforcement scope [completed]
 
 - Component: facade-enforcement
 

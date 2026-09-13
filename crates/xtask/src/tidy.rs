@@ -56,8 +56,8 @@ fn allowed_dependencies(name: &str) -> Option<Vec<&'static str>> {
 
 /// Check that tiered `workshop-*` crates depend only on lower tiers.
 ///
-/// Crates not yet extracted from `workshop-server` have no manifest and are
-/// skipped, so the check passes today and binds each crate as it lands.
+/// Every tiered crate has landed, so a missing manifest is a violation,
+/// not a crate to skip.
 #[must_use]
 pub(crate) fn tier_dependency_violations(root: &Path) -> Vec<String> {
     let mut violations = Vec::new();
@@ -67,6 +67,10 @@ pub(crate) fn tier_dependency_violations(root: &Path) -> Vec<String> {
         };
         let manifest_path = root.join("crates").join(name).join("Cargo.toml");
         let Ok(text) = fs::read_to_string(&manifest_path) else {
+            violations.push(format!(
+                "{name}: tiered crate has no manifest at {}",
+                manifest_path.display()
+            ));
             continue;
         };
         let manifest: toml::Value = match toml::from_str(&text) {
@@ -282,6 +286,25 @@ mod tests {
             "lint violations:\n{}",
             violations.join("\n")
         );
+    }
+
+    #[test]
+    fn a_tiered_crate_whose_manifest_is_missing_is_reported_not_skipped() {
+        let root = tempfile::TempDir::new().expect("tempdir");
+        std::fs::create_dir_all(root.path().join("crates")).expect("the crates directory creates");
+        let violations = tier_dependency_violations(root.path());
+        let tiered = [VOCABULARY, SERVICES, FEATURES, SHELL].concat();
+        assert_eq!(
+            violations.len(),
+            tiered.len(),
+            "every tiered crate's missing manifest is reported: {violations:?}"
+        );
+        for name in tiered {
+            assert!(
+                violations.iter().any(|v| v.contains(name)),
+                "{name} is named in the violations: {violations:?}"
+            );
+        }
     }
 
     #[test]

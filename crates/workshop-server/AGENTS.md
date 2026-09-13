@@ -9,6 +9,6 @@ This crate owns the Workshop HTTP and WebSocket server and its host-embeddable s
 - One task owns each socket, its protocol policy, and its cleanup. Agent sessions may survive socket disconnect; other per-request relay work does not gain a session registry.
 - Every pushed message type is durable or ephemeral. Durable delivery supports replay and duplicate tolerance; ephemeral delivery may coalesce or drop under lag and restores its latest complete snapshot after reconnect.
 - Work held for a disconnected client cancels through its ownership guard.
-- Application state remains typed and construction-phased. Do not replace it with a service locator or late-bound optional state.
+- Application state is composed at boot: each subsystem registers its handles into `workshop-registry`, and the shell asserts the composition at startup. Runtime reads of absent optional contributions degrade to no-ops. Do not pass one subsystem's handles into another subsystem's constructor, and do not reintroduce per-request panics on missing registrations.
 - Asset construction failures return to the host. API-path misses return 404 instead of the SPA index.
 - Held sockets and uncooperative clients must not make server shutdown unbounded.

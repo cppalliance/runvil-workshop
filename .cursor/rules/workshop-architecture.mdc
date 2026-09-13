@@ -11,7 +11,7 @@ alwaysApply: false
 - Dependencies flow one way: shell -> features -> services -> vocabulary. Never add a dependency from a lower tier to a higher one. If Cargo rejects a cycle, the design is wrong, not the graph.
 - Tiers: vocabulary (`workshop-protocol`, `workshop-support`, `workshop-registry`) <- services (`workshop-gateway`, `workshop-status`, `workshop-menu`) <- features (`workshop-sessions`, `workshop-workspace`) <- shell (`workshop-server`).
 - Crates in the same tier never depend on each other. They meet through `workshop-protocol` wire types and `workshop-registry` proxy slots.
-- Every `workshop-*` crate's `lib.rs` opens with a `//!` doc listing what the crate may depend on and what it may not. Read it before adding an import.
+- Every `workshop-*` crate's `lib.rs` opens with a `//!` doc carrying a `## Invariants` marker that lists what the crate may depend on and what it may not. Read it before adding an import.
 - `lib.rs` is a facade only: crate docs, crate-level attributes, `mod` declarations, and `pub use` re-exports. No logic.
 
 ## Registry pattern
@@ -22,4 +22,4 @@ alwaysApply: false
 
 ## File ceiling
 
-- No file exceeds 500 lines. If an edit would push a file past 500, split first, then edit.
+- No file exceeds 500 lines. If an edit would push a file past 500, split first, then edit. `cargo test -p xtask` enforces the ceiling, the tier graph, and lint inheritance over the Rust files in the workshop crates carrying the marker; the Tauri shell (the `workshop` crate) is exempt until the headless agent mode plan.
