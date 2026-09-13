@@ -4,17 +4,18 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
-use promptforge_agent::AgentError;
 use tokio::sync::{mpsc, watch};
 
 use workshop_gateway::{GatewayBinding, GatewaySnapshot};
 use workshop_menu::CatalogBus;
 
 use super::catalog::{CatalogEvent, current_catalog_event, next_catalog_event};
+use super::effects::AgentRunError;
 use super::transition::{RunId, SupervisorEvent};
 
 /// One owned run future paired with its reducer identity.
-pub(super) type RunFuture = Pin<Box<dyn Future<Output = (RunId, Result<(), AgentError>)> + Send>>;
+pub(super) type RunFuture =
+    Pin<Box<dyn Future<Output = (RunId, Result<(), AgentRunError>)> + Send>>;
 
 /// Runtime data collected alongside one pure supervisor event.
 pub(super) enum CollectedEvent {
@@ -26,7 +27,7 @@ pub(super) enum CollectedEvent {
     },
     Run {
         run: RunId,
-        result: Result<(), AgentError>,
+        result: Result<(), AgentRunError>,
     },
 }
 

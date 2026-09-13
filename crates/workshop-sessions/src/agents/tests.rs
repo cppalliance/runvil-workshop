@@ -2,7 +2,7 @@ use std::sync::atomic::AtomicU64;
 
 use promptforge_core_support::events::RuntimeEventKind;
 use promptforge_core_support::observe::{Observation, Observer};
-use promptforge_model_client::model::{ModelCatalog, ThinkingMode};
+use promptforge_model_client::model::ModelCatalog;
 use workshop_protocol::Activity;
 
 use super::*;
@@ -21,17 +21,18 @@ fn wired_push(
 }
 
 #[test]
-fn discovery_lists_sorted_lua_stems_and_tolerates_a_missing_dir() {
+fn discovery_lists_sorted_markdown_stems_and_tolerates_a_missing_dir() {
     let dir = tempfile::TempDir::new().expect("tempdir");
-    std::fs::write(dir.path().join("zeta.lua"), "return 1").expect("seed zeta");
-    std::fs::write(dir.path().join("alpha.lua"), "return 1").expect("seed alpha");
+    std::fs::write(dir.path().join("zeta.md"), "# zeta").expect("seed zeta");
+    std::fs::write(dir.path().join("alpha.md"), "# alpha").expect("seed alpha");
     std::fs::write(dir.path().join("notes.txt"), "not an agent").expect("seed noise");
-    std::fs::create_dir(dir.path().join("nested.lua")).expect("seed a decoy directory");
+    std::fs::write(dir.path().join("legacy.lua"), "return 1").expect("seed a retired Lua program");
+    std::fs::create_dir(dir.path().join("nested.md")).expect("seed a decoy directory");
     assert_eq!(
         discover_agents(dir.path()),
         vec!["alpha".to_owned(), "chat".to_owned(), "zeta".to_owned()],
-        "discovery lists .lua file stems plus the built-in chat, sorted, \
-         and skips everything else"
+        "discovery lists .md file stems plus the built-in chat, sorted, \
+         and skips everything else - a .lua file is never an agent"
     );
     assert_eq!(
         discover_agents(&dir.path().join("missing")),
@@ -54,16 +55,24 @@ fn the_built_in_chat_is_always_offered_and_a_dir_file_shadows_its_source() {
         "with no directory file, the embedded source is what launches"
     );
 
-    std::fs::write(dir.path().join("chat.lua"), "-- shadowed").expect("seed the shadow");
+    std::fs::write(dir.path().join("chat.md"), "# shadowed").expect("seed the shadow");
     assert_eq!(
         discover_agents(dir.path()),
         vec!["chat".to_owned()],
-        "a directory chat.lua lists once, never beside the built-in"
+        "a directory chat.md lists once, never beside the built-in"
     );
     assert_eq!(
         agent_source(dir.path(), "chat").expect("the shadow reads"),
-        AgentSource::Lua("-- shadowed".to_owned()),
-        "a directory chat.lua shadows the embedded source"
+        AgentSource::Markdown("# shadowed".to_owned()),
+        "a directory chat.md shadows the embedded source"
+    );
+
+    std::fs::remove_file(dir.path().join("chat.md")).expect("clear the shadow");
+    std::fs::write(dir.path().join("chat.lua"), "-- retired").expect("seed a retired shadow");
+    assert_eq!(
+        agent_source(dir.path(), "chat").expect("the built-in still serves"),
+        AgentSource::Markdown(BUILTIN_CHAT_SOURCE.to_owned()),
+        "a directory chat.lua shadows nothing: the Lua path is retired"
     );
 
     assert_eq!(
@@ -76,52 +85,15 @@ fn the_built_in_chat_is_always_offered_and_a_dir_file_shadows_its_source() {
 }
 
 #[test]
-fn an_unreadable_chat_lua_surfaces_its_error_rather_than_the_built_in() {
+fn an_unreadable_chat_md_surfaces_its_error_rather_than_the_built_in() {
     let dir = tempfile::TempDir::new().expect("tempdir");
-    // A directory named chat.lua cannot be read as a file on any
+    // A directory named chat.md cannot be read as a file on any
     // platform, and its failure is never NotFound - the one kind
     // that falls back to the embedded source.
-    std::fs::create_dir(dir.path().join("chat.lua")).expect("seed the unreadable shadow");
+    std::fs::create_dir(dir.path().join("chat.md")).expect("seed the unreadable shadow");
     agent_source(dir.path(), "chat").expect_err(
-        "an existing chat.lua that cannot be read surfaces its error; \
+        "an existing chat.md that cannot be read surfaces its error; \
          silently serving the built-in would mask the operator's own file",
-    );
-}
-
-#[test]
-fn the_model_catalog_keeps_chat_entries_and_skips_the_rest() {
-    let catalog = build_model_catalog(Some(vec![
-        serde_json::json!({
-            "id": "chat-model", "kind": "chat", "description": "a chat model",
-            "context": 4096, "thinking": "switchable",
-        }),
-        serde_json::json!({ "id": "plain-openai-model" }),
-        serde_json::json!({ "id": "embed-model", "kind": "embedding" }),
-        serde_json::json!({ "object": "model" }),
-        serde_json::json!({ "id": "chat-model" }),
-    ]));
-    let names: Vec<&str> = catalog
-        .models()
-        .iter()
-        .map(|descriptor| descriptor.id().name())
-        .collect();
-    assert_eq!(
-        names,
-        vec!["chat-model", "plain-openai-model"],
-        "chat and kind-less entries stay; embeddings, id-less rows, and duplicates drop"
-    );
-    let chat = &catalog.models()[0];
-    assert_eq!(chat.context().get(), 4096);
-    assert_eq!(chat.thinking(), ThinkingMode::Switchable);
-    let bare = &catalog.models()[1];
-    assert_eq!(
-        bare.context().get(),
-        super::session::FALLBACK_CONTEXT,
-        "an entry without a context window records the fallback"
-    );
-    assert!(
-        build_model_catalog(None).is_empty(),
-        "no retained catalog means an empty agent catalog"
     );
 }
 
@@ -190,7 +162,7 @@ fn the_ui_snapshot_serves_the_selection_and_first_granted_root() {
 #[test]
 fn a_launch_without_a_usable_client_is_refused() {
     let dir = tempfile::TempDir::new().expect("tempdir");
-    std::fs::write(dir.path().join("echo.lua"), "return 1").expect("seed echo");
+    std::fs::write(dir.path().join("echo.md"), "# echo").expect("seed echo");
     let catalog = CatalogBus::default();
     let menu = MenuBus::new(catalog.clone(), None);
     let registry = Registry::new();

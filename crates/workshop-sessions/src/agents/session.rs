@@ -1,9 +1,8 @@
 //! One running agent session: the state that outlives any socket, the
-//! per-session observer `run_agent` reports through, and the launch-time
-//! providers for deltas, the `ui()` snapshot, and the model catalog.
+//! per-session observer the agent run reports through, and the
+//! launch-time providers for deltas and the `ui()` snapshot.
 
 use std::fmt;
-use std::num::NonZeroU32;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -11,11 +10,10 @@ use promptforge_core_support::cancel::CancelHandle;
 use promptforge_core_support::events::{CallMetrics, RuntimeEventKind, ToolCallEvent};
 use promptforge_core_support::observe::{Observation, Observer};
 use promptforge_model_client::client::StreamDelta;
-use promptforge_model_client::model::{ModelCatalog, ModelDescriptor, ModelId, ThinkingMode};
 use tokio::sync::broadcast;
 
 use workshop_gateway::WorkshopObserver;
-use workshop_menu::{MenuBus, is_chat_capable};
+use workshop_menu::MenuBus;
 use workshop_protocol::{Activity, AgentDeltaKind, InputFrame, InputResponse};
 use workshop_registry::{Push, Registry};
 
@@ -23,16 +21,11 @@ use super::lifecycle::RunLifecycle;
 use super::supervisor::transition::RunId;
 use crate::input::{WaitError, WaitRegistry};
 
-/// One agent's program source and the runtime that executes it.
-///
-/// Directory agents are standalone Lua programs on the agent runtime; the
-/// embedded built-in chat is a Markdown prompt on the unified runtime.
-/// External Markdown-agent discovery stays deferred, so no directory file
-/// ever lands in the Markdown arm.
+/// One agent's program source: a Markdown prompt document on the
+/// unified runtime. Directory agents and the embedded built-in chat are
+/// both Markdown; the standalone Lua agent path is retired.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum AgentSource {
-    /// A standalone Lua agent program (the agent runtime).
-    Lua(String),
     /// A Markdown prompt document (the unified runtime).
     Markdown(String),
 }
@@ -54,7 +47,7 @@ pub(crate) struct AgentDelta {
 pub(crate) struct AgentSession {
     /// The session's unguessable id, also its event JSONL's file stem.
     pub(crate) id: String,
-    /// The agent's name (its `.lua` file stem), every observer call's
+    /// The agent's name (its `.md` file stem), every observer call's
     /// `section` label.
     pub(crate) agent: String,
     /// The program source and its runtime, retained so turn-cancel can
@@ -132,30 +125,16 @@ impl AgentSession {
     /// Durably accepts one input and resumes its wait after publishing
     /// acceptance ahead of the observation-to-completion boundary.
     ///
-    /// Recording is runtime-specific: a Lua agent's input is recorded
-    /// producer-side here (its relaunched program rebuilds history from
-    /// the event log), while a Markdown agent's unified runtime records
-    /// consumer-side when the suspended `user_input` resumes - recording
-    /// here too would double the event.
+    /// Recording is consumer-side: the unified runtime records the
+    /// operator's text when the suspended `user_input` resumes, so
+    /// recording here too would double the event.
     pub(crate) fn accept_input(
         &self,
         response: InputResponse,
         after_acceptance: impl FnOnce(),
     ) -> Result<(), WaitError> {
         let accepted_run = self.lifecycle.accept_input();
-        let result = match &self.source {
-            AgentSource::Lua(_) => crate::input::deliver_input_response_before_completion(
-                self.log.as_ref(),
-                &self.waits,
-                &self.id,
-                &self.agent,
-                response,
-                after_acceptance,
-            ),
-            AgentSource::Markdown(_) => {
-                crate::input::complete_input_response(&self.waits, response, after_acceptance)
-            }
-        };
+        let result = crate::input::complete_input_response(&self.waits, response, after_acceptance);
         if let (Err(_), Some(run)) = (&result, accepted_run) {
             self.lifecycle.settle_turn(run);
         }
@@ -392,75 +371,4 @@ pub(crate) fn reply_stamp(kind: RuntimeEventKind, rounds_seen: &mut u64) -> Opti
         }
         _ => None,
     }
-}
-
-/// Context window recorded for a catalog entry that does not carry one.
-/// The window is catalog metadata (nothing on the completion wire reads
-/// it), so a generous default keeps the model usable rather than
-/// refusing it.
-pub(super) const FALLBACK_CONTEXT: u32 = 8192;
-
-/// Builds the session's model catalog from the retained gateway catalog:
-/// one descriptor per chat entry (an absent `kind` is a plain OpenAI
-/// catalog and counts as chat), carrying the entry's description,
-/// context window, and thinking mode where present. Entries that cannot
-/// make a descriptor are skipped with a warning - a launch must not fail
-/// because one catalog row is malformed.
-pub(crate) fn build_model_catalog(models: Option<Vec<serde_json::Value>>) -> ModelCatalog {
-    let Some(models) = models else {
-        return ModelCatalog::empty();
-    };
-    let mut descriptors: Vec<ModelDescriptor> = Vec::new();
-    for entry in &models {
-        if !is_chat_capable(entry) {
-            continue;
-        }
-        let Some(id) = entry.get("id").and_then(serde_json::Value::as_str) else {
-            tracing::warn!("catalog entry without an id skipped for the agent model catalog");
-            continue;
-        };
-        let model_id = match ModelId::gateway(id) {
-            Ok(model_id) => model_id,
-            Err(error) => {
-                tracing::warn!(%error, id, "catalog entry skipped for the agent model catalog");
-                continue;
-            }
-        };
-        if descriptors
-            .iter()
-            .any(|descriptor| descriptor.id() == &model_id)
-        {
-            tracing::warn!(
-                id,
-                "duplicate catalog id skipped for the agent model catalog"
-            );
-            continue;
-        }
-        let description = entry
-            .get("description")
-            .and_then(serde_json::Value::as_str)
-            .unwrap_or_default();
-        let context = entry
-            .get("context")
-            .and_then(serde_json::Value::as_u64)
-            .and_then(|context| u32::try_from(context).ok())
-            .and_then(NonZeroU32::new)
-            .unwrap_or_else(|| NonZeroU32::new(FALLBACK_CONTEXT).unwrap_or(NonZeroU32::MIN));
-        let thinking = entry
-            .get("thinking")
-            .and_then(|value| serde_json::from_value::<ThinkingMode>(value.clone()).ok())
-            .unwrap_or(ThinkingMode::Never);
-        descriptors.push(ModelDescriptor::new(
-            model_id,
-            description,
-            context,
-            thinking,
-        ));
-    }
-    // Duplicates were filtered above, so construction cannot refuse; an
-    // empty catalog is the honest degenerate outcome.
-    ModelCatalog::new(descriptors).unwrap_or_else(|error| {
-        tracing::warn!(%error, "agent model catalog degraded to empty");
-        ModelCatalog::empty()
-    })
 }

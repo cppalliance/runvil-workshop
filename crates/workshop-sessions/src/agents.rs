@@ -1,4 +1,4 @@
-//! Agent sessions: discovery of `.lua` agent programs, the
+//! Agent sessions: discovery of `.md` agent programs, the
 //! [`AgentSessions`] registry, and each session's run lifecycle.
 //!
 //! A session owns one running agent: its persisting event log
@@ -7,7 +7,7 @@
 //! [`crate::input::WaitRegistry`] and `user_input` tool, its dedicated
 //! delta broadcast (deltas never enter the event log), and the retained
 //! cancel handle behind turn-cancel. The supervisor task relaunches
-//! `run_agent` over the retained event log after a turn-cancel -
+//! the agent run over the retained event log after a turn-cancel -
 //! cancellation is a stop reason, never an error - and ends the session
 //! when the program returns or fails.
 //!
@@ -48,7 +48,7 @@ use crate::input::WaitRegistry;
 use self::lifecycle::RunLifecycle;
 
 pub(crate) use session::{AgentDelta, AgentSession, AgentSource, SessionObserver};
-pub(crate) use session::{build_model_catalog, delta_stamp, reply_stamp, ui_provider};
+pub(crate) use session::{delta_stamp, reply_stamp, ui_provider};
 
 /// Capacity of a session's delta broadcast. Deltas are ephemeral: a
 /// receiver that lags loses chunks, and the completed-reply event is the
@@ -69,12 +69,11 @@ pub(crate) const ERROR_CAPACITY: usize = 8;
 /// The committed built-in chat agent, embedded at compile time - the same
 /// shipped-asset pattern as the SPA `dist/` - so a fresh install has a
 /// working chat with no agents directory at all. The built-in is a
-/// Markdown prompt on the unified runtime; the standalone `chat.lua`
-/// program is retired.
+/// Markdown prompt on the unified runtime.
 pub(crate) const BUILTIN_CHAT_SOURCE: &str = include_str!("../agents/chat.md");
 
 /// The built-in default agent's name: discovery always offers it, and a
-/// directory file named `chat.lua` shadows the embedded source.
+/// directory file named `chat.md` shadows the embedded source.
 const BUILTIN_CHAT_NAME: &str = "chat";
 
 /// The shared handles a session's lifecycle reports flow through,
@@ -155,7 +154,7 @@ pub struct AgentSessions {
 
 /// The shared registry state behind the cloneable handle.
 struct Inner {
-    /// Directory whose `.lua` files are the launchable agents.
+    /// Directory whose `.md` files are the launchable agents.
     agents_dir: PathBuf,
     /// Where session event JSONLs persist (`state_dir/sessions`).
     sessions_dir: PathBuf,
@@ -201,11 +200,11 @@ impl AgentSessions {
         }
     }
 
-    /// The launchable agent names: the `.lua` file stems under the
+    /// The launchable agent names: the `.md` file stems under the
     /// configured agents directory plus the built-in `chat`, sorted. The
     /// built-in is always offered - a missing or unreadable directory
     /// still lists it, so a fresh install always has a working chat - and
-    /// a directory file named `chat.lua` shadows the embedded source
+    /// a directory file named `chat.md` shadows the embedded source
     /// rather than listing twice.
     #[must_use]
     pub fn discover(&self) -> Vec<String> {
@@ -227,7 +226,7 @@ impl AgentSessions {
     pub(crate) fn launch(&self, name: &str) -> Result<Arc<AgentSession>, LaunchRefusal> {
         // Resolving through the discovered list is the trust boundary: a
         // client-sent name never reaches the filesystem unless it is the
-        // bare stem of a real `.lua` file in the configured directory.
+        // bare stem of a real `.md` file in the configured directory.
         if !self.discover().iter().any(|agent| agent == name) {
             return Err(LaunchRefusal::UnknownAgent {
                 name: name.to_owned(),
@@ -362,9 +361,9 @@ pub(crate) enum LaunchRefusal {
     },
 }
 
-/// Lists the launchable agent names: the `.lua` file stems under `dir`
+/// Lists the launchable agent names: the `.md` file stems under `dir`
 /// plus the built-in `chat`, sorted. A missing or unreadable directory
-/// offers exactly the built-in, and a directory `chat.lua` lists once -
+/// offers exactly the built-in, and a directory `chat.md` lists once -
 /// it shadows the embedded source instead of duplicating the name.
 fn discover_agents(dir: &Path) -> Vec<String> {
     let mut names: Vec<String> = std::fs::read_dir(dir)
@@ -373,7 +372,7 @@ fn discover_agents(dir: &Path) -> Vec<String> {
         .filter_map(Result::ok)
         .map(|entry| entry.path())
         .filter(|path| {
-            path.is_file() && path.extension().is_some_and(|extension| extension == "lua")
+            path.is_file() && path.extension().is_some_and(|extension| extension == "md")
         })
         .filter_map(|path| {
             path.file_stem()
@@ -389,15 +388,15 @@ fn discover_agents(dir: &Path) -> Vec<String> {
 }
 
 /// Reads the agent's program source: the directory file when it exists -
-/// a directory `chat.lua` shadows the built-in - else the embedded
+/// a directory `chat.md` shadows the built-in - else the embedded
 /// built-in for the `chat` name alone. Launch resolved `name` through
 /// discovery already, so a missing file for any other name is a real
 /// filesystem race, surfaced as the error it is; so is an existing
-/// `chat.lua` that cannot be read, because silently serving the built-in
+/// `chat.md` that cannot be read, because silently serving the built-in
 /// would mask the operator's own file.
 fn agent_source(dir: &Path, name: &str) -> io::Result<AgentSource> {
-    match std::fs::read_to_string(dir.join(format!("{name}.lua"))) {
-        Ok(source) => Ok(AgentSource::Lua(source)),
+    match std::fs::read_to_string(dir.join(format!("{name}.md"))) {
+        Ok(source) => Ok(AgentSource::Markdown(source)),
         Err(error) if name == BUILTIN_CHAT_NAME && error.kind() == io::ErrorKind::NotFound => {
             Ok(AgentSource::Markdown(BUILTIN_CHAT_SOURCE.to_owned()))
         }

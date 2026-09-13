@@ -2,12 +2,9 @@
 
 use std::sync::Arc;
 
-use promptforge_tools::{Tool, ToolCatalog};
 use tokio::sync::mpsc;
 
 use workshop_gateway::GatewayBinding;
-
-use crate::input::UserInputTool;
 
 use super::{AgentSession, AgentSessions, SessionHost};
 mod catalog;
@@ -30,24 +27,11 @@ pub(super) fn spawn(
     cancellations: mpsc::Receiver<SupervisorEvent>,
 ) {
     tokio::spawn(async move {
-        let tool: Arc<dyn Tool> = Arc::new(UserInputTool::new(
-            Arc::clone(&session.waits),
-            session.input_frames.clone(),
-        ));
-        let tools = match ToolCatalog::new(&[tool]) {
-            Ok(tools) => tools,
-            Err(error) => {
-                tracing::error!(%error, session = %session.id, "agent tool catalog refused");
-                registry.forget(&session.id);
-                return;
-            }
-        };
         let (mut collector, initial_catalog, initial_gateway) =
             EventCollector::new(lifecycle, cancellations, host.catalog().clone(), gateway);
         let mut executor = EffectExecutor::new(
             Arc::clone(&session),
             host,
-            tools,
             initial_catalog.snapshot,
             Arc::clone(&initial_gateway),
         );

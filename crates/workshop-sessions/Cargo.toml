@@ -16,7 +16,6 @@ test-fixtures = []
 async-trait.workspace = true
 axum.workspace = true
 futures-util.workspace = true
-promptforge-agent.workspace = true
 promptforge-core.workspace = true
 promptforge-core-support.workspace = true
 promptforge-model-client.workspace = true

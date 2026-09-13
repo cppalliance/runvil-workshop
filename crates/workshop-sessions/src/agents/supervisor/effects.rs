@@ -2,7 +2,6 @@
 
 use std::sync::Arc;
 
-use promptforge_agent::{AgentConfig, AgentError, AgentLimits, run_agent_with_client};
 use promptforge_core::execute::RunErrorKind;
 use promptforge_core::{Prompt, ResolutionContext, RunConfig};
 use promptforge_core_support::observe::Observer;
@@ -17,8 +16,7 @@ use workshop_menu::ChatCatalog;
 use workshop_protocol::Activity;
 
 use crate::agents::{
-    AgentSession, AgentSource, SessionHost, SessionObserver, build_model_catalog, delta_stamp,
-    ui_provider,
+    AgentSession, AgentSource, SessionHost, SessionObserver, delta_stamp, ui_provider,
 };
 use crate::input::SessionInputBroker;
 
@@ -27,6 +25,26 @@ use super::transition::{
     CancelOrigin, CatalogDisposition, CloseReason, HistoryEffect, RelaunchEffect, RunCompletion,
     RunId, SupervisorEffect, SupervisorEvent,
 };
+
+/// One agent run's terminal outcome, session-local: cancellation maps to
+/// the interrupted stop reason and every other failure to an
+/// operator-facing message. Replaces the retired agent runtime's
+/// `AgentError`, which named Lua-specific failure shapes no session run
+/// can produce.
+#[derive(Debug, thiserror::Error)]
+pub(super) enum AgentRunError {
+    /// The run was cancelled: a stop reason, never a failure.
+    #[error("the agent run was interrupted")]
+    Interrupted,
+    /// The run failed; the message is operator-facing.
+    #[error("{message}")]
+    Failed {
+        /// What failed, operator-facing.
+        message: String,
+        /// The underlying error, when one exists.
+        source: Option<Box<dyn std::error::Error + Send + Sync>>,
+    },
+}
 
 /// The result of executing one reducer-selected effect.
 pub(super) enum EffectOutcome {
@@ -38,20 +56,19 @@ pub(super) enum EffectOutcome {
 /// Immutable resources reused by each reducer-selected relaunch.
 struct RunFactory {
     session: Arc<AgentSession>,
-    tools: ToolCatalog,
     vfs: VfsRef,
     observer: Arc<dyn Observer>,
     on_delta: Arc<dyn Fn(StreamDelta) + Send + Sync>,
     ui: Arc<dyn Fn() -> serde_json::Value + Send + Sync>,
     /// The tool picker the unified runtime's resolution context borrows;
-    /// a cheap empty picker that never loads the embedding model, only
-    /// for Markdown agents, which never bind tools through it today.
-    picker: Option<Arc<ToolPicker>>,
+    /// a cheap empty picker that never loads the embedding model, because
+    /// Markdown agents never bind tools through it today.
+    picker: Arc<ToolPicker>,
 }
 
 impl RunFactory {
     /// Builds reusable run resources for one session.
-    fn new(session: Arc<AgentSession>, tools: ToolCatalog, host: &SessionHost) -> Self {
+    fn new(session: Arc<AgentSession>, host: &SessionHost) -> Self {
         let observer: Arc<dyn Observer> = Arc::new(SessionObserver {
             log: Arc::clone(&session.log),
             rounds: Arc::clone(&session.rounds),
@@ -60,55 +77,20 @@ impl RunFactory {
             errors: session.errors.clone(),
             lifecycle: Arc::clone(&session.lifecycle),
         });
-        let picker = match &session.source {
-            AgentSource::Markdown(_) => Some(Arc::new(ToolPicker::empty(Config::default()))),
-            AgentSource::Lua(_) => None,
-        };
         Self {
             on_delta: delta_stamp(&session, &host.push()),
             ui: ui_provider(host.menu(), host.registry()),
             session,
-            tools,
             vfs: promptforge_vfs::empty(),
             observer,
-            picker,
+            picker: Arc::new(ToolPicker::empty(Config::default())),
         }
     }
 
     /// Builds one run over retained history and frozen bindings.
-    fn launch(&self, run: RunId, models: Vec<serde_json::Value>, client: ModelClient) -> RunFuture {
-        match self.session.source.clone() {
-            AgentSource::Lua(source) => self.launch_lua(run, source, models, client),
-            AgentSource::Markdown(source) => self.launch_markdown(run, source, client),
-        }
-    }
-
-    /// Builds one agent-runtime run of a standalone Lua program.
-    fn launch_lua(
-        &self,
-        run: RunId,
-        source: String,
-        models: Vec<serde_json::Value>,
-        client: ModelClient,
-    ) -> RunFuture {
-        let tools = self.tools.clone();
-        let models = build_model_catalog(Some(models));
-        let vfs = self.vfs.clone();
-        let config = AgentConfig {
-            name: self.session.agent.clone(),
-            execution: self.session.id.clone(),
-            observer: Arc::clone(&self.observer),
-            cancel: self.session.arm_cancel(run),
-            event_log: Some(Arc::clone(&self.session.log) as _),
-            on_delta: Some(Arc::clone(&self.on_delta)),
-            ui: Some(Arc::clone(&self.ui)),
-            limits: AgentLimits::default(),
-        };
-        Box::pin(async move {
-            let result =
-                run_agent_with_client(&source, &tools, &models, &vfs, config, Some(client)).await;
-            (run, result)
-        })
+    fn launch(&self, run: RunId, client: ModelClient) -> RunFuture {
+        let AgentSource::Markdown(source) = self.session.source.clone();
+        self.launch_markdown(run, source, client)
     }
 
     /// Builds one unified-runtime run of a Markdown prompt document.
@@ -119,11 +101,7 @@ impl RunFactory {
             ui: Arc::clone(&self.ui),
             on_delta: Arc::clone(&self.on_delta),
             vfs: self.vfs.clone(),
-            picker: Arc::clone(
-                self.picker
-                    .as_ref()
-                    .unwrap_or_else(|| unreachable!("a Markdown agent session built its picker")),
-            ),
+            picker: Arc::clone(&self.picker),
         };
         Box::pin(async move {
             let result = run_markdown_agent(&source, parts, run, client).await;
@@ -153,7 +131,7 @@ async fn run_markdown_agent(
     parts: MarkdownRunParts,
     run: RunId,
     client: ModelClient,
-) -> Result<(), AgentError> {
+) -> Result<(), AgentRunError> {
     let MarkdownRunParts {
         session,
         observer,
@@ -163,7 +141,7 @@ async fn run_markdown_agent(
         picker,
     } = parts;
     let prompt = Prompt::parse(source, &session.id, observer.as_ref()).map_err(|error| {
-        AgentError::Program {
+        AgentRunError::Failed {
             message: format!("the embedded Markdown agent failed to parse: {error}"),
             source: Some(Box::new(error)),
         }
@@ -173,8 +151,10 @@ async fn run_markdown_agent(
         session.input_frames.clone(),
     ));
     let models = ModelCatalog::empty();
-    let tools = ToolCatalog::new(&[])
-        .map_err(|_error| AgentError::Internal("an empty tool catalog is always valid"))?;
+    let tools = ToolCatalog::new(&[]).map_err(|_error| AgentRunError::Failed {
+        message: "an empty tool catalog is always valid".to_owned(),
+        source: None,
+    })?;
     let config = RunConfig::new(session.id.clone())
         .observer(observer)
         .client(client)
@@ -192,8 +172,8 @@ async fn run_markdown_agent(
     .await
     .map(|_output| ())
     .map_err(|error| match error.kind() {
-        RunErrorKind::Cancelled => AgentError::Interrupted,
-        _ => AgentError::Program {
+        RunErrorKind::Cancelled => AgentRunError::Interrupted,
+        _ => AgentRunError::Failed {
             message: error.to_string(),
             source: Some(Box::new(error)),
         },
@@ -217,12 +197,11 @@ impl EffectExecutor {
     pub(super) fn new(
         session: Arc<AgentSession>,
         host: SessionHost,
-        tools: ToolCatalog,
         initial_catalog: Option<ChatCatalog>,
         initial_gateway: Arc<GatewaySnapshot>,
     ) -> Self {
         Self {
-            factory: RunFactory::new(Arc::clone(&session), tools, &host),
+            factory: RunFactory::new(Arc::clone(&session), &host),
             session,
             host,
             latest_catalog: initial_catalog,
@@ -320,9 +299,9 @@ impl EffectExecutor {
         match relaunch.history {
             HistoryEffect::Preserve => {}
         }
-        self.active_catalog = Some(catalog.clone());
+        self.active_catalog = Some(catalog);
         self.active_gateway = Some(gateway);
-        self.active_run = Some(self.factory.launch(relaunch.run, catalog.models, client));
+        self.active_run = Some(self.factory.launch(relaunch.run, client));
         EffectOutcome::Continue
     }
 }
@@ -330,12 +309,12 @@ impl EffectExecutor {
 /// Converts one run result into its typed reducer event.
 fn run_completion_event(
     run: RunId,
-    result: Result<(), AgentError>,
+    result: Result<(), AgentRunError>,
     session: &AgentSession,
     host: &SessionHost,
 ) -> SupervisorEvent {
     let result = match result {
-        Err(AgentError::Interrupted) => RunCompletion::Interrupted,
+        Err(AgentRunError::Interrupted) => RunCompletion::Interrupted,
         Ok(()) => RunCompletion::Completed,
         Err(error) => {
             tracing::warn!(
