@@ -4,7 +4,7 @@ use tokio::sync::broadcast;
 
 use crate::StatusBus;
 use workshop_protocol::{Progress, Severity, StatusBarUpdate};
-use workshop_registry::{Registration, Registry, StatusSink};
+use workshop_registry::{Registration, Registry};
 
 /// A hub, a push handle whose status sink is a real bus, the status
 /// receiver the renderer's frames land on, and the registration
@@ -13,7 +13,7 @@ fn wired() -> (
     Arc<ProgressHub>,
     Push,
     broadcast::Receiver<StatusBarUpdate>,
-    Registration<dyn StatusSink>,
+    Registration,
 ) {
     let hub = Arc::new(ProgressHub::new());
     let status = StatusBus::new();

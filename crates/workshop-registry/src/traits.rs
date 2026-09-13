@@ -1,21 +1,18 @@
-//! The sealed subsystem traits: one per registration point in the
-//! decomposition's inventory (routes, state handles, background tasks,
-//! push channels, shutdown).
+//! The sealed subsystem traits: one per contribution kind in the
+//! decomposition's inventory (routes, background tasks, push channels
+//! and sinks, shared views).
 //!
-//! All five are sealed behind a private supertrait, so only this crate
-//! can implement them. A registrant plugs its subsystem in through an
-//! adapter this crate provides - [`StatusChannelAdapter`] is the first,
-//! added with the status bus's proof-of-concept migration; each later
-//! migration adds its adapter beside it.
+//! All are sealed behind a private supertrait, so only this crate can
+//! implement them. A registrant plugs its subsystem in through an
+//! adapter this crate provides, never by implementing a trait
+//! downstream.
 
-use std::any::Any;
 use std::fmt;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::pin::Pin;
 
 use axum::Router;
 use tokio::sync::broadcast;
-use tokio::task::JoinHandle;
 
 use workshop_protocol::StatusBarUpdate;
 
@@ -35,20 +32,52 @@ pub trait RouteRegistrar: Sealed + Send + Sync {
     fn routes(&self) -> Router;
 }
 
-/// State handle provision: a subsystem publishes the shared handles its
-/// routes and tasks need, type-erased so the shell's state object
-/// shrinks to a registry of handles.
-pub trait StateProvider: Sealed + Send + Sync {
-    /// The subsystem's handle set, downcast by its consumers.
-    fn handles(&self) -> Arc<dyn Any + Send + Sync>;
+/// Background task spawning: a subsystem starts one long-lived task, so
+/// the composition root holds no `tokio::spawn` calls of its own.
+pub trait BackgroundTask: Sealed + Send + Sync {
+    /// Spawns the task; the returned handle is the shell's shutdown
+    /// lever.
+    fn spawn(&self) -> ShutdownHandle;
 }
 
-/// Background task spawning: a subsystem starts its long-lived tasks,
-/// so the composition root holds no `tokio::spawn` calls of its own.
-pub trait BackgroundTasks: Sealed + Send + Sync {
-    /// Spawns the subsystem's tasks on `runtime`; the returned join
-    /// handles are the shell's shutdown lever.
-    fn spawn(&self, runtime: &tokio::runtime::Handle) -> Vec<JoinHandle<()>>;
+/// The boxed stop-and-await future one task's shutdown resolves to.
+type StopFuture = Pin<Box<dyn Future<Output = ()> + Send>>;
+
+/// The boxed closure producing a task's [`StopFuture`].
+type Stop = Box<dyn FnOnce() -> StopFuture + Send>;
+
+/// The shutdown lever of one spawned background task: a concrete type,
+/// never a trait with an `async fn` method, which would not be
+/// dyn-compatible. Signaling and awaiting are one call, so the shell's
+/// graceful-shutdown closure cannot fire a stop it forgets to await.
+pub struct ShutdownHandle {
+    stop: Option<Stop>,
+}
+
+impl ShutdownHandle {
+    /// Wraps a closure yielding the task's stop-and-await future.
+    pub fn new<F, Fut>(stop: F) -> Self
+    where
+        F: FnOnce() -> Fut + Send + 'static,
+        Fut: Future<Output = ()> + Send + 'static,
+    {
+        Self {
+            stop: Some(Box::new(move || Box::pin(stop()))),
+        }
+    }
+
+    /// Signals the task to stop and waits for it to finish.
+    pub async fn shutdown(mut self) {
+        if let Some(stop) = self.stop.take() {
+            stop().await;
+        }
+    }
+}
+
+impl fmt::Debug for ShutdownHandle {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.debug_struct("ShutdownHandle").finish()
+    }
 }
 
 /// The status-bar push channel: the retained snapshot plus live
@@ -59,13 +88,6 @@ pub trait StatusChannel: Sealed + Send + Sync {
     /// The most recently emitted update, retained so a session
     /// connecting later can send the current status as its snapshot.
     fn latest(&self) -> Option<StatusBarUpdate>;
-}
-
-/// Shutdown handle: a subsystem's graceful-stop signal, held by the
-/// shell and fired at teardown.
-pub trait ShutdownHook: Sealed + Send + Sync {
-    /// Signals the subsystem to stop; returns immediately.
-    fn shutdown(&self);
 }
 
 /// The status producer sink: the status subsystem's receiving end for
@@ -293,38 +315,38 @@ impl<F> fmt::Debug for RouteRegistrarAdapter<F> {
     }
 }
 
-/// A [`StateProvider`] backed by one closure yielding the subsystem's
-/// handle set: the registration adapter for a subsystem's shared state.
-/// The registry's traits are sealed, so the registrant plugs its handles
-/// in through this adapter rather than implementing the trait itself.
-pub struct StateProviderAdapter<F> {
-    handles: F,
+/// A [`BackgroundTask`] backed by one closure spawning the subsystem's
+/// task: the registration adapter for a background task. The registry's
+/// traits are sealed, so the registrant plugs its task in through this
+/// adapter rather than implementing the trait itself.
+pub struct BackgroundTaskAdapter<F> {
+    spawn: F,
 }
 
-impl<F> StateProviderAdapter<F>
+impl<F> BackgroundTaskAdapter<F>
 where
-    F: Fn() -> Arc<dyn Any + Send + Sync> + Send + Sync,
+    F: Fn() -> ShutdownHandle + Send + Sync,
 {
-    /// Builds the adapter from the subsystem's handle-set closure.
-    pub fn new(handles: F) -> Self {
-        Self { handles }
+    /// Builds the adapter from the subsystem's spawn closure.
+    pub fn new(spawn: F) -> Self {
+        Self { spawn }
     }
 }
 
-impl<F> Sealed for StateProviderAdapter<F> where F: Fn() -> Arc<dyn Any + Send + Sync> + Send + Sync {}
+impl<F> Sealed for BackgroundTaskAdapter<F> where F: Fn() -> ShutdownHandle + Send + Sync {}
 
-impl<F> StateProvider for StateProviderAdapter<F>
+impl<F> BackgroundTask for BackgroundTaskAdapter<F>
 where
-    F: Fn() -> Arc<dyn Any + Send + Sync> + Send + Sync,
+    F: Fn() -> ShutdownHandle + Send + Sync,
 {
-    fn handles(&self) -> Arc<dyn Any + Send + Sync> {
-        (self.handles)()
+    fn spawn(&self) -> ShutdownHandle {
+        (self.spawn)()
     }
 }
 
-impl<F> fmt::Debug for StateProviderAdapter<F> {
+impl<F> fmt::Debug for BackgroundTaskAdapter<F> {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.debug_struct("StateProviderAdapter").finish()
+        formatter.debug_struct("BackgroundTaskAdapter").finish()
     }
 }
 

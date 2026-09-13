@@ -283,7 +283,7 @@ Single piece, single step.
 
 <step-3>
 
-### Step 3: Registry redesign to contribution collections
+### Step 3: Registry redesign to contribution collections [completed]
 
 - Component: registry-redesign
 

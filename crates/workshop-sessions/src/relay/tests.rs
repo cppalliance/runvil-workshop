@@ -5,12 +5,9 @@ use axum::body::Body;
 use axum::http::{HeaderMap, Request, header};
 use axum::routing::get;
 use tower::ServiceExt as _;
-use workshop_gateway::{GatewayBinding, GatewayHealth};
-use workshop_menu::{CatalogBus, MenuBus};
-use workshop_registry::Registry;
-use workshop_support::ReconnectBackoff;
+use workshop_gateway::{GatewayBinding, GatewayHandles, GatewayHealth};
+use workshop_registry::{Registration, Registry};
 
-use crate::agents::{AgentSessions, SessionHost};
 use crate::state::routes;
 
 const CATALOG: &str = r#"{"object":"list","data":[{"id":"test-model","object":"model","created":1,"owned_by":"promptforge"}]}"#;
@@ -40,36 +37,20 @@ async fn spawn_gateway(app: Router) -> String {
 }
 
 /// Builds the sessions route state against a stub gateway address: the
-/// buses unregistered (pushes are graceful no-ops), the state directory
-/// a fresh tempdir returned alongside so it outlives the test.
-fn state_for(base_url: &str) -> (SessionsState, tempfile::TempDir) {
+/// gateway handle set registered into the registry the state reads it
+/// through, the push sinks unregistered (pushes are graceful no-ops),
+/// the state directory a fresh tempdir returned alongside so it outlives
+/// the test.
+fn state_for(base_url: &str) -> (SessionsState, tempfile::TempDir, Registration) {
     let dir = tempfile::TempDir::new().expect("tempdir");
     let registry = Registry::new();
-    let catalog = CatalogBus::new();
-    let menu = MenuBus::new(catalog.clone(), None);
     let gateway = GatewayBinding::new(base_url, "test-key").expect("the binding builds");
-    let host = SessionHost::new(
-        registry.clone(),
-        ReconnectBackoff::new(),
-        menu.clone(),
-        catalog.clone(),
+    let guard = workshop_gateway::register(
+        &registry,
+        GatewayHandles::new(gateway, GatewayHealth::new()),
     );
-    let agents = AgentSessions::new(
-        dir.path().join("agents"),
-        dir.path().join("sessions"),
-        gateway.clone(),
-        host,
-    );
-    let state = SessionsState::new(
-        agents,
-        gateway,
-        GatewayHealth::new(),
-        catalog,
-        menu,
-        registry,
-        |_| true,
-    );
-    (state, dir)
+    let state = SessionsState::new(registry, |_| true);
+    (state, dir, guard)
 }
 
 fn authorized(headers: &HeaderMap) -> bool {
@@ -105,7 +86,7 @@ fn models_request() -> Request<Body> {
 #[tokio::test]
 async fn models_are_relayed_byte_for_byte() {
     let base_url = spawn_gateway(Router::new().route("/v1/models", get(mock_models))).await;
-    let (state, _dir) = state_for(&base_url);
+    let (state, _dir, _guard) = state_for(&base_url);
     let response = routes(state)
         .oneshot(models_request())
         .await
@@ -117,7 +98,7 @@ async fn models_are_relayed_byte_for_byte() {
 #[tokio::test]
 async fn gateway_error_status_is_relayed_byte_for_byte() {
     let base_url = spawn_gateway(Router::new().route("/v1/models", get(mock_broken_models))).await;
-    let (state, _dir) = state_for(&base_url);
+    let (state, _dir, _guard) = state_for(&base_url);
     let response = routes(state)
         .oneshot(models_request())
         .await
@@ -129,7 +110,7 @@ async fn gateway_error_status_is_relayed_byte_for_byte() {
 #[tokio::test]
 async fn unreachable_gateway_becomes_bad_gateway() {
     // Port 1 is never listening, so the connect fails deterministically.
-    let (state, _dir) = state_for("http://127.0.0.1:1");
+    let (state, _dir, _guard) = state_for("http://127.0.0.1:1");
     let response = routes(state)
         .oneshot(models_request())
         .await
@@ -142,8 +123,11 @@ async fn unreachable_gateway_becomes_bad_gateway() {
 
 #[tokio::test]
 async fn a_gateway_known_down_short_circuits_the_catalog_with_bad_gateway() {
-    let (state, _dir) = state_for("http://127.0.0.1:1");
-    state.health().publish(false);
+    let (state, _dir, _guard) = state_for("http://127.0.0.1:1");
+    state
+        .health()
+        .expect("the gateway handles are registered")
+        .publish(false);
     let response = routes(state)
         .oneshot(models_request())
         .await

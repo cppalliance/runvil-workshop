@@ -98,7 +98,7 @@ async fn a_stalled_gateway_reads_unreachable_within_the_probe_bound() {
     // A recording status sink stands in for the status bus.
     let registry = workshop_registry::Registry::new();
     let (status_tx, mut rx) = tokio::sync::broadcast::channel(16);
-    let _sink = registry.status_sink().register(std::sync::Arc::new(
+    let _sink = registry.register_sink::<dyn workshop_registry::StatusSink>(std::sync::Arc::new(
         workshop_registry::StatusSinkAdapter::new(move |update| {
             let _ = status_tx.send(update);
         }),

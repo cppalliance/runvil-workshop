@@ -290,7 +290,7 @@ fn the_report_names_the_winning_source_and_a_condemned_file() {
     // frames land on it through the registry's push facade.
     let registry = workshop_registry::Registry::new();
     let (status_tx, mut receiver) = tokio::sync::broadcast::channel(16);
-    let _sink = registry.status_sink().register(std::sync::Arc::new(
+    let _sink = registry.register_sink::<dyn workshop_registry::StatusSink>(std::sync::Arc::new(
         workshop_registry::StatusSinkAdapter::new(move |update| {
             let _ = status_tx.send(update);
         }),

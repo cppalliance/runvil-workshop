@@ -5,6 +5,7 @@
 mod common;
 
 mod agents;
+mod boot;
 mod chat_gate;
 mod heartbeat;
 mod heartbeat_loop;

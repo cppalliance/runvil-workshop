@@ -21,7 +21,9 @@ const LEAK_DETAIL: bool = cfg!(debug_assertions);
 /// While the heartbeat reports the gateway down, the catalog is not
 /// attempted: the route answers 502 with a user-visible message instead.
 pub(crate) async fn models(State(state): State<SessionsState>) -> Response {
-    if !state.health().is_reachable() {
+    // An unregistered gateway subsystem reads as the health flag's
+    // optimistic default; a registered one short-circuits while down.
+    if state.health().is_some_and(|health| !health.is_reachable()) {
         return envelope(StatusCode::BAD_GATEWAY, "Gateway unreachable".to_string());
     }
     let push = state.push();
@@ -30,7 +32,9 @@ pub(crate) async fn models(State(state): State<SessionsState>) -> Response {
         "fetching the gateway model catalog",
         Activity::General,
     );
-    let gateway = state.gateway_snapshot();
+    let Some(gateway) = state.gateway_snapshot() else {
+        return envelope(StatusCode::BAD_GATEWAY, "Gateway unreachable".to_string());
+    };
     let result = gateway.client().list_models().await;
     report_gateway_outcome(&push, &result, "GET /v1/models");
     relay(result)

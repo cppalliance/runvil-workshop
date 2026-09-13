@@ -37,7 +37,11 @@ pub(super) async fn select_model(
         send_error(socket, id, "select_model needs a \"model\" string").await;
         return;
     };
-    if let Err(refusal) = state.menu().set_selected(model) {
+    let Some(menu) = state.menu() else {
+        send_error(socket, id, "the model menu is unavailable").await;
+        return;
+    };
+    if let Err(refusal) = menu.set_selected(model) {
         send_error(socket, id, refusal.to_string()).await;
     }
 }
@@ -57,18 +61,25 @@ pub(super) async fn start_switch(
         send_error(socket, id, "switch_profile needs a \"name\" string").await;
         return;
     };
-    if let Err(refusal) = state.menu().begin_switch(name) {
+    let Some(menu) = state.menu() else {
+        send_error(socket, id, "the model menu is unavailable").await;
+        return;
+    };
+    if let Err(refusal) = menu.begin_switch(name) {
         send_error(socket, id, refusal.to_string()).await;
         return;
     }
+    let Some(snapshot) = state.gateway_snapshot() else {
+        send_error(socket, id, "the gateway is unavailable").await;
+        return;
+    };
     // Deliberately not client-scoped - a stated exception to the crate's
     // drop-guard cancellation rule: a profile switch is global server
     // state, not work held on behalf of one client, so it runs to
     // completion (and settles the menu) even if the clicking client
     // disconnects mid-switch.
-    let client = state.gateway_snapshot().client().clone();
+    let client = snapshot.client().clone();
     let push = state.push();
-    let menu = state.menu().clone();
     let name = name.to_string();
     tokio::spawn(async move {
         run_switch(&client, &push, &menu, &name).await;

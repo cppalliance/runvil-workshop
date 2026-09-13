@@ -24,5 +24,5 @@ pub mod status;
 pub mod handles;
 pub mod progress;
 
-pub use handles::register;
+pub use handles::{register, register_tasks};
 pub use status::StatusBus;

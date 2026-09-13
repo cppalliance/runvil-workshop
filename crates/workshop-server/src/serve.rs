@@ -16,9 +16,6 @@ use std::time::Duration;
 
 use crate::app::{StateError, router, state_with_gateway};
 use crate::gateway_binding::GatewayUpdater;
-use crate::gateway_progress;
-use crate::heartbeat;
-use crate::progress;
 use crate::resolve::ResolvedGateway;
 use workshop_support::Config;
 
@@ -270,22 +267,15 @@ fn serve_thread(
             Err(error) => return (Termination::Graceful, Err(error)),
         };
         let _ = ready.send(Ok((format!("http://{address}"), state.gateway_updater())));
-        // The heartbeat, gateway progress subscriber, and progress renderer
-        // start with serving and stop inside the same graceful-shutdown
-        // signal, so they never outlive the server.
-        let heartbeat = heartbeat::spawn(
-            state.gateway_binding(),
-            state.push(),
-            state.health(),
-            heartbeat::HEARTBEAT_INTERVAL,
-            state.backoff(),
-        );
-        let renderer = progress::spawn(std::sync::Arc::clone(state.progress()), state.push());
-        let subscriber = gateway_progress::spawn(
-            state.gateway_binding(),
-            std::sync::Arc::clone(state.progress()),
-            state.health(),
-        );
+        // The subsystems' registered background tasks start with serving
+        // and stop inside the same graceful-shutdown signal, so they
+        // never outlive the server.
+        let tasks: Vec<_> = state
+            .registry()
+            .tasks()
+            .iter()
+            .map(|task| task.spawn())
+            .collect();
         let (draining_tx, draining_rx) = tokio::sync::oneshot::channel();
         let serve = async {
             axum::serve(listener, app)
@@ -294,9 +284,9 @@ fn serve_thread(
                     // Arm the watchdog before draining the background
                     // tasks, so the grace window bounds the whole stop.
                     let _ = draining_tx.send(());
-                    heartbeat.shutdown().await;
-                    renderer.shutdown().await;
-                    subscriber.shutdown().await;
+                    for task in tasks {
+                        task.shutdown().await;
+                    }
                 })
                 .await
         };

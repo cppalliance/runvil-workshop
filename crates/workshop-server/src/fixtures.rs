@@ -1,6 +1,6 @@
 //! Integration-test seams that exercise Workshop behavior in-process.
 
-pub use crate::app::state_with_gateway;
+pub use crate::app::{Omit, state_with_gateway, state_with_gateway_omitting};
 pub use crate::catalog::CatalogBus;
 pub use crate::heartbeat::{GatewayHealth, Heartbeat};
 pub use crate::menu::{MenuBus, MenuRefusal};

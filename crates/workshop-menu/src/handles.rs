@@ -7,7 +7,6 @@ use std::sync::Arc;
 
 use workshop_registry::{
     CatalogSink, CatalogSinkAdapter, MenuSink, MenuSinkAdapter, Registration, Registry,
-    StateProvider, StateProviderAdapter,
 };
 
 use crate::{CatalogBus, MenuBus};
@@ -52,18 +51,13 @@ pub fn register(
     registry: &Registry,
     catalog: &CatalogBus,
     menu: &MenuBus,
-) -> (
-    Registration<dyn CatalogSink>,
-    Registration<dyn MenuSink>,
-    Registration<dyn StateProvider>,
-) {
-    let catalog_guard = registry
-        .catalog_sink()
-        .register(Arc::new(CatalogSinkAdapter::new({
+) -> (Registration, Registration, Registration) {
+    let catalog_guard =
+        registry.register_sink::<dyn CatalogSink>(Arc::new(CatalogSinkAdapter::new({
             let catalog = catalog.clone();
             move |models| catalog.publish(models)
         })));
-    let menu_guard = registry.menu_sink().register(Arc::new(MenuSinkAdapter::new(
+    let menu_guard = registry.register_sink::<dyn MenuSink>(Arc::new(MenuSinkAdapter::new(
         {
             let menu = menu.clone();
             move |reachable| menu.set_gateway_reachable(reachable)
@@ -82,10 +76,6 @@ pub fn register(
         },
     )));
     let state = registry
-        .menu_state()
-        .register(Arc::new(StateProviderAdapter::new({
-            let handles = MenuHandles::new(catalog.clone(), menu.clone());
-            move || Arc::new(handles.clone()) as Arc<dyn std::any::Any + Send + Sync>
-        })));
+        .register_state::<MenuHandles>(Arc::new(MenuHandles::new(catalog.clone(), menu.clone())));
     (catalog_guard, menu_guard, state)
 }

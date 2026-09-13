@@ -97,32 +97,37 @@ async fn run_session(mut socket: WebSocket, state: SessionsState) {
 
     // Subscribe before snapshotting, so an update emitted between the two
     // arrives at least once; the possible duplicate is harmless because
-    // status and catalog frames are complete snapshots. The status
-    // channel comes from the registry's slot: unregistered is a graceful
+    // status and catalog frames are complete snapshots. Every bus comes
+    // from the registry's state collection: unregistered is a graceful
     // no-op, so the branch below pends forever instead of failing.
-    let status = state.registry().status_channel();
+    let status = state
+        .registry()
+        .state::<dyn workshop_registry::StatusChannel>();
     let mut status_rx = status.as_ref().map(|channel| channel.subscribe());
-    let mut catalog_rx = state.catalog().subscribe();
-    let mut menu_rx = state.menu().subscribe();
+    let mut catalog_rx = state.catalog().map(|catalog| catalog.subscribe());
+    let mut menu_rx = state.menu().map(|menu| menu.subscribe());
     // The delivery contract resends the current status, catalog, and
     // workbench snapshots on reconnect; the buses retain the newest copy
     // for exactly this send, so the UI boots with zero HTTP state fetches.
     // The status line is the one exception: a retained heartbeat transition
     // ("Connected to gateway") describes a past moment, so the join line is
     // recomputed from the current probe instead of replayed stale.
-    if let Some(update) = workshop_gateway::heartbeat::join_status(
-        status.as_ref().and_then(|channel| channel.latest()),
-        state.health(),
-    ) && !send_frame(&mut socket, &update.frame()).await
+    let retained = status.as_ref().and_then(|channel| channel.latest());
+    let join = match state.health() {
+        Some(health) => workshop_gateway::heartbeat::join_status(retained, &health),
+        None => retained,
+    };
+    if let Some(update) = join
+        && !send_frame(&mut socket, &update.frame()).await
     {
         return;
     }
-    if let Some(catalog) = state.catalog().latest()
+    if let Some(catalog) = state.catalog().and_then(|catalog| catalog.latest())
         && !send_frame(&mut socket, &catalog.frame()).await
     {
         return;
     }
-    if let Some(snapshot) = state.menu().latest()
+    if let Some(snapshot) = state.menu().and_then(|menu| menu.latest())
         && !send_frame(&mut socket, &snapshot.frame()).await
     {
         return;
@@ -162,7 +167,13 @@ async fn run_session(mut socket: WebSocket, state: SessionsState) {
                 }
                 Err(broadcast::error::RecvError::Closed) => status_open = false,
             },
-            received = catalog_rx.recv(), if catalog_open => match received {
+            received = async {
+                match catalog_rx.as_mut() {
+                    Some(rx) => rx.recv().await,
+                    // Unregistered menu subsystem: the branch never runs.
+                    None => std::future::pending().await,
+                }
+            }, if catalog_open => match received {
                 Ok(catalog) => {
                     if !send_frame(&mut socket, &catalog.frame()).await {
                         break;
@@ -173,7 +184,13 @@ async fn run_session(mut socket: WebSocket, state: SessionsState) {
                 }
                 Err(broadcast::error::RecvError::Closed) => catalog_open = false,
             },
-            received = menu_rx.recv(), if menu_open => match received {
+            received = async {
+                match menu_rx.as_mut() {
+                    Some(rx) => rx.recv().await,
+                    // Unregistered menu subsystem: the branch never runs.
+                    None => std::future::pending().await,
+                }
+            }, if menu_open => match received {
                 Ok(snapshot) => {
                     if !send_frame(&mut socket, &snapshot.frame()).await {
                         break;

@@ -23,11 +23,7 @@ struct Recording {
     catalog_rx: broadcast::Receiver<Vec<serde_json::Value>>,
     menu_calls: Arc<Mutex<Vec<String>>>,
     // The registrations keep the sinks alive for the test's duration.
-    _guards: (
-        Registration<dyn StatusSink>,
-        Registration<dyn CatalogSink>,
-        Registration<dyn MenuSink>,
-    ),
+    _guards: (Registration, Registration, Registration),
 }
 
 /// Wires a registry with recording sink adapters and returns its push
@@ -37,20 +33,19 @@ fn wired() -> Recording {
     let (status_tx, status_rx) = broadcast::channel(16);
     let (catalog_tx, catalog_rx) = broadcast::channel(16);
     let menu_calls: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
-    let status_guard = registry
-        .status_sink()
-        .register(Arc::new(StatusSinkAdapter::new(move |update| {
+    let status_guard =
+        registry.register_sink::<dyn StatusSink>(Arc::new(StatusSinkAdapter::new(move |update| {
             // A send only fails when the test dropped its receiver.
             let _ = status_tx.send(update);
         })));
-    let catalog_guard = registry
-        .catalog_sink()
-        .register(Arc::new(CatalogSinkAdapter::new(move |models| {
+    let catalog_guard = registry.register_sink::<dyn CatalogSink>(Arc::new(
+        CatalogSinkAdapter::new(move |models| {
             let _ = catalog_tx.send(models);
-        })));
+        }),
+    ));
     let menu_guard = {
         let calls = Arc::clone(&menu_calls);
-        registry.menu_sink().register(Arc::new(MenuSinkAdapter::new(
+        registry.register_sink::<dyn MenuSink>(Arc::new(MenuSinkAdapter::new(
             {
                 let calls = Arc::clone(&calls);
                 move |reachable| record(&calls, format!("reachable:{reachable}"))
@@ -277,9 +272,8 @@ fn intents_on_empty_slots_are_no_ops() {
 fn dropping_a_registration_stops_its_intents() {
     let registry = Registry::new();
     let (status_tx, mut status_rx) = broadcast::channel(16);
-    let guard = registry
-        .status_sink()
-        .register(Arc::new(StatusSinkAdapter::new(move |update| {
+    let guard =
+        registry.register_sink::<dyn StatusSink>(Arc::new(StatusSinkAdapter::new(move |update| {
             let _ = status_tx.send(update);
         })));
     let push = registry.push();

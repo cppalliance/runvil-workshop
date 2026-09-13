@@ -85,8 +85,12 @@ async fn recv_or_pending<T: Clone>(
 async fn run_socket(mut socket: WebSocket, state: SessionsState) {
     // The list is discovered per connect: the frame is a complete
     // snapshot, so a directory edited between connects is picked up by
-    // the next window with no push machinery.
-    if !send_frame(&mut socket, &AgentsFrame::new(state.agents().discover())).await {
+    // the next window with no push machinery. An unregistered sessions
+    // state handle degrades the discovery to the empty list.
+    let discovered = state
+        .agents()
+        .map_or_else(Vec::new, |agents| agents.discover());
+    if !send_frame(&mut socket, &AgentsFrame::new(discovered)).await {
         return;
     }
     let mut attached: Option<Attached> = None;
@@ -311,12 +315,16 @@ async fn handle_open(
         .await;
         return true;
     }
+    let Some(agents) = state.agents() else {
+        send_error(socket, None, "agent sessions are unavailable").await;
+        return true;
+    };
     let session = if kind == "launch" {
         let Some(agent) = frame.get("agent").and_then(serde_json::Value::as_str) else {
             send_error(socket, None, "launch frame without an agent name").await;
             return true;
         };
-        match state.agents().launch(agent) {
+        match agents.launch(agent) {
             Ok(session) => session,
             Err(refusal) => {
                 send_error(socket, None, refusal.to_string()).await;
@@ -328,7 +336,7 @@ async fn handle_open(
             send_error(socket, None, "attach frame without a session id").await;
             return true;
         };
-        let Some(session) = state.agents().get(id) else {
+        let Some(session) = agents.get(id) else {
             send_error(socket, None, "unknown agent session").await;
             return true;
         };

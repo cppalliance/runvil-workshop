@@ -172,7 +172,7 @@ fn the_ui_snapshot_serves_the_selection_and_first_granted_root() {
         .expect("the id is in the catalog");
     let dir = tempfile::TempDir::new().expect("tempdir");
     let granted = dir.path().to_path_buf();
-    let _roots = registry.workspace_roots().register(Arc::new(
+    let _roots = registry.register_state::<dyn workshop_registry::WorkspaceRoots>(Arc::new(
         workshop_registry::WorkspaceRootsAdapter::new({
             let granted = granted.clone();
             move || vec![granted.clone()]

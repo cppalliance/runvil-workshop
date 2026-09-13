@@ -1,11 +1,11 @@
 //! Integration tests for `workshop-workspace`: the registration
 //! contract - routes and the granted-roots handle served through the
-//! registry's slots.
+//! registry's contribution collections.
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use tower::ServiceExt as _;
-use workshop_registry::Registry;
+use workshop_registry::{Registry, WorkspaceRoots};
 use workshop_workspace::{Workspace, register};
 
 #[tokio::test]
@@ -16,11 +16,9 @@ async fn the_registered_routes_serve_the_workspace_api() {
     std::fs::write(dir.path().join("notes.txt"), "hello").expect("seed a file");
     let _guards = register(&registry, &workspace);
 
-    let registrar = registry
-        .workspace_routes()
-        .get()
-        .expect("the routes slot is registered");
-    let router = registrar.routes();
+    let registrars = registry.routes();
+    assert_eq!(registrars.len(), 1, "the routes collection is registered");
+    let router = registrars[0].routes();
 
     // The roots listing answers through the registered routes.
     let request = Request::builder()
@@ -49,9 +47,8 @@ async fn the_registered_routes_serve_the_workspace_api() {
         .expect("the router is infallible");
     assert_eq!(response.status(), StatusCode::OK);
     let roots = registry
-        .workspace_roots()
-        .get()
-        .expect("the roots slot is registered")
+        .state::<dyn WorkspaceRoots>()
+        .expect("the roots handle is registered")
         .granted_roots();
     assert_eq!(roots.len(), 1, "the grant reached the shared state");
     assert!(
@@ -61,13 +58,15 @@ async fn the_registered_routes_serve_the_workspace_api() {
 }
 
 #[tokio::test]
-async fn dropping_the_guards_deregisters_both_slots() {
+async fn dropping_the_guards_deregisters_every_contribution() {
     let registry = Registry::new();
     let workspace = Workspace::new();
     let guards = register(&registry, &workspace);
-    assert!(registry.workspace_routes().get().is_some());
-    assert!(registry.workspace_roots().get().is_some());
+    assert!(!registry.routes().is_empty());
+    assert!(registry.state::<Workspace>().is_some());
+    assert!(registry.state::<dyn WorkspaceRoots>().is_some());
     drop(guards);
-    assert!(registry.workspace_routes().get().is_none());
-    assert!(registry.workspace_roots().get().is_none());
+    assert!(registry.routes().is_empty());
+    assert!(registry.state::<Workspace>().is_none());
+    assert!(registry.state::<dyn WorkspaceRoots>().is_none());
 }

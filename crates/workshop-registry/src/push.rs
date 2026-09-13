@@ -17,6 +17,7 @@
 use workshop_protocol::{Activity, Progress, Severity, StatusBarUpdate};
 
 use crate::Registry;
+use crate::traits::{CatalogSink, MenuSink, StatusSink};
 
 /// The intent-named push handle over the status, catalog, and menu sink
 /// slots.
@@ -103,10 +104,10 @@ impl Push {
     /// revalidates its selection against the new catalog and republishes
     /// the workbench snapshot when it changed.
     pub fn push_models_catalog(&self, models: Vec<serde_json::Value>) {
-        if let Some(catalog) = self.registry.catalog_sink().get() {
+        if let Some(catalog) = self.registry.sink::<dyn CatalogSink>() {
             catalog.publish(models);
         }
-        if let Some(menu) = self.registry.menu_sink().get() {
+        if let Some(menu) = self.registry.sink::<dyn MenuSink>() {
             menu.reconcile_catalog();
         }
     }
@@ -131,7 +132,7 @@ impl Push {
         severity: Severity,
         activity: Activity,
     ) {
-        let Some(status) = self.registry.status_sink().get() else {
+        let Some(status) = self.registry.sink::<dyn StatusSink>() else {
             return;
         };
         status.emit(StatusBarUpdate {
@@ -157,7 +158,7 @@ impl MenuPush {
     /// Records the heartbeat's verdict on the gateway; `chat_ready` is
     /// false while the gateway is down.
     pub fn set_gateway_reachable(&self, reachable: bool) {
-        if let Some(menu) = self.registry.menu_sink().get() {
+        if let Some(menu) = self.registry.sink::<dyn MenuSink>() {
             menu.set_gateway_reachable(reachable);
         }
     }
@@ -166,7 +167,7 @@ impl MenuPush {
     /// without profile support feeds an empty list - a state, not an
     /// error.
     pub fn set_profiles(&self, profiles: Vec<String>, active: Option<String>) {
-        if let Some(menu) = self.registry.menu_sink().get() {
+        if let Some(menu) = self.registry.sink::<dyn MenuSink>() {
             menu.set_profiles(profiles, active);
         }
     }
@@ -174,7 +175,7 @@ impl MenuPush {
     /// Restores a boot-time selection when none is applied; with a
     /// selection already applied this is a no-op.
     pub fn restore_selection(&self) {
-        if let Some(menu) = self.registry.menu_sink().get() {
+        if let Some(menu) = self.registry.sink::<dyn MenuSink>() {
             menu.restore_selection();
         }
     }

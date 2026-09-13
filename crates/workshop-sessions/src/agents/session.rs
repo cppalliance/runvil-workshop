@@ -359,8 +359,8 @@ pub(crate) fn delta_stamp(
 /// Builds the `ui()` snapshot provider: `selected_model` from the menu's
 /// retained workbench state and `workspace_root` as the first granted
 /// workspace root, each `null` when absent. The roots come through the
-/// registry's workspace slot, so this crate never names the workspace
-/// crate the tier graph forbids; an unregistered slot serves `null`.
+/// registry's state collection, so this crate never names the workspace
+/// crate the tier graph forbids; an unregistered handle serves `null`.
 pub(crate) fn ui_provider(
     menu: &MenuBus,
     registry: &Registry,
@@ -370,8 +370,7 @@ pub(crate) fn ui_provider(
     Arc::new(move || {
         let selected = menu.latest().and_then(|snapshot| snapshot.selected_model);
         let root = registry
-            .workspace_roots()
-            .get()
+            .state::<dyn workshop_registry::WorkspaceRoots>()
             .and_then(|roots| roots.granted_roots().first().cloned())
             .map(|root| root.display().to_string());
         serde_json::json!({ "selected_model": selected, "workspace_root": root })

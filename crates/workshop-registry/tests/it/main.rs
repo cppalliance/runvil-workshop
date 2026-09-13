@@ -1,11 +1,13 @@
-//! Integration tests for `workshop-registry`: the proxy-slot contract.
+//! Integration tests for `workshop-registry`: the contribution
+//! collection contract - routes and tasks as ordered vectors, state
+//! handles and push sinks keyed by type.
 
 use std::sync::{Arc, Mutex, PoisonError};
 
 use tokio::sync::broadcast;
 
 use workshop_protocol::{Activity, Severity, StatusBarUpdate};
-use workshop_registry::{Registry, StatusChannelAdapter};
+use workshop_registry::{Registry, StatusChannel, StatusChannelAdapter};
 
 /// The adapter's boxed subscribe closure type.
 type Subscribe = Box<dyn Fn() -> broadcast::Receiver<StatusBarUpdate> + Send + Sync>;
@@ -56,28 +58,27 @@ fn update(label: &str) -> StatusBarUpdate {
 }
 
 #[test]
-fn an_unregistered_slot_is_a_graceful_no_op() {
+fn an_empty_registry_serves_no_contributions() {
     let registry = Registry::new();
-    assert!(registry.status_channel().is_none());
-    assert!(registry.routes().get().is_none());
-    assert!(registry.state_handles().get().is_none());
-    assert!(registry.tasks().get().is_none());
-    assert!(registry.shutdown().get().is_none());
+    assert!(registry.routes().is_empty());
+    assert!(registry.tasks().is_empty());
+    assert!(registry.state::<String>().is_none());
+    assert!(registry.state::<dyn StatusChannel>().is_none());
 }
 
 #[test]
 fn a_registered_status_channel_serves_subscribe_and_latest() {
     let registry = Registry::new();
     let bus = status_adapter();
-    let _registration = registry.status().register(Arc::new(bus.adapter));
+    let _registration = registry.register_state::<dyn StatusChannel>(Arc::new(bus.adapter));
     let channel = registry
-        .status_channel()
+        .state::<dyn StatusChannel>()
         .expect("the registered channel is served");
     *bus.latest.lock().unwrap_or_else(PoisonError::into_inner) = Some(update("Ready"));
     assert_eq!(
         channel.latest().map(|update| update.label),
         Some("Ready".to_string()),
-        "the slot serves the registrant's retained snapshot"
+        "the collection serves the registrant's retained snapshot"
     );
     let mut receiver = channel.subscribe();
     bus.sender
@@ -93,116 +94,105 @@ fn a_registered_status_channel_serves_subscribe_and_latest() {
 }
 
 #[test]
-fn dropping_the_guard_deregisters_the_subsystem() {
+fn dropping_the_guard_deregisters_the_contribution() {
     let registry = Registry::new();
     let bus = status_adapter();
-    let registration = registry.status().register(Arc::new(bus.adapter));
-    assert!(registry.status_channel().is_some());
+    let registration = registry.register_state::<dyn StatusChannel>(Arc::new(bus.adapter));
+    assert!(registry.state::<dyn StatusChannel>().is_some());
     drop(registration);
     assert!(
-        registry.status_channel().is_none(),
-        "the slot empties when the guard drops"
+        registry.state::<dyn StatusChannel>().is_none(),
+        "the key empties when the guard drops"
     );
 }
 
 #[test]
 fn a_stale_guard_never_evicts_a_newer_occupant() {
     let registry = Registry::new();
-    let stale = registry
-        .status()
-        .register(Arc::new(status_adapter().adapter));
-    let _current = registry
-        .status()
-        .register(Arc::new(status_adapter().adapter));
+    let stale = registry.register_state::<dyn StatusChannel>(Arc::new(status_adapter().adapter));
+    let _current = registry.register_state::<dyn StatusChannel>(Arc::new(status_adapter().adapter));
     drop(stale);
     assert!(
-        registry.status_channel().is_some(),
+        registry.state::<dyn StatusChannel>().is_some(),
         "the replacement survives the stale guard's drop"
     );
 }
 
 #[test]
-fn registry_clones_share_the_same_slots() {
+fn registry_clones_share_the_same_collections() {
     let registry = Registry::new();
     let clone = registry.clone();
-    let _registration = registry
-        .status()
-        .register(Arc::new(status_adapter().adapter));
+    let _registration =
+        registry.register_state::<dyn StatusChannel>(Arc::new(status_adapter().adapter));
     assert!(
-        clone.status_channel().is_some(),
+        clone.state::<dyn StatusChannel>().is_some(),
         "a registration through one handle is visible through every clone"
     );
 }
 
 #[test]
-fn the_workspace_roots_slot_serves_the_registrants_grants() {
+fn the_workspace_roots_handle_serves_the_registrants_grants() {
     use std::path::PathBuf;
 
-    use workshop_registry::WorkspaceRootsAdapter;
+    use workshop_registry::{WorkspaceRoots, WorkspaceRootsAdapter};
 
     let registry = Registry::new();
     assert!(
-        registry.workspace_roots().get().is_none(),
-        "an unregistered roots slot is a graceful no-op"
+        registry.state::<dyn WorkspaceRoots>().is_none(),
+        "an unregistered roots handle is a graceful no-op"
     );
-    let registration = registry
-        .workspace_roots()
-        .register(Arc::new(WorkspaceRootsAdapter::new(|| {
+    let registration =
+        registry.register_state::<dyn WorkspaceRoots>(Arc::new(WorkspaceRootsAdapter::new(|| {
             vec![PathBuf::from("/granted")]
         })));
     let roots = registry
-        .workspace_roots()
-        .get()
+        .state::<dyn WorkspaceRoots>()
         .expect("the registered roots handle is served");
     assert_eq!(roots.granted_roots(), vec![PathBuf::from("/granted")]);
     drop(registration);
     assert!(
-        registry.workspace_roots().get().is_none(),
-        "the slot empties when the guard drops"
+        registry.state::<dyn WorkspaceRoots>().is_none(),
+        "the key empties when the guard drops"
     );
 }
 
 #[test]
-fn a_registered_route_registrar_builds_its_router() {
+fn route_registrants_build_their_routers_in_registration_order() {
     use workshop_registry::RouteRegistrarAdapter;
 
     let registry = Registry::new();
-    assert!(registry.session_routes().get().is_none());
-    assert!(registry.workspace_routes().get().is_none());
-    let _registration = registry
-        .session_routes()
-        .register(Arc::new(RouteRegistrarAdapter::new(axum::Router::new)));
+    assert!(registry.routes().is_empty());
+    let first: Arc<dyn workshop_registry::RouteRegistrar> =
+        Arc::new(RouteRegistrarAdapter::new(axum::Router::new));
+    let second: Arc<dyn workshop_registry::RouteRegistrar> =
+        Arc::new(RouteRegistrarAdapter::new(axum::Router::new));
+    let first_guard = registry.register_routes(Arc::clone(&first));
+    let _second_guard = registry.register_routes(Arc::clone(&second));
+    let routes = registry.routes();
+    assert_eq!(routes.len(), 2, "both registrants are served");
     assert!(
-        registry.session_routes().get().is_some(),
-        "the sessions subsystem's routes are served"
+        Arc::ptr_eq(&routes[0], &first) && Arc::ptr_eq(&routes[1], &second),
+        "registrants are served in registration order"
     );
-    assert!(
-        registry.workspace_routes().get().is_none(),
-        "route slots are per subsystem"
+    drop(first_guard);
+    assert_eq!(
+        registry.routes().len(),
+        1,
+        "a dropped guard removes only its own registrant"
     );
 }
 
 #[test]
-fn a_registered_state_provider_serves_its_handles_for_downcast() {
-    use workshop_registry::StateProviderAdapter;
-
+fn a_registered_state_handle_downcasts_to_its_concrete_type() {
     let registry = Registry::new();
-    assert!(registry.sessions_state().get().is_none());
-    let _registration = registry
-        .sessions_state()
-        .register(Arc::new(StateProviderAdapter::new(|| {
-            Arc::new("handles".to_string()) as Arc<dyn std::any::Any + Send + Sync>
-        })));
+    assert!(registry.state::<String>().is_none());
+    let _registration = registry.register_state(Arc::new("handles".to_string()));
     let handles = registry
-        .sessions_state()
-        .get()
-        .expect("the registered provider is served")
-        .handles();
-    assert_eq!(
-        handles
-            .downcast::<String>()
-            .expect("the handle set downcasts to its concrete type")
-            .as_str(),
-        "handles"
+        .state::<String>()
+        .expect("the registered handle set is served");
+    assert_eq!(handles.as_str(), "handles");
+    assert!(
+        registry.state::<u64>().is_none(),
+        "state handles are keyed by type"
     );
 }

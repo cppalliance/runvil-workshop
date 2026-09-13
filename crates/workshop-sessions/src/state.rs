@@ -9,21 +9,22 @@ use axum::Router;
 use axum::http::HeaderMap;
 use axum::routing::get;
 
-use workshop_gateway::{GatewayBinding, GatewayHealth, GatewaySnapshot};
-use workshop_menu::{CatalogBus, MenuBus};
-use workshop_registry::{
-    Push, Registration, Registry, RouteRegistrar, RouteRegistrarAdapter, StateProvider,
-    StateProviderAdapter,
-};
+use workshop_gateway::{GatewayHandles, GatewaySnapshot};
+use workshop_menu::{CatalogBus, MenuBus, MenuHandles};
+use workshop_registry::{Push, Registration, Registry, RouteRegistrarAdapter};
 use workshop_support::{RELAY_DEADLINE, with_deadline};
 
 use crate::agents::AgentSessions;
 use crate::{agents, relay, session};
 
-/// The shared state of the sessions subsystem's routes: the agent-session
-/// registry, the gateway endpoint binding and reachability flag, the
-/// catalog and menu buses, the subsystem registry (the status channel and
-/// the push facade), and the shell's WebSocket origin policy.
+/// The shared state of the sessions subsystem's routes: the subsystem
+/// registry every handle is read through, and the shell's WebSocket
+/// origin policy. The subsystem holds no typed bus fields of its own:
+/// the agent-session registry, the gateway endpoint binding and
+/// reachability flag, and the catalog and menu buses are read through
+/// the registry's type-keyed state collection at the point of use, each
+/// an `Option` whose `None` degrades the feature the way the status
+/// channel's absence always has.
 ///
 /// The origin policy is injected by the shell as a plain function: the
 /// cross-site guard is the shell's security boundary (its `cross_site`
@@ -31,70 +32,69 @@ use crate::{agents, relay, session};
 /// the policy.
 #[derive(Debug, Clone)]
 pub struct SessionsState {
-    agents: AgentSessions,
-    gateway: GatewayBinding,
-    health: GatewayHealth,
-    catalog: CatalogBus,
-    menu: MenuBus,
     registry: Registry,
     origin_allowed: fn(&HeaderMap) -> bool,
 }
 
 impl SessionsState {
-    /// Builds the route state from the subsystem's handles.
+    /// Builds the route state over the subsystem registry and the
+    /// shell's origin policy.
     #[must_use]
-    pub fn new(
-        agents: AgentSessions,
-        gateway: GatewayBinding,
-        health: GatewayHealth,
-        catalog: CatalogBus,
-        menu: MenuBus,
-        registry: Registry,
-        origin_allowed: fn(&HeaderMap) -> bool,
-    ) -> Self {
+    pub fn new(registry: Registry, origin_allowed: fn(&HeaderMap) -> bool) -> Self {
         Self {
-            agents,
-            gateway,
-            health,
-            catalog,
-            menu,
             registry,
             origin_allowed,
         }
     }
 
-    /// The agent-session registry behind `/agents/ws`.
-    pub(crate) fn agents(&self) -> &AgentSessions {
-        &self.agents
+    /// The agent-session registry behind `/agents/ws`, or `None` while
+    /// the sessions subsystem has not registered.
+    pub(crate) fn agents(&self) -> Option<AgentSessions> {
+        self.registry
+            .state::<AgentSessions>()
+            .map(|agents| (*agents).clone())
     }
 
-    /// One atomic Gateway endpoint and credential generation.
-    pub(crate) fn gateway_snapshot(&self) -> Arc<GatewaySnapshot> {
-        self.gateway.snapshot()
+    /// One atomic Gateway endpoint and credential generation, or `None`
+    /// while the gateway subsystem has not registered.
+    pub(crate) fn gateway_snapshot(&self) -> Option<Arc<GatewaySnapshot>> {
+        self.registry
+            .state::<GatewayHandles>()
+            .map(|handles| handles.binding().snapshot())
     }
 
-    /// Shared gateway reachability, published by the heartbeat.
-    pub(crate) fn health(&self) -> &GatewayHealth {
-        &self.health
+    /// Shared gateway reachability, published by the heartbeat; `None`
+    /// while the gateway subsystem has not registered reads as the
+    /// flag's optimistic default.
+    pub(crate) fn health(&self) -> Option<workshop_gateway::GatewayHealth> {
+        self.registry
+            .state::<GatewayHandles>()
+            .map(|handles| handles.health().clone())
     }
 
-    /// The catalog bus every `/ws` session forwards from.
-    pub(crate) fn catalog(&self) -> &CatalogBus {
-        &self.catalog
+    /// The catalog bus every `/ws` session forwards from, or `None`
+    /// while the menu subsystem has not registered.
+    pub(crate) fn catalog(&self) -> Option<CatalogBus> {
+        self.registry
+            .state::<MenuHandles>()
+            .map(|handles| handles.catalog().clone())
     }
 
-    /// The menu bus every `/ws` session forwards and drives.
-    pub(crate) fn menu(&self) -> &MenuBus {
-        &self.menu
+    /// The menu bus every `/ws` session forwards and drives, or `None`
+    /// while the menu subsystem has not registered.
+    pub(crate) fn menu(&self) -> Option<MenuBus> {
+        self.registry
+            .state::<MenuHandles>()
+            .map(|handles| handles.menu().clone())
     }
 
     /// The subsystem registry: the status push channel and the push
-    /// facade are reached through its slots.
+    /// facade are reached through its collections.
     pub(crate) fn registry(&self) -> &Registry {
         &self.registry
     }
 
-    /// The push facade over the status, catalog, and menu sink slots.
+    /// The push facade over the status, catalog, and menu sinks.
     pub(crate) fn push(&self) -> Push {
         self.registry.push()
     }
@@ -124,21 +124,13 @@ pub fn routes(state: SessionsState) -> Router {
 /// composition root holds them for the process lifetime.
 pub fn register(
     registry: &Registry,
-    state: SessionsState,
-) -> (
-    Registration<dyn RouteRegistrar>,
-    Registration<dyn StateProvider>,
-) {
-    let routes = registry
-        .session_routes()
-        .register(Arc::new(RouteRegistrarAdapter::new({
-            let state = state.clone();
-            move || routes(state.clone())
-        })));
-    let handles = registry
-        .sessions_state()
-        .register(Arc::new(StateProviderAdapter::new(move || {
-            Arc::new(state.agents().clone()) as Arc<dyn std::any::Any + Send + Sync>
-        })));
+    state: &SessionsState,
+    agents: &AgentSessions,
+) -> (Registration, Registration) {
+    let routes = registry.register_routes(Arc::new(RouteRegistrarAdapter::new({
+        let state = state.clone();
+        move || routes(state.clone())
+    })));
+    let handles = registry.register_state::<AgentSessions>(Arc::new(agents.clone()));
     (routes, handles)
 }

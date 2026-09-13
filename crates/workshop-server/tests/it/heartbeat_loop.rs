@@ -28,20 +28,18 @@ use tokio::sync::broadcast;
 use workshop_gateway::{GatewayBinding, GatewayHealth, Heartbeat};
 use workshop_menu::{CatalogBus, MenuBus};
 use workshop_protocol::{CatalogPush, Severity, StatusBarUpdate, WorkbenchSnapshot};
-use workshop_registry::{
-    CatalogSink, MenuSink, Push, Registration, Registry, StateProvider, StatusChannel, StatusSink,
-};
+use workshop_registry::{Push, Registration, Registry};
 use workshop_status::StatusBus;
 use workshop_support::ReconnectBackoff;
 
-/// The registration guards keeping the test's sink adapters alive.
+/// The registration guards keeping the test's contributions alive.
 type Guards = (
-    Registration<dyn StatusChannel>,
-    Registration<dyn StatusSink>,
-    Registration<dyn StateProvider>,
-    Registration<dyn CatalogSink>,
-    Registration<dyn MenuSink>,
-    Registration<dyn StateProvider>,
+    Registration,
+    Registration,
+    Registration,
+    Registration,
+    Registration,
+    Registration,
 );
 
 /// Wires the buses into a fresh registry and returns the push facade

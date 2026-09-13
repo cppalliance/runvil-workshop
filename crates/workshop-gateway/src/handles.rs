@@ -1,14 +1,18 @@
-//! The gateway subsystem's state handles: the replaceable endpoint
-//! binding and the reachability flag, bundled for registration into the
-//! subsystem registry so the composition root fetches them by slot
-//! instead of holding them by name.
+//! The gateway subsystem's registration: the replaceable endpoint
+//! binding and the reachability flag as its state handle set, and its
+//! background tasks - the reachability heartbeat and the gateway
+//! progress subscriber.
 
 use std::sync::Arc;
 
-use workshop_registry::{Registration, Registry, StateProvider, StateProviderAdapter};
+use shared_progress::ProgressHub;
+
+use workshop_registry::{BackgroundTaskAdapter, Registration, Registry, ShutdownHandle};
+use workshop_support::ReconnectBackoff;
 
 use crate::gateway_binding::GatewayBinding;
-use crate::heartbeat::GatewayHealth;
+use crate::gateway_progress;
+use crate::heartbeat::{self, GatewayHealth};
 
 /// The gateway subsystem's shared handles: the atomically replaceable
 /// endpoint binding every gateway call snapshots, and the heartbeat's
@@ -42,10 +46,44 @@ impl GatewayHandles {
 /// Registers the gateway subsystem's state handles into the registry.
 /// The returned guard keeps the registration alive; the composition
 /// root holds it for the process lifetime.
-pub fn register(registry: &Registry, handles: GatewayHandles) -> Registration<dyn StateProvider> {
-    registry
-        .gateway_state()
-        .register(Arc::new(StateProviderAdapter::new(move || {
-            Arc::new(handles.clone()) as Arc<dyn std::any::Any + Send + Sync>
-        })))
+pub fn register(registry: &Registry, handles: GatewayHandles) -> Registration {
+    registry.register_state::<GatewayHandles>(Arc::new(handles))
+}
+
+/// Registers the gateway subsystem's background tasks: the
+/// reachability heartbeat and the gateway progress subscriber. The
+/// tasks spawn when the shell starts serving and stop inside the
+/// graceful-shutdown signal. The returned guards keep the registrations
+/// alive; the composition root holds them for the process lifetime.
+pub fn register_tasks(
+    registry: &Registry,
+    handles: &GatewayHandles,
+    progress: Arc<ProgressHub>,
+    backoff: ReconnectBackoff,
+) -> (Registration, Registration) {
+    let heartbeat = registry.register_task(Arc::new(BackgroundTaskAdapter::new({
+        let registry = registry.clone();
+        let binding = handles.binding().clone();
+        let health = handles.health().clone();
+        move || {
+            let task = heartbeat::spawn(
+                binding.clone(),
+                registry.push(),
+                health.clone(),
+                heartbeat::HEARTBEAT_INTERVAL,
+                backoff.clone(),
+            );
+            ShutdownHandle::new(move || task.shutdown())
+        }
+    })));
+    let subscriber = registry.register_task(Arc::new(BackgroundTaskAdapter::new({
+        let binding = handles.binding().clone();
+        let health = handles.health().clone();
+        move || {
+            let task =
+                gateway_progress::spawn(binding.clone(), Arc::clone(&progress), health.clone());
+            ShutdownHandle::new(move || task.shutdown())
+        }
+    })));
+    (heartbeat, subscriber)
 }
