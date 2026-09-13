@@ -1,8 +1,9 @@
 /* Styles for zones.ts, which imports this file; esbuild bundles it into
    dist/app.css. Covers the dock scaffolding the zones place panels into
    and the Workshop tree, plus the shared panel plumbing rules
-   (.ws-panel-unknown from panel-types.ts). Themed values come from the
-   :root tokens in shared-ui/tokens.css. */
+   (.ws-panel-lazy, .ws-panel-error, .ws-panel-unknown from
+   panel-types.ts). Themed values come from the :root tokens in
+   shared-ui/tokens.css. */
 
 .ws-shell {
   display: flex;
@@ -268,7 +269,20 @@
   background: var(--bg-hover);
 }
 
-.ws-panel-unknown {
+/* The lazy-load shell sits between dockview's content container and the
+   real panel, so it must hand the container's height straight through:
+   every panel root sizes itself with `height: 100%` and needs a
+   definite-height parent, or its feed grows with content instead of
+   scrolling and pushes the input below the window. */
+.ws-panel-lazy {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.ws-panel-unknown,
+.ws-panel-error {
   height: 100%;
   display: flex;
   align-items: center;

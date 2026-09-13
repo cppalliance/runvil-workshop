@@ -39,12 +39,16 @@ export type { PanelFeatureModule, PanelType, PanelTypeEntry } from "../../servic
  * chunk is still loading. The element mounts into the dock immediately
  * (an empty shell keeps the layout stable); when the thunk resolves, the
  * directory's register() has run and the real panel's element swaps in,
- * receiving the init parameters dockview delivered at mount. Disposing
- * before the load resolves cancels the swap.
+ * receiving the init parameters dockview delivered at mount, plus the
+ * last dimensions the dock laid the shell out at. Disposing before the
+ * load resolves cancels the swap. The shell's sizing (a full-height flex
+ * column, .ws-panel-lazy in zones.css) is what lets the real panel's
+ * `height: 100%` resolve against the dock's content container.
  */
 class LazyPanel extends Disposable implements IContentRenderer {
   readonly element = document.createElement("div");
   private inner: (IContentRenderer & { dispose?: () => void }) | null = null;
+  private dimension: readonly [width: number, height: number] | null = null;
   private unloaded = false;
 
   constructor(private readonly type: string) {
@@ -67,6 +71,9 @@ class LazyPanel extends Disposable implements IContentRenderer {
         this.inner = renderer;
         this.element.appendChild(renderer.element);
         renderer.init(parameters);
+        if (this.dimension !== null) {
+          renderer.layout?.(...this.dimension);
+        }
       })
       .catch((error: unknown) => {
         if (!this.unloaded) {
@@ -78,6 +85,15 @@ class LazyPanel extends Disposable implements IContentRenderer {
   /** The real panel once the feature chunk has resolved; null before. */
   get resolvedPanel(): IContentRenderer | null {
     return this.inner;
+  }
+
+  /**
+   * Forwards the dock's resize to the real panel; a resize that lands
+   * before the chunk resolves is replayed at the swap.
+   */
+  layout(width: number, height: number): void {
+    this.dimension = [width, height];
+    this.inner?.layout?.(width, height);
   }
 
   private showError(message: string): void {
