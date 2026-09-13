@@ -163,10 +163,14 @@ impl Default for ServerConfig {
 #[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
 #[serde(default)]
 pub struct AgentsConfig {
-    /// Directory whose `.lua` files are the launchable agent programs.
-    /// Defaults to `agents/` beside the config file (`Config::parse`
-    /// anchors the empty default there). A missing directory means no
-    /// agents are offered - a state, not an error.
+    /// Directory whose `.md` files are the launchable agent prompts,
+    /// discovered by file stem. A `chat.md` in the directory shadows the
+    /// embedded built-in chat agent; an existing `chat.md` that cannot
+    /// be read surfaces an error rather than silently serving the
+    /// built-in. Defaults to `agents/` beside the config file
+    /// (`Config::parse` anchors the empty default there). A missing
+    /// directory still offers the embedded `chat` built-in - a state,
+    /// not an error.
     pub path: PathBuf,
 }
 
