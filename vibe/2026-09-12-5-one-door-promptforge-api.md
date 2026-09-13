@@ -418,7 +418,7 @@ Pieces within each component are sequential: each step's commit must compile and
 
 <step-4>
 
-### Step 4: Rewrite agent guides for .md directory agents
+### Step 4: Rewrite agent guides for .md directory agents [completed]
 
 - Component: lua-path-removal
 - Piece: guide-rewrite
