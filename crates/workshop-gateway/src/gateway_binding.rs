@@ -26,7 +26,8 @@ pub struct GatewaySnapshot {
     client: GatewayClient,
     /// Normalized Gateway base URL paired with both clients.
     base_url: String,
-    /// Bearer paired with `client`, retained for the progress subscriber.
+    /// Bearer paired with `client`, exposed for consumers that authenticate
+    /// outside the HTTP client.
     api_key: String,
     /// Agent completion client built from the same URL and bearer.
     model_client: Option<ModelClient>,

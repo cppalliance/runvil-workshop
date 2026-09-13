@@ -6,6 +6,7 @@ use super::*;
 
 mod cache;
 mod decoder;
+mod progress;
 mod switch;
 mod timeouts;
 

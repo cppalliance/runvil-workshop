@@ -23,7 +23,6 @@ use std::time::Duration;
 use futures_util::StreamExt;
 use tokio::sync::oneshot;
 
-use promptforge_model_client::model::subscribe_progress;
 use shared_progress::{EventState, OperationId, ProgressHub, RemoteOperation};
 
 use crate::gateway_binding::GatewayBinding;
@@ -126,7 +125,7 @@ async fn run(
                 }
                 continue;
             }
-            result = subscribe_progress(snapshot.base_url(), snapshot.api_key()) => match result {
+            result = snapshot.client().subscribe_progress() => match result {
                 Ok(stream) => stream,
                 Err(error) => {
                     tracing::warn!(%error, "gateway progress subscription failed");

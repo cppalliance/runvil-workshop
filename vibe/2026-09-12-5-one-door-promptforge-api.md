@@ -495,24 +495,26 @@ Pieces within each component are sequential: each step's commit must compile and
 
 <step-10>
 
-### Step 10: Migrate workshop-protocol and workshop-gateway
+### Step 10: Reimplement gateway progress subscription [completed]
 
 - Component: consumer-migration
-- Piece: small-consumers
-- [crates/workshop-protocol/Cargo.toml](crates/workshop-protocol/Cargo.toml): rename the `promptforge-core-support` dependency to `shared-promptforge-api`; update imports.
-- [crates/workshop-gateway/Cargo.toml](crates/workshop-gateway/Cargo.toml): collapse `promptforge-core-support` and `promptforge-model-client` to one edge, `shared-promptforge-api`; rewrite imports.
-- Tests in the same commit: workshop-protocol and workshop-gateway unit tests pass.
+- Piece: progress-reimplementation (isolated: highest-risk item, reimplements a gateway SSE subscription over a different HTTP client; pulled ahead of the edge collapse because workshop-gateway cannot drop its `promptforge-model-client` edge until this lands)
+- [crates/workshop-gateway/src/gateway_progress.rs](crates/workshop-gateway/src/gateway_progress.rs): reimplement the `GET /admin/progress` subscription over the workshop's own gateway client instead of `promptforge_model_client::model::subscribe_progress`. Observable behavior must be identical. (The plan's original `workshop-sessions` path was stale; the file lives in `workshop-gateway`.)
+- Note: the workshop-protocol migration this component also owns already landed in Steps 5-7 (manifest renamed to `shared-promptforge-api`, imports rewritten); confirm it here.
+- Tests in the same commit: gateway progress integration tests produce the same event stream as before; workshop-protocol unit tests pass.
 
 </step-10>
 
 <step-11>
 
-### Step 11: Reimplement gateway progress subscription
+### Step 11: Migrate workshop-gateway and workshop-protocol edges
 
 - Component: consumer-migration
-- Piece: progress-reimplementation (isolated: highest-risk item, reimplements a gateway SSE subscription over a different HTTP client)
-- [crates/workshop-sessions/src/gateway_progress.rs](crates/workshop-sessions/src/gateway_progress.rs): reimplement the `GET /admin/progress` subscription over the workshop's own gateway client instead of `promptforge_model_client::model::subscribe_progress`. Observable behavior must be identical.
-- Tests in the same commit: gateway progress integration tests produce the same event stream as before.
+- Piece: small-consumers (sequential after progress-reimplementation: dropping the model-client edge requires the new progress path)
+- Move agent `GatewayClient` construction out of [crates/workshop-gateway/src/gateway_binding.rs](crates/workshop-gateway/src/gateway_binding.rs) into `workshop-sessions` ([crates/workshop-sessions/src/agents.rs](crates/workshop-sessions/src/agents.rs) and [crates/workshop-sessions/src/agents/supervisor/effects.rs](crates/workshop-sessions/src/agents/supervisor/effects.rs)), building it from the snapshot's base URL and API key via the `promptforge-api::client` re-exports (`GatewayClient`, `GatewayEndpoint`, `SecretString`).
+- [crates/workshop-gateway/Cargo.toml](crates/workshop-gateway/Cargo.toml): drop the `promptforge-model-client` edge, leaving exactly one edge, `shared-promptforge-api`; rewrite imports.
+- [crates/workshop-protocol/Cargo.toml](crates/workshop-protocol/Cargo.toml): confirm the single `shared-promptforge-api` edge (landed in Step 5).
+- Tests in the same commit: workshop-gateway, workshop-protocol, and workshop-sessions unit tests pass.
 
 </step-11>
 
@@ -521,8 +523,8 @@ Pieces within each component are sequential: each step's commit must compile and
 ### Step 12: Migrate workshop-sessions and workshop-server edges
 
 - Component: consumer-migration
-- Piece: sessions-migration (sequential after progress-reimplementation: the crate's imports change once, after its progress path is settled)
-- [crates/workshop-sessions/Cargo.toml](crates/workshop-sessions/Cargo.toml): collapse the seven promptforge deps to two edges, `promptforge-api` and `shared-promptforge-api`; rewrite all imports.
+- Piece: sessions-migration (sequential after the gateway edge collapse: the crate's imports change once, after its client construction is settled)
+- [crates/workshop-sessions/Cargo.toml](crates/workshop-sessions/Cargo.toml): collapse the remaining promptforge deps to two edges, `promptforge-api` and `shared-promptforge-api`; rewrite all imports.
 - Delete empty-`ToolPicker`, empty-`ToolCatalog`, and `vfs: VfsRef` field construction in [crates/workshop-sessions/src/agents/supervisor/effects.rs](crates/workshop-sessions/src/agents/supervisor/effects.rs) and [crates/workshop-sessions/src/agents.rs](crates/workshop-sessions/src/agents.rs), using the Step 9 defaults.
 - [crates/workshop-server/Cargo.toml](crates/workshop-server/Cargo.toml): dev-dependencies reference only `promptforge-api` and `shared-promptforge-api`.
 - Tests in the same commit: the workshop-sessions suite and workshop-server integration tests pass.

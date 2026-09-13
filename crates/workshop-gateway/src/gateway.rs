@@ -10,6 +10,7 @@
 use std::time::Duration;
 
 mod events;
+pub(crate) mod progress;
 mod sse;
 
 pub mod socket;
@@ -18,6 +19,7 @@ pub use events::{
     CacheEvent, CacheResponse, ForwardedResponse, GatewayResponse, SsePayloadStream, SwitchEvent,
     SwitchEventStream, SwitchResponse, switch_events,
 };
+pub use progress::ProgressEventStream;
 pub use socket::GatewayRealtimeSocket;
 use sse::{is_event_stream, payload_stream, read};
 
@@ -57,6 +59,30 @@ pub enum GatewayError {
     #[non_exhaustive]
     #[error("read gateway response body")]
     ReadBody(#[source] Box<dyn std::error::Error + Send + Sync>),
+
+    /// The gateway answered a streaming-only request with a non-success
+    /// status (for example 401 on a rejected token). The body is bounded
+    /// and control-escaped.
+    #[non_exhaustive]
+    #[error("gateway answered status {status}: {body}")]
+    Status {
+        /// The gateway's status code.
+        status: reqwest::StatusCode,
+        /// The gateway's error body, bounded and control-escaped.
+        body: String,
+    },
+
+    /// A gateway event stream carried a block that could not be decoded,
+    /// or one that grew past its size bound without terminating.
+    #[non_exhaustive]
+    #[error("malformed gateway event: {message}")]
+    Malformed {
+        /// What was wrong with the block.
+        message: String,
+        /// The decode failure, when the block was undecodable.
+        #[source]
+        source: Option<Box<dyn std::error::Error + Send + Sync>>,
+    },
 }
 
 impl GatewayError {
@@ -348,6 +374,36 @@ impl GatewayClient {
             });
         }
         read(response).await.map(CacheResponse::Buffered)
+    }
+
+    /// Subscribes to the gateway's `GET /admin/progress` event stream.
+    ///
+    /// The returned stream yields every progress event the gateway
+    /// sends, beginning with the snapshot replay of the operations live
+    /// at connect time. Heartbeat comment lines and other non-`data:`
+    /// lines are skipped. Intermediate events are lossy at the source,
+    /// so the stream promises no completeness; detect completion only
+    /// from `Finished` events, never from a fraction reaching 1.0. Only
+    /// the wait for the response headers is bounded: the subscription is
+    /// long-lived by design, so the stream itself carries no deadline.
+    /// The stream ends when the gateway closes the body; whether to
+    /// resubscribe is the caller's decision.
+    ///
+    /// The endpoint answers only an event stream on success, so a
+    /// non-success status (for example 401 on a rejected token) is a
+    /// [`GatewayError::Status`], not a relayed response. Decode failures
+    /// surface as per-item errors instead.
+    ///
+    /// # Errors
+    /// Returns [`GatewayError::Transport`] if the request cannot be
+    /// completed (the header bound elapsing included),
+    /// [`GatewayError::Status`] on a non-success status, and
+    /// [`GatewayError::ReadBody`] when that answer's body cannot be
+    /// read.
+    pub async fn subscribe_progress(&self) -> Result<ProgressEventStream, GatewayError> {
+        let request = self.authorize(self.http.get(format!("{}/admin/progress", self.base_url)));
+        let response = self.send_bounded(request).await?;
+        progress::subscribe(response).await
     }
 }
 
