@@ -1,9 +1,9 @@
-//! `xtask` - workspace automation for the PromptForge repository.
+//! `build-xtask` - workspace automation for the PromptForge repository.
 //!
 //! ## Invariants
 //!
 //! - Tier: tooling; depends on no workspace crates. The tidy-style
-//!   architecture checks run as tests (`cargo test -p xtask`);
+//!   architecture checks run as tests (`cargo test -p build-xtask`);
 //!   `cargo xtask tidy` prints the same report on demand.
 //! - Every file in this crate stays under 500 lines; split first, then edit.
 

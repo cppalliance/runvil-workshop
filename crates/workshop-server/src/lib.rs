@@ -36,7 +36,7 @@ mod serve;
 
 // The extracted subsystem crates, aliased at their pre-decomposition
 // module paths so the shell's internals read as they did before the
-// split. The tier graph is enforced by `cargo test -p xtask`.
+// split. The tier graph is enforced by `cargo test -p build-xtask`.
 pub use workshop_gateway::{
     gateway, gateway_binding, gateway_progress, heartbeat, observer, resolve,
 };

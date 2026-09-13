@@ -1,8 +1,9 @@
 //! Tidy-style architecture checks for the workshop server decomposition.
 //!
 //! Each check returns a list of human-readable violations. The `#[test]`
-//! wrappers assert the lists are empty, so `cargo test -p xtask` enforces
-//! the architecture; `cargo xtask tidy` prints the same report on demand.
+//! wrappers assert the lists are empty, so `cargo test -p build-xtask`
+//! enforces the architecture; `cargo xtask tidy` prints the same report
+//! on demand.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -254,7 +255,7 @@ mod tests {
         Path::new(env!("CARGO_MANIFEST_DIR"))
             .ancestors()
             .nth(2)
-            .expect("xtask lives at <root>/crates/xtask")
+            .expect("build-xtask lives at <root>/crates/build-xtask")
             .to_path_buf()
     }
 

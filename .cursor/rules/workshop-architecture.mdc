@@ -22,4 +22,4 @@ alwaysApply: false
 
 ## File ceiling
 
-- No file exceeds 500 lines. If an edit would push a file past 500, split first, then edit. `cargo test -p xtask` enforces the ceiling, the tier graph, and lint inheritance over the Rust files in the workshop crates carrying the marker; the Tauri shell (the `workshop` crate) is exempt until the headless agent mode plan.
+- No file exceeds 500 lines. If an edit would push a file past 500, split first, then edit. `cargo test -p build-xtask` enforces the ceiling, the tier graph, and lint inheritance over the Rust files in the workshop crates carrying the marker; the Tauri shell (the `workshop` crate) is exempt until the headless agent mode plan.

@@ -544,7 +544,7 @@ Pieces within each component are sequential: each step's commit must compile and
 
 <step-14>
 
-### Step 14: Rename xtask to build-xtask
+### Step 14: Rename xtask to build-xtask [completed]
 
 - Component: boundary-enforcement
 - Piece: xtask-rename
