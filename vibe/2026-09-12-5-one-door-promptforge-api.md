@@ -441,7 +441,7 @@ Pieces within each component are sequential: each step's commit must compile and
 
 <step-6>
 
-### Step 6: Sink model vocabulary into shared-promptforge-api
+### Step 6: Sink model vocabulary into shared-promptforge-api [completed]
 
 - Component: shared-vocabulary
 - Piece: model-sink (sequential after crate-rename: the destination crate must exist under its new name)

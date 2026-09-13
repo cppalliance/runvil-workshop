@@ -4,11 +4,11 @@ use std::sync::Arc;
 
 use promptforge_core::execute::RunErrorKind;
 use promptforge_core::{Prompt, ResolutionContext, RunConfig};
-use shared_promptforge_api::observe::Observer;
 use promptforge_model_client::client::{GatewayClient as ModelClient, StreamDelta};
 use promptforge_model_client::model::ModelCatalog;
 use promptforge_tool_picker::{Config, ToolPicker};
 use promptforge_tools::ToolCatalog;
+use shared_promptforge_api::observe::Observer;
 use shared_vfs::VfsRef;
 
 use workshop_gateway::GatewaySnapshot;

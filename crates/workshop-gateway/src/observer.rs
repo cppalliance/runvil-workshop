@@ -7,11 +7,11 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{PoisonError, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
+use serde::{Deserialize, Serialize};
 use shared_promptforge_api::events::{
     CallMetrics, EventLog, RuntimeEvent, RuntimeEventKind, ToolCallEvent,
 };
 use shared_promptforge_api::observe::{Observation, Observer};
-use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast;
 
 /// The `format` field of the header line that opens every persisted log.
