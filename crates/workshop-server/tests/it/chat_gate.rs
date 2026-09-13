@@ -240,56 +240,6 @@ async fn spawn_chat_server_with_selection(models: &[&str], selected: Option<&str
     }
 }
 
-/// Binds the workshop router over a mock gateway at `gateway_url`, with
-/// `models` in the retained catalog and the first of them selected in the
-/// menu. Returns the server's `ws://` base, the shared state handle, and
-/// the tempdir keeping the state alive.
-async fn serve_chat_over(
-    gateway_url: String,
-    models: &[&str],
-) -> (String, AppState, tempfile::TempDir) {
-    let dir = tempfile::TempDir::new().expect("tempdir");
-    let config = Config {
-        gateway: GatewayConfig {
-            base_url: gateway_url,
-            api_key: "test-key".to_string(),
-        },
-        server: ServerConfig {
-            state_dir: dir.path().to_path_buf(),
-            ..ServerConfig::default()
-        },
-        agents: AgentsConfig {
-            path: dir.path().join("missing-agents"),
-        },
-    };
-    // Discovery is bypassed: a test never consults the real run directory.
-    let gateway = ResolvedGateway::from_config(&config.gateway);
-    let state = state_with_gateway(&config, &gateway).expect("state builds in tests");
-    state.catalog().publish(
-        models
-            .iter()
-            .map(|id| json!({ "id": id, "object": "model" }))
-            .collect(),
-    );
-    if let Some(selected) = models.first() {
-        state
-            .menu()
-            .set_selected(selected)
-            .expect("the selected model is in the retained catalog");
-    }
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-        .await
-        .expect("bind the gate test server");
-    let addr = listener.local_addr().expect("gate test server address");
-    let served = state.clone();
-    tokio::spawn(async move {
-        axum::serve(listener, router(served))
-            .await
-            .expect("gate test server serves");
-    });
-    (format!("ws://{addr}"), state, dir)
-}
-
 /// Connects to `/agents/ws`, asserting the connect-time list is exactly
 /// the built-in: end-to-end proof that a missing agents directory still
 /// offers `chat`.

@@ -109,8 +109,8 @@ impl Drop for WaitGuard {
 }
 
 /// The session's wait registry behind the generic input-broker interface:
-/// the adapter the unified runtime's `user_input()` and model-visible
-/// input tool suspend on.
+/// the adapter the unified runtime's script-side `user_input()` suspends
+/// on.
 ///
 /// One broker per run: `user_input` opens a wait in the session's
 /// [`WaitRegistry`], announces it with the durable `input_required` frame,
