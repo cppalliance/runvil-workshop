@@ -454,7 +454,7 @@ Pieces within each component are sequential: each step's commit must compile and
 
 <step-7>
 
-### Step 7: Dissolve promptforge-tools into shared-promptforge-api
+### Step 7: Dissolve promptforge-tools into shared-promptforge-api [completed]
 
 - Component: shared-vocabulary
 - Piece: tools-sink (sequential after crate-rename)

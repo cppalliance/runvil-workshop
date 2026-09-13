@@ -34,10 +34,10 @@ use promptforge_model_client::client::{
 };
 use promptforge_model_client::model::ModelCatalog;
 use promptforge_tool_picker::{Catalog as PickerCatalog, Config as PickerConfig, ToolPicker};
-use promptforge_tools::ToolCatalog;
 use shared_promptforge_api::cancel::CancelHandle;
 use shared_promptforge_api::events::{EventLog as _, RuntimeEventKind};
 use shared_promptforge_api::observe::Observer;
+use shared_promptforge_api::tools::ToolCatalog;
 use workshop_server::fixtures::{gateway_updater, replace_gateway, state_with_gateway};
 use workshop_server::{
     AgentsConfig, AppState, Config, GatewayConfig, InputFrame, InputResponse, ResolvedGateway,

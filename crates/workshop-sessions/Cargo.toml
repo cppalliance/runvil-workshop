@@ -20,7 +20,6 @@ promptforge-core.workspace = true
 shared-promptforge-api.workspace = true
 promptforge-model-client.workspace = true
 promptforge-tool-picker.workspace = true
-promptforge-tools.workspace = true
 promptforge-vfs.workspace = true
 rand.workspace = true
 serde.workspace = true

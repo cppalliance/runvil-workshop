@@ -253,7 +253,8 @@ async fn run_builtin_chat(
     )
     .expect("the empty picker builds");
     let models = ModelCatalog::empty();
-    let tools = promptforge_tools::ToolCatalog::new(&[]).expect("an empty catalog is valid");
+    let tools =
+        shared_promptforge_api::tools::ToolCatalog::new(&[]).expect("an empty catalog is valid");
     let store = promptforge_vfs::empty();
     let mut config = RunConfig::new("chat-unit").observer(observer);
     if let Some(broker) = broker {
