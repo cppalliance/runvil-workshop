@@ -3,14 +3,21 @@
 // OUT_DIR on `cargo build` (through the build-ui helper); this script
 // exists for the fast iteration workflow (`npm run watch` rebuilds on save
 // without a Rust recompile) and for the jsdom tests that import the built
-// bundle.
+// bundle. `--out <dir>` redirects the output (default dist/); the build-ui
+// crate's drift test uses it to diff this script against the Rust
+// implementer without touching the working tree.
 import { copyFile, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import * as esbuild from "esbuild";
 
 const uiDir = path.dirname(fileURLToPath(import.meta.url));
-const distDir = path.join(uiDir, "dist");
+const outFlag = process.argv.indexOf("--out");
+if (outFlag !== -1 && process.argv[outFlag + 1] === undefined) {
+  throw new Error("--out requires a directory argument");
+}
+const distDir =
+  outFlag === -1 ? path.join(uiDir, "dist") : path.resolve(uiDir, process.argv[outFlag + 1]);
 const srcDir = path.join(uiDir, "src");
 
 // The crate version (workspace [workspace.package] version), baked into the

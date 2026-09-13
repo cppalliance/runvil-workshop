@@ -5,22 +5,6 @@ import "./tokens/base.css";
 import "./tokens/semantic.css";
 import "./tokens/component.css";
 
-// The lazy feature directories keep their colocated CSS imports, but
-// esbuild does not load a chunk's CSS when the chunk's JS activates, so
-// every feature stylesheet is also imported here: all CSS rides the
-// eager app.css (the VS Code model - styles are cheap, the heavy JS is
-// what splits), and a panel is never unstyled while its chunk loads.
-import "./ui/agent/agent-session.css";
-import "./ui/agent/agent-toolbar.css";
-import "./ui/agent/markdown-render.css";
-import "./ui/agent/mode-chip.css";
-import "./ui/agent/prompt-input.css";
-import "./ui/agent/tool-call-card.css";
-import "./ui/agent/typeahead-popup.css";
-import "./ui/editor/editor-panel.css";
-import "./ui/gateway/gateway-config-panel.css";
-import "./ui/stt/stt.css";
-
 import { createDockview, themeDark } from "dockview";
 import { createToastStack } from "shared-ui/toast";
 

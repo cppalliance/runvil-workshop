@@ -321,7 +321,7 @@ One step, built expand-migrate-contract inside so the tree compiles at every che
 
 <step-4>
 
-### Step 4: Drift test for the build pipeline; settle the lazy-CSS premise empirically
+### Step 4: Drift test for the build pipeline; settle the lazy-CSS premise empirically [completed]
 
 - Component: drift-tests
 
