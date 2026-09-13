@@ -555,7 +555,7 @@ Pieces within each component are sequential: each step's commit must compile and
 
 <step-15>
 
-### Step 15: Add the product-boundary check
+### Step 15: Add the product-boundary check [completed]
 
 - Component: boundary-enforcement
 - Piece: boundary-check (sequential after xtask-rename: the check lands on the renamed crate)
