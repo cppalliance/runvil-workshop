@@ -568,7 +568,7 @@ Pieces within each component are sequential: each step's commit must compile and
 
 <step-16>
 
-### Step 16: Run full verification and metadata sweep
+### Step 16: Run full verification and metadata sweep [completed]
 
 - Component: verification
 - Piece: final-sweep
