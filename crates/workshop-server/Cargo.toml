@@ -65,9 +65,6 @@ shared-sidecar = { workspace = true, features = ["test-fixtures"] }
 # directly, so the engine crates are test-only dependencies of the shell.
 promptforge-api.workspace = true
 shared-promptforge-api.workspace = true
-promptforge-model-client.workspace = true
-promptforge-tool-picker.workspace = true
-promptforge-vfs.workspace = true
 tempfile.workspace = true
 tokio = { workspace = true, features = ["test-util"] }
 tower.workspace = true

@@ -27,15 +27,12 @@ use futures_util::StreamExt as _;
 use serde_json::json;
 use tokio::sync::broadcast;
 
+use promptforge_api::client::{GatewayClient as ModelClient, GatewayEndpoint, SecretString};
 use promptforge_api::execute::RunErrorKind;
 use promptforge_api::{Prompt, ResolutionContext, RunConfig};
-use promptforge_model_client::client::{
-    GatewayClient as ModelClient, GatewayEndpoint, SecretString,
-};
-use promptforge_model_client::model::ModelCatalog;
-use promptforge_tool_picker::{Catalog as PickerCatalog, Config as PickerConfig, ToolPicker};
 use shared_promptforge_api::cancel::CancelHandle;
 use shared_promptforge_api::events::{EventLog as _, RuntimeEventKind};
+use shared_promptforge_api::models::ModelCatalog;
 use shared_promptforge_api::observe::Observer;
 use shared_promptforge_api::tools::ToolCatalog;
 use workshop_server::fixtures::{gateway_updater, replace_gateway, state_with_gateway};
@@ -347,11 +344,8 @@ fn spawn_restored_chat(
         GatewayEndpoint::new(&format!("{gateway_url}/v1")).expect("the mock endpoint parses"),
         SecretString::new("test-key").expect("the test key is non-empty"),
     );
-    let picker = ToolPicker::build(PickerCatalog::new(Vec::new()), PickerConfig::default())
-        .expect("the empty picker builds");
     let cancel = CancelHandle::new();
     let observer: Arc<dyn Observer> = restored.clone();
-    let store = promptforge_vfs::empty();
     let config = RunConfig::new(session.to_owned())
         .observer(Arc::clone(&observer))
         .client(client)
@@ -359,19 +353,18 @@ fn spawn_restored_chat(
         .input_broker(broker)
         .ui(Arc::new(
             || json!({ "selected_model": "test-model", "workspace_root": serde_json::Value::Null }),
-        ))
-        .vfs(store);
+        ));
     let execution = session.to_owned();
     let run = tokio::spawn(async move {
         let result = async {
             let prompt = Prompt::parse(CHAT_MD, &execution, observer.as_ref())
                 .expect("the embedded chat prompt parses");
             let models = ModelCatalog::empty();
-            let tools = ToolCatalog::new(&[]).expect("an empty tool catalog is valid");
+            let tools = ToolCatalog::default();
             promptforge_api::run(
                 &prompt,
                 "",
-                ResolutionContext::new(Some(&picker), &models, &tools),
+                ResolutionContext::new(None, &models, &tools),
                 config,
             )
             .await

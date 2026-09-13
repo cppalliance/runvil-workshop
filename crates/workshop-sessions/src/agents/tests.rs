@@ -1,7 +1,7 @@
 use std::sync::atomic::AtomicU64;
 
-use promptforge_model_client::model::ModelCatalog;
 use shared_promptforge_api::events::RuntimeEventKind;
+use shared_promptforge_api::models::ModelCatalog;
 use shared_promptforge_api::observe::{Observation, Observer};
 use workshop_protocol::Activity;
 
@@ -247,23 +247,16 @@ async fn run_builtin_chat(
     let observer: Arc<dyn Observer> = Arc::new(WorkshopObserver::new(None).expect("memory log"));
     let prompt = Prompt::parse(BUILTIN_CHAT_SOURCE, "chat-unit", observer.as_ref())
         .expect("the embedded chat prompt parses");
-    let picker = promptforge_tool_picker::ToolPicker::build(
-        promptforge_tool_picker::Catalog::new(Vec::new()),
-        promptforge_tool_picker::Config::default(),
-    )
-    .expect("the empty picker builds");
     let models = ModelCatalog::empty();
-    let tools =
-        shared_promptforge_api::tools::ToolCatalog::new(&[]).expect("an empty catalog is valid");
-    let store = promptforge_vfs::empty();
-    let mut config = RunConfig::new("chat-unit").observer(observer).vfs(store);
+    let tools = shared_promptforge_api::tools::ToolCatalog::default();
+    let mut config = RunConfig::new("chat-unit").observer(observer);
     if let Some(broker) = broker {
         config = config.input_broker(broker);
     }
     promptforge_api::run(
         &prompt,
         "",
-        ResolutionContext::new(Some(&picker), &models, &tools),
+        ResolutionContext::new(None, &models, &tools),
         config,
     )
     .await

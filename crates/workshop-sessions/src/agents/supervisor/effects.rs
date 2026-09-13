@@ -5,12 +5,10 @@ use std::sync::Arc;
 use promptforge_api::client::GatewayClient as ModelClient;
 use promptforge_api::execute::RunErrorKind;
 use promptforge_api::{Prompt, ResolutionContext, RunConfig};
-use promptforge_model_client::model::ModelCatalog;
-use promptforge_tool_picker::{Config, ToolPicker};
+use shared_promptforge_api::models::ModelCatalog;
 use shared_promptforge_api::observe::Observer;
 use shared_promptforge_api::tools::ToolCatalog;
 use shared_promptforge_api::wire::StreamDelta;
-use shared_vfs::VfsRef;
 
 use workshop_gateway::GatewaySnapshot;
 use workshop_menu::ChatCatalog;
@@ -57,14 +55,9 @@ pub(super) enum EffectOutcome {
 /// Immutable resources reused by each reducer-selected relaunch.
 struct RunFactory {
     session: Arc<AgentSession>,
-    vfs: VfsRef,
     observer: Arc<dyn Observer>,
     on_delta: Arc<dyn Fn(StreamDelta) + Send + Sync>,
     ui: Arc<dyn Fn() -> serde_json::Value + Send + Sync>,
-    /// The tool picker the unified runtime's resolution context borrows;
-    /// a cheap empty picker that never loads the embedding model, because
-    /// Markdown agents never bind tools through it today.
-    picker: Arc<ToolPicker>,
 }
 
 impl RunFactory {
@@ -82,9 +75,7 @@ impl RunFactory {
             on_delta: delta_stamp(&session, &host.push()),
             ui: ui_provider(host.menu(), host.registry()),
             session,
-            vfs: promptforge_vfs::empty(),
             observer,
-            picker: Arc::new(ToolPicker::empty(Config::default())),
         }
     }
 
@@ -101,8 +92,6 @@ impl RunFactory {
             observer: Arc::clone(&self.observer),
             ui: Arc::clone(&self.ui),
             on_delta: Arc::clone(&self.on_delta),
-            vfs: self.vfs.clone(),
-            picker: Arc::clone(&self.picker),
         };
         Box::pin(async move {
             let result = run_markdown_agent(&source, parts, run, client).await;
@@ -118,15 +107,14 @@ struct MarkdownRunParts {
     observer: Arc<dyn Observer>,
     ui: Arc<dyn Fn() -> serde_json::Value + Send + Sync>,
     on_delta: Arc<dyn Fn(StreamDelta) + Send + Sync>,
-    vfs: VfsRef,
-    picker: Arc<ToolPicker>,
 }
 
 /// Runs one Markdown agent prompt on the unified runtime: the session's
 /// wait registry behind the generic input broker, the menu selection
 /// behind `ui().selected_model`, deltas forwarded to the session's
 /// channel. The prompt declares no capabilities, so the resolution
-/// context carries an empty catalog pair and the session's picker.
+/// context carries no picker and the run config keeps its stock store
+/// handle.
 async fn run_markdown_agent(
     source: &str,
     parts: MarkdownRunParts,
@@ -138,8 +126,6 @@ async fn run_markdown_agent(
         observer,
         ui,
         on_delta,
-        vfs,
-        picker,
     } = parts;
     let prompt = Prompt::parse(source, &session.id, observer.as_ref()).map_err(|error| {
         AgentRunError::Failed {
@@ -152,22 +138,18 @@ async fn run_markdown_agent(
         session.input_frames.clone(),
     ));
     let models = ModelCatalog::empty();
-    let tools = ToolCatalog::new(&[]).map_err(|_error| AgentRunError::Failed {
-        message: "an empty tool catalog is always valid".to_owned(),
-        source: None,
-    })?;
+    let tools = ToolCatalog::default();
     let config = RunConfig::new(session.id.clone())
         .observer(observer)
         .client(client)
         .cancel(session.arm_cancel(run))
         .input_broker(broker)
         .ui(ui)
-        .on_delta(on_delta)
-        .vfs(vfs);
+        .on_delta(on_delta);
     promptforge_api::run(
         &prompt,
         "",
-        ResolutionContext::new(Some(picker.as_ref()), &models, &tools),
+        ResolutionContext::new(None, &models, &tools),
         config,
     )
     .await

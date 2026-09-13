@@ -520,7 +520,7 @@ Pieces within each component are sequential: each step's commit must compile and
 
 <step-12>
 
-### Step 12: Migrate workshop-sessions and workshop-server edges
+### Step 12: Migrate workshop-sessions and workshop-server edges [completed]
 
 - Component: consumer-migration
 - Piece: sessions-migration (sequential after the gateway edge collapse: the crate's imports change once, after its client construction is settled)
