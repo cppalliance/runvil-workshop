@@ -533,7 +533,7 @@ Pieces within each component are sequential: each step's commit must compile and
 
 <step-13>
 
-### Step 13: Delete product-integration-tests
+### Step 13: Delete product-integration-tests [completed]
 
 - Component: consumer-migration
 - Piece: dead-crate-deletion
