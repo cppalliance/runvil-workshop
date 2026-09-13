@@ -19,7 +19,7 @@ mod tool;
 use std::fmt;
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
-use promptforge_core_support::observe::Observer;
+use shared_promptforge_api::observe::Observer;
 use tokio::sync::{broadcast, oneshot};
 
 use workshop_protocol::{InputFrame, InputResponse};
@@ -246,7 +246,7 @@ pub enum WaitError {
 ///
 /// # Examples
 /// ```
-/// use promptforge_core_support::observe::NullObserver;
+/// use shared_promptforge_api::observe::NullObserver;
 /// use workshop_protocol::InputResponse;
 /// use workshop_sessions::{WaitRegistry, deliver_input_response};
 ///

@@ -2,7 +2,7 @@
 
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
-use promptforge_core_support::cancel::CancelHandle;
+use shared_promptforge_api::cancel::CancelHandle;
 use tokio::sync::mpsc;
 
 use super::supervisor::transition::{RunId, SupervisorEvent};

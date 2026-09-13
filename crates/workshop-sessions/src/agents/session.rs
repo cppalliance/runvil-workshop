@@ -6,9 +6,9 @@ use std::fmt;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use promptforge_core_support::cancel::CancelHandle;
-use promptforge_core_support::events::{CallMetrics, RuntimeEventKind, ToolCallEvent};
-use promptforge_core_support::observe::{Observation, Observer};
+use shared_promptforge_api::cancel::CancelHandle;
+use shared_promptforge_api::events::{CallMetrics, RuntimeEventKind, ToolCallEvent};
+use shared_promptforge_api::observe::{Observation, Observer};
 use promptforge_model_client::client::StreamDelta;
 use tokio::sync::broadcast;
 

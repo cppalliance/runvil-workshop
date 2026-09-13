@@ -3,7 +3,7 @@ use super::*;
 use std::sync::Arc;
 
 use promptforge_core::input::{InputBroker, InputOutcome};
-use promptforge_core_support::observe::Observation;
+use shared_promptforge_api::observe::Observation;
 
 /// Hostile operator text covering the bytes most likely to be mangled
 /// by an envelope or codec.

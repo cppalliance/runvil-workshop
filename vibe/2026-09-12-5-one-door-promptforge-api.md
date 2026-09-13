@@ -429,7 +429,7 @@ Pieces within each component are sequential: each step's commit must compile and
 
 <step-5>
 
-### Step 5: Rename promptforge-core-support to shared-promptforge-api
+### Step 5: Rename promptforge-core-support to shared-promptforge-api [completed]
 
 - Component: shared-vocabulary
 - Piece: crate-rename

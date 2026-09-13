@@ -29,9 +29,9 @@ use tokio::sync::broadcast;
 
 use promptforge_core::execute::RunErrorKind;
 use promptforge_core::{Prompt, ResolutionContext, RunConfig};
-use promptforge_core_support::cancel::CancelHandle;
-use promptforge_core_support::events::{EventLog as _, RuntimeEventKind};
-use promptforge_core_support::observe::Observer;
+use shared_promptforge_api::cancel::CancelHandle;
+use shared_promptforge_api::events::{EventLog as _, RuntimeEventKind};
+use shared_promptforge_api::observe::Observer;
 use promptforge_model_client::client::{
     GatewayClient as ModelClient, GatewayEndpoint, SecretString,
 };

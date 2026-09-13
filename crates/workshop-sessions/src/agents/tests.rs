@@ -1,7 +1,7 @@
 use std::sync::atomic::AtomicU64;
 
-use promptforge_core_support::events::RuntimeEventKind;
-use promptforge_core_support::observe::{Observation, Observer};
+use shared_promptforge_api::events::RuntimeEventKind;
+use shared_promptforge_api::observe::{Observation, Observer};
 use promptforge_model_client::model::ModelCatalog;
 use workshop_protocol::Activity;
 

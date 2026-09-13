@@ -14,7 +14,7 @@ test-fixtures = ["dep:tempfile"]
 [dependencies]
 arc-swap.workspace = true
 futures-util.workspace = true
-promptforge-core-support.workspace = true
+shared-promptforge-api.workspace = true
 promptforge-model-client.workspace = true
 reqwest.workspace = true
 serde.workspace = true
