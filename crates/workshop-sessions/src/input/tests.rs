@@ -2,7 +2,7 @@ use super::*;
 
 use std::sync::Arc;
 
-use promptforge_core::input::{InputBroker, InputOutcome};
+use promptforge_api::input::{InputBroker, InputOutcome};
 use shared_promptforge_api::observe::Observation;
 
 /// Hostile operator text covering the bytes most likely to be mangled

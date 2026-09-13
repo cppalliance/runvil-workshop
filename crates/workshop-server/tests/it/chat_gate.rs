@@ -27,8 +27,8 @@ use futures_util::StreamExt as _;
 use serde_json::json;
 use tokio::sync::broadcast;
 
-use promptforge_core::execute::RunErrorKind;
-use promptforge_core::{Prompt, ResolutionContext, RunConfig};
+use promptforge_api::execute::RunErrorKind;
+use promptforge_api::{Prompt, ResolutionContext, RunConfig};
 use promptforge_model_client::client::{
     GatewayClient as ModelClient, GatewayEndpoint, SecretString,
 };
@@ -367,7 +367,7 @@ fn spawn_restored_chat(
             let models = ModelCatalog::empty();
             let tools = ToolCatalog::new(&[]).expect("an empty tool catalog is valid");
             let store = promptforge_vfs::empty();
-            promptforge_core::run(
+            promptforge_api::run(
                 &prompt,
                 "",
                 ResolutionContext::new(&picker, &models, &tools),

@@ -469,7 +469,7 @@ Pieces within each component are sequential: each step's commit must compile and
 
 <step-8>
 
-### Step 8: Rename promptforge-core to promptforge-api and delete the facade
+### Step 8: Rename promptforge-core to promptforge-api and delete the facade [completed]
 
 - Component: api-crate
 - Piece: crate-rename

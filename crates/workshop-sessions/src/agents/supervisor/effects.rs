@@ -2,8 +2,8 @@
 
 use std::sync::Arc;
 
-use promptforge_core::execute::RunErrorKind;
-use promptforge_core::{Prompt, ResolutionContext, RunConfig};
+use promptforge_api::execute::RunErrorKind;
+use promptforge_api::{Prompt, ResolutionContext, RunConfig};
 use promptforge_model_client::client::{GatewayClient as ModelClient, StreamDelta};
 use promptforge_model_client::model::ModelCatalog;
 use promptforge_tool_picker::{Config, ToolPicker};
@@ -162,7 +162,7 @@ async fn run_markdown_agent(
         .input_broker(broker)
         .ui(ui)
         .on_delta(on_delta);
-    promptforge_core::run(
+    promptforge_api::run(
         &prompt,
         "",
         ResolutionContext::new(picker.as_ref(), &models, &tools),

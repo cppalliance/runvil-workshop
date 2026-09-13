@@ -241,9 +241,9 @@ fn the_model_client_requires_a_usable_key_and_url() {
 /// Runs the embedded chat prompt on the unified runtime with the given
 /// broker configuration, against a client no model call can survive.
 async fn run_builtin_chat(
-    broker: Option<Arc<dyn promptforge_core::input::InputBroker>>,
-) -> Result<String, promptforge_core::execute::RunError> {
-    use promptforge_core::{Prompt, ResolutionContext, RunConfig};
+    broker: Option<Arc<dyn promptforge_api::input::InputBroker>>,
+) -> Result<String, promptforge_api::execute::RunError> {
+    use promptforge_api::{Prompt, ResolutionContext, RunConfig};
     let observer: Arc<dyn Observer> = Arc::new(WorkshopObserver::new(None).expect("memory log"));
     let prompt = Prompt::parse(BUILTIN_CHAT_SOURCE, "chat-unit", observer.as_ref())
         .expect("the embedded chat prompt parses");
@@ -260,7 +260,7 @@ async fn run_builtin_chat(
     if let Some(broker) = broker {
         config = config.input_broker(broker);
     }
-    promptforge_core::run(
+    promptforge_api::run(
         &prompt,
         "",
         ResolutionContext::new(&picker, &models, &tools),
@@ -287,14 +287,14 @@ async fn a_failing_broker_fails_the_builtin_chat_as_typed_input() {
     struct FailingBroker;
 
     #[async_trait::async_trait]
-    impl promptforge_core::input::InputBroker for FailingBroker {
+    impl promptforge_api::input::InputBroker for FailingBroker {
         async fn user_input(
             &self,
             _execution: &str,
             _section: &str,
-        ) -> Result<promptforge_core::input::InputOutcome, promptforge_core::input::InputError>
+        ) -> Result<promptforge_api::input::InputOutcome, promptforge_api::input::InputError>
         {
-            Err(promptforge_core::input::InputError::message(
+            Err(promptforge_api::input::InputError::message(
                 "the input device is gone",
             ))
         }
@@ -304,7 +304,7 @@ async fn a_failing_broker_fails_the_builtin_chat_as_typed_input() {
         .await
         .expect_err("the broker failure fails the run");
     assert!(
-        matches!(error.kind(), promptforge_core::execute::RunErrorKind::Input),
+        matches!(error.kind(), promptforge_api::execute::RunErrorKind::Input),
         "a broker failure is the typed input failure: {error}"
     );
 }
