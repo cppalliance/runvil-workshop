@@ -161,12 +161,12 @@ async fn run_markdown_agent(
         .cancel(session.arm_cancel(run))
         .input_broker(broker)
         .ui(ui)
-        .on_delta(on_delta);
+        .on_delta(on_delta)
+        .vfs(vfs);
     promptforge_api::run(
         &prompt,
         "",
-        ResolutionContext::new(picker.as_ref(), &models, &tools),
-        &vfs,
+        ResolutionContext::new(Some(picker.as_ref()), &models, &tools),
         config,
     )
     .await

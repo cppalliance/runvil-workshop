@@ -351,6 +351,7 @@ fn spawn_restored_chat(
         .expect("the empty picker builds");
     let cancel = CancelHandle::new();
     let observer: Arc<dyn Observer> = restored.clone();
+    let store = promptforge_vfs::empty();
     let config = RunConfig::new(session.to_owned())
         .observer(Arc::clone(&observer))
         .client(client)
@@ -358,7 +359,8 @@ fn spawn_restored_chat(
         .input_broker(broker)
         .ui(Arc::new(
             || json!({ "selected_model": "test-model", "workspace_root": serde_json::Value::Null }),
-        ));
+        ))
+        .vfs(store);
     let execution = session.to_owned();
     let run = tokio::spawn(async move {
         let result = async {
@@ -366,12 +368,10 @@ fn spawn_restored_chat(
                 .expect("the embedded chat prompt parses");
             let models = ModelCatalog::empty();
             let tools = ToolCatalog::new(&[]).expect("an empty tool catalog is valid");
-            let store = promptforge_vfs::empty();
             promptforge_api::run(
                 &prompt,
                 "",
-                ResolutionContext::new(&picker, &models, &tools),
-                &store,
+                ResolutionContext::new(Some(&picker), &models, &tools),
                 config,
             )
             .await

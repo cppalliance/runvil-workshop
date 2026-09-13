@@ -256,15 +256,14 @@ async fn run_builtin_chat(
     let tools =
         shared_promptforge_api::tools::ToolCatalog::new(&[]).expect("an empty catalog is valid");
     let store = promptforge_vfs::empty();
-    let mut config = RunConfig::new("chat-unit").observer(observer);
+    let mut config = RunConfig::new("chat-unit").observer(observer).vfs(store);
     if let Some(broker) = broker {
         config = config.input_broker(broker);
     }
     promptforge_api::run(
         &prompt,
         "",
-        ResolutionContext::new(&picker, &models, &tools),
-        &store,
+        ResolutionContext::new(Some(&picker), &models, &tools),
         config,
     )
     .await

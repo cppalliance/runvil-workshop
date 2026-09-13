@@ -482,7 +482,7 @@ Pieces within each component are sequential: each step's commit must compile and
 
 <step-9>
 
-### Step 9: Simplify the run API and re-export posture
+### Step 9: Simplify the run API and re-export posture [completed]
 
 - Component: api-crate
 - Piece: api-signatures (sequential after crate-rename: edits land on the renamed crate)
