@@ -303,5 +303,7 @@ async fn a_reconnect_resubscribes_without_duplicating_state() {
     subscriber.shutdown().await;
 }
 
+#[path = "gateway_progress-tests-lifecycle.rs"]
 mod lifecycle;
+#[path = "gateway_progress-tests-recovery.rs"]
 mod recovery;

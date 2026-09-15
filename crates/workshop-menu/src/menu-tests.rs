@@ -2,6 +2,7 @@ use super::*;
 
 use tokio::sync::broadcast::error::{RecvError, TryRecvError};
 
+#[path = "menu-tests-memory.rs"]
 mod memory;
 
 /// A catalog bus already holding one push of the given model ids.

@@ -9,6 +9,7 @@ use tower::ServiceExt;
 use crate::app::fixtures::{body_bytes, spawn_gateway, state_for};
 use crate::app::router;
 
+#[path = "gateway_config-tests-recovery.rs"]
 mod recovery;
 
 #[test]
