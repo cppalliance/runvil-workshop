@@ -1,5 +1,5 @@
 ---
-name: collect-promptforge-debt
+name: collect-runvil-debt
 overview: Remove technical debt attributable to the 53 commits between upstream master and local master. The plan covers bounded logging, immediate legacy configuration removal, STT test infrastructure, Gateway and Workshop lifecycle simplification, strict Realtime decoding, and validated sidecar recovery.
 todos:
   - id: logging-bounds
@@ -23,16 +23,16 @@ todos:
 isProject: false
 ---
 
-# PromptForge Attributable Debt Removal
+# Runvil Attributable Debt Removal
 
 ## Product Requirements
 
-- Repository: [promptforge](C:/Users/Vinnie/cursor/promptforge).
+- Repository: [runvil](C:/Users/Vinnie/cursor/runvil).
 - Baseline: live `upstream/master` at `d539a6d90c5f1054e0917ccd74251ab3a6df7461`.
 - Endpoint: local `master` at `5c80bbd8685f12378eed012290727e6195abb842`.
 - Target: the exact 53-commit range `d539a6d90..5c80bbd8`.
 - Worktree inclusion: none. The worktree was clean.
-- Evidence: complete target commit messages and diffs, current code at the endpoint, [vibe/archdoc.md](C:/Users/Vinnie/cursor/promptforge/vibe/archdoc.md), [vibe/archdoc-next.md](C:/Users/Vinnie/cursor/promptforge/vibe/archdoc-next.md), [the Realtime STT plan](C:/Users/Vinnie/cursor/promptforge/vibe/2026-09-05-2-generic-realtime-stt.md), [the final STT design](C:/Users/Vinnie/cursor/promptforge/design/generic-realtime-stt.md), and [acceptance evidence](C:/Users/Vinnie/cursor/promptforge/design/generic-realtime-stt-acceptance.md).
+- Evidence: complete target commit messages and diffs, current code at the endpoint, [vibe/archdoc.md](C:/Users/Vinnie/cursor/runvil/vibe/archdoc.md), [vibe/archdoc-next.md](C:/Users/Vinnie/cursor/runvil/vibe/archdoc-next.md), [the Realtime STT plan](C:/Users/Vinnie/cursor/runvil/vibe/2026-09-05-2-generic-realtime-stt.md), [the final STT design](C:/Users/Vinnie/cursor/runvil/design/generic-realtime-stt.md), and [acceptance evidence](C:/Users/Vinnie/cursor/runvil/design/generic-realtime-stt-acceptance.md).
 - Analysis limits: static read-only analysis only. No tests, fault injection, native fixtures, external runner configuration, or deployment census ran. Practical collision rates and deployed legacy-config counts remain unknown.
 - Cleanup goals:
   - Bound logging memory, disk, producer latency, and shutdown time with explicit loss reporting.
@@ -59,32 +59,32 @@ isProject: false
 
 ## Debt Inventory
 
-- `PF-GWLOG-001` - introduced by `f303718e` in [gateway-logging/src/writer.rs](C:/Users/Vinnie/cursor/promptforge/crates/gateway-logging/src/writer.rs), [queue.rs](C:/Users/Vinnie/cursor/promptforge/crates/gateway-logging/src/queue.rs), and [redact.rs](C:/Users/Vinnie/cursor/promptforge/crates/gateway-logging/src/redact.rs). Record count is bounded but record and aggregate bytes are not. Impact: unbounded memory. Reversal cost: medium. Target: per-record and aggregate-byte limits with visible truncation or loss.
-- `PF-GWLOG-002` - introduced by `f303718e` in [gateway-logging/src/queue.rs](C:/Users/Vinnie/cursor/promptforge/crates/gateway-logging/src/queue.rs). Sequence reservation happens before queue admission, so concurrent records can drain out of causal order. Impact: misleading chronology. Reversal cost: low. Target: assign sequence atomically with admission.
-- `PF-GWLOG-003` - introduced by `f303718e` in [gateway-logging/src/queue.rs](C:/Users/Vinnie/cursor/promptforge/crates/gateway-logging/src/queue.rs) and [worker.rs](C:/Users/Vinnie/cursor/promptforge/crates/gateway-logging/src/worker.rs). Eviction summaries wait for a completely empty queue rather than the end of pressure. Impact: silent record loss. Reversal cost: low. Target: one summary per pressure episode after a defined low-water transition.
-- `PF-GWLOG-004` - worsened by `1009b3f4` in [gateway-logging/src/config.rs](C:/Users/Vinnie/cursor/promptforge/crates/gateway-logging/src/config.rs) and [worker.rs](C:/Users/Vinnie/cursor/promptforge/crates/gateway-logging/src/worker.rs). Retention grew to five prior runs without a disk-byte bound. Impact: filesystem exhaustion. Reversal cost: medium. Target: fixed-size segments under one aggregate budget while preserving current diagnostic names.
-- `PF-GWLOG-005` - introduced by `f303718e` across [queue.rs](C:/Users/Vinnie/cursor/promptforge/crates/gateway-logging/src/queue.rs), [runtime.rs](C:/Users/Vinnie/cursor/promptforge/crates/gateway-logging/src/runtime.rs), and [gateway/src/main.rs](C:/Users/Vinnie/cursor/promptforge/crates/gateway/src/main.rs). Protected-record producers, sink writes, and shutdown joins can block forever. Impact: frozen application threads or exit. Reversal cost: high. Target: finite waits followed by explicit loss, as selected by the operator.
-- `PF-GWLOG-006` - worsened by `f303718e` and `1009b3f4` in [gateway-logging/src/redact.rs](C:/Users/Vinnie/cursor/promptforge/crates/gateway-logging/src/redact.rs). Text patterns do not cover all structured credentials, cookies, prompts, paths, payloads, or nested errors. Impact: persisted sensitive data. Reversal cost: medium to high. Target: typed field redaction before formatting plus adversarial post-format defense.
-- `STT-CORE-001` - introduced by `3642d6dd` in [gateway-config/src/config/imp.rs](C:/Users/Vinnie/cursor/promptforge/crates/gateway-config/src/config/imp.rs) and [gateway-config-ui/ui/src/services/config-store.ts](C:/Users/Vinnie/cursor/promptforge/crates/gateway-config-ui/ui/src/services/config-store.ts). Rust and TypeScript indefinitely duplicate `[workshop.stt]` migration. Impact: compatibility drift and redundant parsing. Reversal cost: low for this pre-1.0 installation because the local file is already canonical. Target: config version 2 accepts only top-level `[stt]`; both migration shims are removed.
-- `STT-CORE-002` - introduced by `c7c1c1f7` and expanded later across [gateway-stt-backend-whisper/src/prompt.rs](C:/Users/Vinnie/cursor/promptforge/crates/gateway-stt-backend-whisper/src/prompt.rs), [gateway-stt/src/test_fixtures/native.rs](C:/Users/Vinnie/cursor/promptforge/crates/gateway-stt/src/test_fixtures/native.rs), and native integration helpers. Five fixture resolvers can drift. Impact: inconsistent native gates. Reversal cost: low. Target: one feature-gated non-production resolver with explicit caller defaults.
-- `STT-CORE-003` - introduced by `75f4cb30` and expanded through `25501883` in [gateway-stt-engine/src/test_fixtures.rs](C:/Users/Vinnie/cursor/promptforge/crates/gateway-stt-engine/src/test_fixtures.rs) and [gateway-stt/src/test_fixtures.rs](C:/Users/Vinnie/cursor/promptforge/crates/gateway-stt/src/test_fixtures.rs). The feature-gated fixture API grows outside public-root ratchets. Impact: quasi-public test contract constrains refactors. Reversal cost: medium. Target: feature-enabled public API accounting followed by scenario-level narrowing.
-- `STT-CORE-004` - introduced by `4b490073` and `101dedac` in [gateway-stt/src/lib.rs](C:/Users/Vinnie/cursor/promptforge/crates/gateway-stt/src/lib.rs). Module-wide dead-code allowances outlived production wiring. Impact: obsolete code can accumulate silently. Reversal cost: low. Target: remove broad allowances and retain only justified item-level exceptions.
-- `STT-CORE-005` - introduced by `b6021e4c` in [.github/workflows/stt-miri.yml](C:/Users/Vinnie/cursor/promptforge/.github/workflows/stt-miri.yml). Native CI depends on floating `stable` and a service-account Cargo layout. Impact: unreproducible runner failures. Reversal cost: medium. Target: exact toolchain and versioned runner provisioning contract.
-- `PF-RTSTT-DC-001` - worsened by `467a2622`, `60165006`, and `1b50919d` in [gateway/src/lib.rs](C:/Users/Vinnie/cursor/promptforge/crates/gateway/src/lib.rs) and [config_write.rs](C:/Users/Vinnie/cursor/promptforge/crates/gateway/src/config_write.rs). Profile-switch phases and rollback state remain concentrated in the 5,000-line root module. Impact: temporal coupling across every runtime participant. Reversal cost: medium to high. Target: a private transaction module with explicit phase values.
-- `PF-RTSTT-DC-002` - introduced by `467a2622` in [gateway/src/config_write.rs](C:/Users/Vinnie/cursor/promptforge/crates/gateway/src/config_write.rs). PID plus process-local sequence temporary names can collide with crash residue after PID reuse. Impact: valid profile switches can fail. Reversal cost: low. Target: high-entropy process nonce with bounded create-new retry.
-- `PF-RTSTT-DC-003` - introduced by `7452751b` and worsened by `94357c39` in [realtime-transcription.ts](C:/Users/Vinnie/cursor/promptforge/crates/workshop-server/ui/src/services/realtime-transcription.ts). Production validates only fields it consumes while test fixtures enforce the full frozen event shape. Impact: production and canonical contract drift. Reversal cost: medium. Target: one exhaustive pure decoder used by production and fixture tests.
-- `PF-RTSTT-DC-004` - introduced by `7452751b` and worsened by `aeec7b48` in [realtime-stt.ts](C:/Users/Vinnie/cursor/promptforge/crates/workshop-server/ui/src/ui/realtime-stt.ts). Five collections, lifecycle flags, capture state, and editor offsets are coordinated in one callback mesh. Impact: stale ownership and rollback defects. Reversal cost: medium. Target: a pure `TakeRegistry` reducer emitting editor and capture effects.
-- `PF-RTSTT-DC-005` - introduced by `fb4e0bfe` and expanded by `13fb8eef` in [session_agents/supervisor.rs](C:/Users/Vinnie/cursor/promptforge/crates/workshop-server/src/session_agents/supervisor.rs) and [lifecycle.rs](C:/Users/Vinnie/cursor/promptforge/crates/workshop-server/src/session_agents/lifecycle.rs). Run completion, catalog replacement, Gateway replacement, cancellation, and accepted-turn settlement scale as branch interactions. Impact: exactly-once settlement risk. Reversal cost: medium. Target: explicit supervisor events and transition reducer.
-- `PF-RTSTT-DC-006` - worsened across `1b50919d`, `06cba48a`, `6ce38729`, and `49441166` in [gateway/tests/it/realtime_stt.rs](C:/Users/Vinnie/cursor/promptforge/crates/gateway/tests/it/realtime_stt.rs), [realtime_relay.rs](C:/Users/Vinnie/cursor/promptforge/crates/workshop-server/tests/it/realtime_relay.rs), and [chat_gate.rs](C:/Users/Vinnie/cursor/promptforge/crates/workshop-server/tests/it/chat_gate.rs). Integration suites reached 1,778, 680, and 1,098 lines outside ratchets. Impact: coupled fixtures and hard-to-localize failures. Reversal cost: low. Target: concern-based files plus test-file ceilings.
-- `DC-PF-P2-001` - introduced by `13fb8eef` in [workshop/src/gateway.rs](C:/Users/Vinnie/cursor/promptforge/crates/workshop/src/gateway.rs) and [main.rs](C:/Users/Vinnie/cursor/promptforge/crates/workshop/src/main.rs). Supervisor shutdown signals then abandons its thread and owned blocking work. Impact: post-teardown probing, launch, or publication. Reversal cost: medium. Target: cancellation-aware probes and a finite joined shutdown.
-- `DC-PF-P2-002` - introduced by `13fb8eef` in [gateway_binding.rs](C:/Users/Vinnie/cursor/promptforge/crates/workshop-server/src/gateway_binding.rs) and [serve.rs](C:/Users/Vinnie/cursor/promptforge/crates/workshop-server/src/serve.rs). Public updater accepts a raw connection file while validation lives only in one caller. Impact: public trust-boundary bypass. Reversal cost: high. Target: updater accepts an unforgeable validated-connection capability.
-- `DC-PF-P2-003` - worsened by `13fb8eef` across [gateway_binding.rs](C:/Users/Vinnie/cursor/promptforge/crates/workshop-server/src/gateway_binding.rs), [workshop/src/main.rs](C:/Users/Vinnie/cursor/promptforge/crates/workshop/src/main.rs), and [menu.rs](C:/Users/Vinnie/cursor/promptforge/crates/workshop/src/menu.rs). Client consumers and quit handling publish Gateway identity in two stores. Impact: quit can target a retired process and leave the replacement alive. Reversal cost: medium. Target: one validated authoritative snapshot for clients and shutdown.
-- `DC-PF-P2-004` - worsened by `13fb8eef` in [workshop/src/gateway.rs](C:/Users/Vinnie/cursor/promptforge/crates/workshop/src/gateway.rs). Boot planning, launch, validation, identity, supervision, recovery, and tests occupy 854 lines. Impact: broad review and regression boundary. Reversal cost: low. Target: extract supervision and identity into private modules with ceilings.
-- `DC-PF-P2-005` - worsened by `13fb8eef` across [ui/src/ui/stt.ts](C:/Users/Vinnie/cursor/promptforge/crates/workshop-server/ui/src/ui/stt.ts), [realtime-stt.ts](C:/Users/Vinnie/cursor/promptforge/crates/workshop-server/ui/src/ui/realtime-stt.ts), and [prompt-input.ts](C:/Users/Vinnie/cursor/promptforge/crates/workshop-server/ui/src/ui/prompt-input.ts). Every input adapter exposes document-end and plain-text details for composition policy. Impact: editor representation leaks into Realtime lifecycle code. Reversal cost: medium. Target: one target-owned insertion-context operation carrying anchor, original text, and required prefix.
+- `RV-GWLOG-001` - introduced by `f303718e` in [gateway-logging/src/writer.rs](C:/Users/Vinnie/cursor/runvil/crates/gateway-logging/src/writer.rs), [queue.rs](C:/Users/Vinnie/cursor/runvil/crates/gateway-logging/src/queue.rs), and [redact.rs](C:/Users/Vinnie/cursor/runvil/crates/gateway-logging/src/redact.rs). Record count is bounded but record and aggregate bytes are not. Impact: unbounded memory. Reversal cost: medium. Target: per-record and aggregate-byte limits with visible truncation or loss.
+- `RV-GWLOG-002` - introduced by `f303718e` in [gateway-logging/src/queue.rs](C:/Users/Vinnie/cursor/runvil/crates/gateway-logging/src/queue.rs). Sequence reservation happens before queue admission, so concurrent records can drain out of causal order. Impact: misleading chronology. Reversal cost: low. Target: assign sequence atomically with admission.
+- `RV-GWLOG-003` - introduced by `f303718e` in [gateway-logging/src/queue.rs](C:/Users/Vinnie/cursor/runvil/crates/gateway-logging/src/queue.rs) and [worker.rs](C:/Users/Vinnie/cursor/runvil/crates/gateway-logging/src/worker.rs). Eviction summaries wait for a completely empty queue rather than the end of pressure. Impact: silent record loss. Reversal cost: low. Target: one summary per pressure episode after a defined low-water transition.
+- `RV-GWLOG-004` - worsened by `1009b3f4` in [gateway-logging/src/config.rs](C:/Users/Vinnie/cursor/runvil/crates/gateway-logging/src/config.rs) and [worker.rs](C:/Users/Vinnie/cursor/runvil/crates/gateway-logging/src/worker.rs). Retention grew to five prior runs without a disk-byte bound. Impact: filesystem exhaustion. Reversal cost: medium. Target: fixed-size segments under one aggregate budget while preserving current diagnostic names.
+- `RV-GWLOG-005` - introduced by `f303718e` across [queue.rs](C:/Users/Vinnie/cursor/runvil/crates/gateway-logging/src/queue.rs), [runtime.rs](C:/Users/Vinnie/cursor/runvil/crates/gateway-logging/src/runtime.rs), and [gateway/src/main.rs](C:/Users/Vinnie/cursor/runvil/crates/gateway/src/main.rs). Protected-record producers, sink writes, and shutdown joins can block forever. Impact: frozen application threads or exit. Reversal cost: high. Target: finite waits followed by explicit loss, as selected by the operator.
+- `RV-GWLOG-006` - worsened by `f303718e` and `1009b3f4` in [gateway-logging/src/redact.rs](C:/Users/Vinnie/cursor/runvil/crates/gateway-logging/src/redact.rs). Text patterns do not cover all structured credentials, cookies, prompts, paths, payloads, or nested errors. Impact: persisted sensitive data. Reversal cost: medium to high. Target: typed field redaction before formatting plus adversarial post-format defense.
+- `STT-CORE-001` - introduced by `3642d6dd` in [gateway-config/src/config/imp.rs](C:/Users/Vinnie/cursor/runvil/crates/gateway-config/src/config/imp.rs) and [gateway-config-ui/ui/src/services/config-store.ts](C:/Users/Vinnie/cursor/runvil/crates/gateway-config-ui/ui/src/services/config-store.ts). Rust and TypeScript indefinitely duplicate `[workshop.stt]` migration. Impact: compatibility drift and redundant parsing. Reversal cost: low for this pre-1.0 installation because the local file is already canonical. Target: config version 2 accepts only top-level `[stt]`; both migration shims are removed.
+- `STT-CORE-002` - introduced by `c7c1c1f7` and expanded later across [gateway-stt-backend-whisper/src/prompt.rs](C:/Users/Vinnie/cursor/runvil/crates/gateway-stt-backend-whisper/src/prompt.rs), [gateway-stt/src/test_fixtures/native.rs](C:/Users/Vinnie/cursor/runvil/crates/gateway-stt/src/test_fixtures/native.rs), and native integration helpers. Five fixture resolvers can drift. Impact: inconsistent native gates. Reversal cost: low. Target: one feature-gated non-production resolver with explicit caller defaults.
+- `STT-CORE-003` - introduced by `75f4cb30` and expanded through `25501883` in [gateway-stt-engine/src/test_fixtures.rs](C:/Users/Vinnie/cursor/runvil/crates/gateway-stt-engine/src/test_fixtures.rs) and [gateway-stt/src/test_fixtures.rs](C:/Users/Vinnie/cursor/runvil/crates/gateway-stt/src/test_fixtures.rs). The feature-gated fixture API grows outside public-root ratchets. Impact: quasi-public test contract constrains refactors. Reversal cost: medium. Target: feature-enabled public API accounting followed by scenario-level narrowing.
+- `STT-CORE-004` - introduced by `4b490073` and `101dedac` in [gateway-stt/src/lib.rs](C:/Users/Vinnie/cursor/runvil/crates/gateway-stt/src/lib.rs). Module-wide dead-code allowances outlived production wiring. Impact: obsolete code can accumulate silently. Reversal cost: low. Target: remove broad allowances and retain only justified item-level exceptions.
+- `STT-CORE-005` - introduced by `b6021e4c` in [.github/workflows/stt-miri.yml](C:/Users/Vinnie/cursor/runvil/.github/workflows/stt-miri.yml). Native CI depends on floating `stable` and a service-account Cargo layout. Impact: unreproducible runner failures. Reversal cost: medium. Target: exact toolchain and versioned runner provisioning contract.
+- `RV-RTSTT-DC-001` - worsened by `467a2622`, `60165006`, and `1b50919d` in [gateway/src/lib.rs](C:/Users/Vinnie/cursor/runvil/crates/gateway/src/lib.rs) and [config_write.rs](C:/Users/Vinnie/cursor/runvil/crates/gateway/src/config_write.rs). Profile-switch phases and rollback state remain concentrated in the 5,000-line root module. Impact: temporal coupling across every runtime participant. Reversal cost: medium to high. Target: a private transaction module with explicit phase values.
+- `RV-RTSTT-DC-002` - introduced by `467a2622` in [gateway/src/config_write.rs](C:/Users/Vinnie/cursor/runvil/crates/gateway/src/config_write.rs). PID plus process-local sequence temporary names can collide with crash residue after PID reuse. Impact: valid profile switches can fail. Reversal cost: low. Target: high-entropy process nonce with bounded create-new retry.
+- `RV-RTSTT-DC-003` - introduced by `7452751b` and worsened by `94357c39` in [realtime-transcription.ts](C:/Users/Vinnie/cursor/runvil/crates/workshop-server/ui/src/services/realtime-transcription.ts). Production validates only fields it consumes while test fixtures enforce the full frozen event shape. Impact: production and canonical contract drift. Reversal cost: medium. Target: one exhaustive pure decoder used by production and fixture tests.
+- `RV-RTSTT-DC-004` - introduced by `7452751b` and worsened by `aeec7b48` in [realtime-stt.ts](C:/Users/Vinnie/cursor/runvil/crates/workshop-server/ui/src/ui/realtime-stt.ts). Five collections, lifecycle flags, capture state, and editor offsets are coordinated in one callback mesh. Impact: stale ownership and rollback defects. Reversal cost: medium. Target: a pure `TakeRegistry` reducer emitting editor and capture effects.
+- `RV-RTSTT-DC-005` - introduced by `fb4e0bfe` and expanded by `13fb8eef` in [session_agents/supervisor.rs](C:/Users/Vinnie/cursor/runvil/crates/workshop-server/src/session_agents/supervisor.rs) and [lifecycle.rs](C:/Users/Vinnie/cursor/runvil/crates/workshop-server/src/session_agents/lifecycle.rs). Run completion, catalog replacement, Gateway replacement, cancellation, and accepted-turn settlement scale as branch interactions. Impact: exactly-once settlement risk. Reversal cost: medium. Target: explicit supervisor events and transition reducer.
+- `RV-RTSTT-DC-006` - worsened across `1b50919d`, `06cba48a`, `6ce38729`, and `49441166` in [gateway/tests/it/realtime_stt.rs](C:/Users/Vinnie/cursor/runvil/crates/gateway/tests/it/realtime_stt.rs), [realtime_relay.rs](C:/Users/Vinnie/cursor/runvil/crates/workshop-server/tests/it/realtime_relay.rs), and [chat_gate.rs](C:/Users/Vinnie/cursor/runvil/crates/workshop-server/tests/it/chat_gate.rs). Integration suites reached 1,778, 680, and 1,098 lines outside ratchets. Impact: coupled fixtures and hard-to-localize failures. Reversal cost: low. Target: concern-based files plus test-file ceilings.
+- `DC-RV-P2-001` - introduced by `13fb8eef` in [workshop/src/gateway.rs](C:/Users/Vinnie/cursor/runvil/crates/workshop/src/gateway.rs) and [main.rs](C:/Users/Vinnie/cursor/runvil/crates/workshop/src/main.rs). Supervisor shutdown signals then abandons its thread and owned blocking work. Impact: post-teardown probing, launch, or publication. Reversal cost: medium. Target: cancellation-aware probes and a finite joined shutdown.
+- `DC-RV-P2-002` - introduced by `13fb8eef` in [gateway_binding.rs](C:/Users/Vinnie/cursor/runvil/crates/workshop-server/src/gateway_binding.rs) and [serve.rs](C:/Users/Vinnie/cursor/runvil/crates/workshop-server/src/serve.rs). Public updater accepts a raw connection file while validation lives only in one caller. Impact: public trust-boundary bypass. Reversal cost: high. Target: updater accepts an unforgeable validated-connection capability.
+- `DC-RV-P2-003` - worsened by `13fb8eef` across [gateway_binding.rs](C:/Users/Vinnie/cursor/runvil/crates/workshop-server/src/gateway_binding.rs), [workshop/src/main.rs](C:/Users/Vinnie/cursor/runvil/crates/workshop/src/main.rs), and [menu.rs](C:/Users/Vinnie/cursor/runvil/crates/workshop/src/menu.rs). Client consumers and quit handling publish Gateway identity in two stores. Impact: quit can target a retired process and leave the replacement alive. Reversal cost: medium. Target: one validated authoritative snapshot for clients and shutdown.
+- `DC-RV-P2-004` - worsened by `13fb8eef` in [workshop/src/gateway.rs](C:/Users/Vinnie/cursor/runvil/crates/workshop/src/gateway.rs). Boot planning, launch, validation, identity, supervision, recovery, and tests occupy 854 lines. Impact: broad review and regression boundary. Reversal cost: low. Target: extract supervision and identity into private modules with ceilings.
+- `DC-RV-P2-005` - worsened by `13fb8eef` across [ui/src/ui/stt.ts](C:/Users/Vinnie/cursor/runvil/crates/workshop-server/ui/src/ui/stt.ts), [realtime-stt.ts](C:/Users/Vinnie/cursor/runvil/crates/workshop-server/ui/src/ui/realtime-stt.ts), and [prompt-input.ts](C:/Users/Vinnie/cursor/runvil/crates/workshop-server/ui/src/ui/prompt-input.ts). Every input adapter exposes document-end and plain-text details for composition policy. Impact: editor representation leaks into Realtime lifecycle code. Reversal cost: medium. Target: one target-owned insertion-context operation carrying anchor, original text, and required prefix.
 
 ## Technical Design
 
-- Logging settlement for `PF-GWLOG-001` through `PF-GWLOG-006`:
+- Logging settlement for `RV-GWLOG-001` through `RV-GWLOG-006`:
   - Add one immutable limits object covering maximum formatted record bytes, aggregate queued bytes, producer wait, shutdown wait, segment bytes, and aggregate retained bytes.
   - Format into a bounded writer. Truncate at a valid text boundary with an explicit marker, or reject the record and increment the same observable loss episode.
   - Assign sequence under the queue mutex at successful admission. Track queued bytes with record counts and preserve lane priority within that one admission order.
@@ -97,24 +97,24 @@ isProject: false
   - Delete Rust `migrate_legacy_stt` and TypeScript `canonicalizeStt`.
   - Reject `[workshop.stt]` through the existing unknown-field validation instead of rewriting it.
   - Keep canonical top-level `[stt]` parsing and UI serialization unchanged.
-  - Verify `C:\Users\Vinnie\.promptforge\gateway.toml` contains no legacy section, perform no write to it, and leave it byte-for-byte unchanged.
-- Test infrastructure and CI settlement for `STT-CORE-002` through `STT-CORE-005` and `PF-RTSTT-DC-006`:
+  - Verify `C:\Users\Vinnie\.runvil\gateway.toml` contains no legacy section, perform no write to it, and leave it byte-for-byte unchanged.
+- Test infrastructure and CI settlement for `STT-CORE-002` through `STT-CORE-005` and `RV-RTSTT-DC-006`:
   - Centralize native fixture resolution behind the existing feature-gated STT test infrastructure rather than adding a production crate. Preserve caller-specific fallback roots as explicit parameters.
   - Generate and ratchet feature-enabled public API snapshots for both STT fixture surfaces. Narrow low-level synchronization controls to scenario-level operations only after current consumers are inventoried.
   - Remove module-wide dead-code allowances and fix or annotate only genuinely configuration-specific items.
   - Pin an exact native Rust toolchain in the workflow and validate a versioned self-hosted runner contract before cache or test work.
   - Split Gateway Realtime, Workshop relay, and chat integration suites by authentication, protocol, lifecycle, recovery, overload, and canonical sequence. Add physical-line ceilings and preserve discovered test counts.
-- Gateway lifecycle settlement for `PF-RTSTT-DC-001` and `PF-RTSTT-DC-002`:
+- Gateway lifecycle settlement for `RV-RTSTT-DC-001` and `RV-RTSTT-DC-002`:
   - Extract a private `profile_switch` transaction that owns target profile, cancellation token, prepared persistence, old runtime snapshot, staged routing and speech replacements, and terminal outcome.
   - Represent prepared, cutover, staged, and committed phases as values so invalid rollback or publication order cannot be called.
   - Keep existing locks and external behavior while moving persistence and rollback helpers out of the root module.
   - Name preparation files with a process-random nonce and bounded `create_new` retry. Never delete residue unless ownership is proven.
-- Workshop protocol and state settlement for `PF-RTSTT-DC-003` through `PF-RTSTT-DC-005` and `DC-PF-P2-005`:
+- Workshop protocol and state settlement for `RV-RTSTT-DC-003` through `RV-RTSTT-DC-005` and `DC-RV-P2-005`:
   - Extract a pure exhaustive Realtime event decoder returning a discriminated union. Validate exact required fields, nullable fields, IDs, content index, revision, transcript partition, audio spans, completion usage, and unsupported event types. Drive both production and canonical fixture mutation tests through it.
   - Replace the callback-owned dictation maps and flags with a pure `TakeRegistry` transition reducer. Inputs are typed service events and user actions; outputs are editor, capture, status, and wire effects.
   - Move insertion policy into `SttInputTarget::insertionContext`, returning the selected range, original text, and immutable composition prefix. The registry never reads document structure directly.
   - Model agent supervision with explicit events for run completion, catalog generation, Gateway generation, operator cancellation, accepted input, and terminal settlement. A pure transition function decides wait, cancel, preserve, relaunch, or close effects.
-- Sidecar settlement for `DC-PF-P2-001` through `DC-PF-P2-004`:
+- Sidecar settlement for `DC-RV-P2-001` through `DC-RV-P2-004`:
   - Add a public but unforgeable `ValidatedConnection` capability in `shared-sidecar`. Constructors remain private; validation proves process image, boot identity, health, and bearer acceptance. Expose redacted accessors needed to build a consumer snapshot.
   - Change `GatewayUpdater` to accept only `ValidatedConnection`. Remove raw `ConnectionFile` publication from the public Workshop server API.
   - Store the validated connection identity in the same immutable `GatewayBinding` snapshot as HTTP and model clients. Route quit through the current authoritative snapshot and remove the separate `GatewaySlot`.
@@ -130,21 +130,21 @@ isProject: false
 
 ## Testing Plan
 
-- `PF-GWLOG-001`, `PF-GWLOG-003`, and `PF-GWLOG-005`: inject oversized records, variable-size concurrent pressure, a permanently stalled sink, and shutdown during saturation. Assert strict peak bytes, bounded producer and exit latency, one summary per episode, and explicit loss or truncation.
-- `PF-GWLOG-002`: pause one producer before admission and prove successful admission sequence is global write order.
-- `PF-GWLOG-004`: exceed segment and aggregate budgets across active and retained logs. Assert current diagnostic names, oldest-first pruning, terminal-record preservation, and total bytes at or below budget.
-- `PF-GWLOG-006`: adversarial structured and textual credentials, Basic and Bearer authorization, cookies, URLs, multiline errors, prompts, paths, request bodies, and nested chains must persist no protected values.
+- `RV-GWLOG-001`, `RV-GWLOG-003`, and `RV-GWLOG-005`: inject oversized records, variable-size concurrent pressure, a permanently stalled sink, and shutdown during saturation. Assert strict peak bytes, bounded producer and exit latency, one summary per episode, and explicit loss or truncation.
+- `RV-GWLOG-002`: pause one producer before admission and prove successful admission sequence is global write order.
+- `RV-GWLOG-004`: exceed segment and aggregate budgets across active and retained logs. Assert current diagnostic names, oldest-first pruning, terminal-record preservation, and total bytes at or below budget.
+- `RV-GWLOG-006`: adversarial structured and textual credentials, Basic and Bearer authorization, cookies, URLs, multiline errors, prompts, paths, request bodies, and nested chains must persist no protected values.
 - `STT-CORE-001`: version 2 canonical `[stt]` parsing, legacy `[workshop.stt]` rejection, mixed-form rejection, canonical UI round-trip, absence of browser canonicalization, and byte-for-byte local configuration preservation.
 - `STT-CORE-002` and `STT-CORE-003`: every native test target must resolve identical explicit fixtures and retain caller fallbacks; feature-enabled public API snapshots must fail on unreviewed growth; default builds must expose no fixture symbols.
 - `STT-CORE-004`: default, all-feature, test, Miri, and featureless lint configurations pass with dead-code diagnostics active.
 - `STT-CORE-005`: native preflight accepts only the pinned toolchain and versioned runner layout, rejects wrong or missing versions before cache use, and runs all native Whisper jobs on the self-hosted runner.
-- `PF-RTSTT-DC-001` and `PF-RTSTT-DC-002`: retain every profile-switch cancellation, rollback, indeterminate persistence, atomic publication, and featureless test; add deterministic temporary-name collisions and crash residue.
-- `PF-RTSTT-DC-003`: mutate each required and forbidden Realtime field in production decoding, then replay every canonical sequence through the same decoder.
-- `PF-RTSTT-DC-004` and `DC-PF-P2-005`: reducer invariants cover overlap, tombstones, precommit binding, rollback, reconnect, sequential spacing, completion authority, selection replacement, textarea, and ProseMirror.
-- `PF-RTSTT-DC-005`: transition tables cover delayed catalog, profile and Gateway replacement during accepted input, operator cancel, retained history, close, and exactly-once settlement.
-- `PF-RTSTT-DC-006` and `DC-PF-P2-004`: test count before and after every split is identical; new source and test ceilings pass.
-- `DC-PF-P2-001`: block each sidecar resolve, validation, launch, and health phase, request Workshop exit, and prove joined termination within budget with no later publication.
-- `DC-PF-P2-002` and `DC-PF-P2-003`: raw connection files cannot publish; wrong image, boot identity, health, or bearer cannot create a capability; same-port and same-key replacement works; configured-key replacement is atomic; replacement raced with quit targets one current generation.
+- `RV-RTSTT-DC-001` and `RV-RTSTT-DC-002`: retain every profile-switch cancellation, rollback, indeterminate persistence, atomic publication, and featureless test; add deterministic temporary-name collisions and crash residue.
+- `RV-RTSTT-DC-003`: mutate each required and forbidden Realtime field in production decoding, then replay every canonical sequence through the same decoder.
+- `RV-RTSTT-DC-004` and `DC-RV-P2-005`: reducer invariants cover overlap, tombstones, precommit binding, rollback, reconnect, sequential spacing, completion authority, selection replacement, textarea, and ProseMirror.
+- `RV-RTSTT-DC-005`: transition tables cover delayed catalog, profile and Gateway replacement during accepted input, operator cancel, retained history, close, and exactly-once settlement.
+- `RV-RTSTT-DC-006` and `DC-RV-P2-004`: test count before and after every split is identical; new source and test ceilings pass.
+- `DC-RV-P2-001`: block each sidecar resolve, validation, launch, and health phase, request Workshop exit, and prove joined termination within budget with no later publication.
+- `DC-RV-P2-002` and `DC-RV-P2-003`: raw connection files cannot publish; wrong image, boot identity, health, or bearer cannot create a capability; same-port and same-key replacement works; configured-key replacement is atomic; replacement raced with quit targets one current generation.
 - Arbitrary-duration Realtime: run hour-equivalent synthetic input with varied append sizes and continuous speech. Assert one item and completion, exact 3,600-second usage, gap-free absolute coverage, retained PCM allocation capacity at or below 30 seconds, forced windows at or below 18 seconds, bounded commands and text state, stable interim replacement across compaction, and no deletion or duplication at pause, overlap, punctuation, repeated-phrase, stop before, on, and after a forced cut, clear, cancellation, or overload boundaries.
 - Exit checks: repository formatting, warnings-denied workspace lint, workspace tests, documentation tests, architecture gates, feature-enabled API snapshots, native Whisper, both Miri targets, both UI suites, guide generation cleanliness, unsigned local package recovery, and existing signed release CI.
 
@@ -182,7 +182,7 @@ isProject: false
   - Rust integration tests: `cargo test -p <crate> --test it <test-name>`. Gateway, `gateway-stt`, and `workshop-server` use `tests/it/main.rs` as the test root with responsibility-named modules below it.
   - STT architecture gates: `node tools/check-stt-architecture.test.mjs`, `node tools/check-stt-architecture.mjs`, and `cargo test -p gateway-stt --test it architecture`.
   - STT feature-gated fixtures: `cargo test -p gateway-stt -F test-fixtures`, `cargo test -p gateway-stt-engine -F test-fixtures`, `cargo test -p gateway-stt-backend-whisper -F test-fixtures`.
-  - Native Whisper tests are `#[ignore]` by default: same package command with `-- --ignored --test-threads=1`; require `PROMPTFORGE_WHISPER_LIBRARY` (or model/audio overrides) plus gitignored fixtures under `local/stt-fixtures/` or caller-specific fallback roots.
+  - Native Whisper tests are `#[ignore]` by default: same package command with `-- --ignored --test-threads=1`; require `RUNVIL_WHISPER_LIBRARY` (or model/audio overrides) plus gitignored fixtures under `local/stt-fixtures/` or caller-specific fallback roots.
   - Miri (pure STT ownership): `cargo +nightly-2026-09-05 miri test -p gateway-stt-engine -F test-fixtures miri_` and the same for `gateway-stt`.
   - Workshop UI focused tests run from `crates/workshop-server/ui`, for example `node --test test/stt-stream.mjs`; package discovery is `npm test`.
   - Config UI focused tests run from `crates/gateway-config-ui/ui` with `node --test src/<area>.test.mjs`; `npm test` runs the full discovered suite after `pretest` runs `check-layers.mjs`.
@@ -213,10 +213,10 @@ isProject: false
   - Gateway product crates: `gateway`, `gateway-config`, `gateway-config-ui`, `gateway-local`, `gateway-logging`, `gateway-routing`, `gateway-stt`, `gateway-web-search`, `gateway-whisper-ffi`.
   - Workshop product crates: `workshop`, `workshop-server`; the browser application is `crates/workshop-server/ui`; config UI sources are `crates/gateway-config-ui/ui`.
   - Cross-product substrate: `shared-loopback`, `shared-progress`, `shared-protocol`, `shared-sidecar`, and the non-Rust `shared-ui` package.
-  - PromptForge library crates use the `promptforge-*` prefix; `build-*` crates (`build-ui`, `build-user-guide`, `build-llama-cuda`) are compile-time or CI tooling linked into no deliverable.
+  - Runvil library crates use the `runvil-*` prefix; `build-*` crates (`build-ui`, `build-user-guide`, `build-llama-cuda`) are compile-time or CI tooling linked into no deliverable.
   - `design/` holds design material; `guide/` holds mdBook documentation; `local/` holds gitignored developer fixtures; `prompts/` holds prompt programs; `tools/` holds repository Node gates; `vibe/` holds execution plans, `vibe/archdoc.md`, and the architecture queue.
 - Component boundaries (from `vibe/archdoc.md` and current manifests):
-  - executor (`promptforge`, `promptforge-core`, parser, store, Lua, agent, tools): depends on gateway protocol, store, shared substrate.
+  - executor (`runvil`, `runvil-core`, parser, store, Lua, agent, tools): depends on gateway protocol, store, shared substrate.
   - gateway (`gateway`, `gateway-config`, `gateway-local`, `gateway-logging`, `gateway-routing`, `gateway-stt`, `gateway-web-search`): independent server process; sole holder of vendor credentials (A2); depends on shared substrate only among cross-product crates.
   - workshop UI (`workshop`, `workshop-server`, `workshop-server/ui`): desktop shell runs `workshop-server` in-process and attaches to gateway through `shared-sidecar`; depends on executor support crates and shared substrate, not on `gateway-stt`.
   - STT stack: `gateway-stt` orchestrates HTTP/WebSocket speech routes and session state; depends on `gateway-stt-engine` (backend-neutral workers) and `gateway-stt-backend-whisper` (Whisper policy), which depends on `gateway-whisper-ffi` (runtime-loaded ABI leaf). No STT crate depends on `workshop-server`.
@@ -225,7 +225,7 @@ isProject: false
   - Logging: `gateway-logging` is consumed only by `gateway`; queue, rotation, redaction, and worker thread stay inside that crate.
   - Config: `gateway-config` owns validated TOML; version 2 uses top-level `[stt]` with a legacy `[workshop.stt]` migration shim still present in Rust and the config UI (debt target for this plan).
 - Visible conventions:
-  - Crate prefixes encode product membership (`gateway*`, `promptforge*`, bare `workshop*`, `shared-*`, `build-*`). Shared dependencies must live in `shared-*`; build-only tooling in `build-*`.
+  - Crate prefixes encode product membership (`gateway*`, `runvil*`, bare `workshop*`, `shared-*`, `build-*`). Shared dependencies must live in `shared-*`; build-only tooling in `build-*`.
   - Cargo features gate real constraints only. Gateway `local`, `web-search`, `config-ui`, and `stt` features are additive and default on; `cargo check -p gateway --no-default-features` must stay green.
   - Rust modules are private by default with deliberate crate-root re-exports. Every public item requires rustdoc; libraries use typed errors; behavior changes ship with tests in the same change.
   - Runtime paths never compile native code. Whisper loads from packaged runtime artifacts; unsafe, ABI layouts, and raw pointers stay in `gateway-whisper-ffi`.
@@ -245,17 +245,17 @@ isProject: false
   - `crates/gateway-stt-backend-whisper/AGENTS.md` governs `crates/gateway-stt-backend-whisper/`.
   - `crates/gateway-web-search/AGENTS.md` governs `crates/gateway-web-search/`.
   - `crates/gateway-whisper-ffi/AGENTS.md` governs `crates/gateway-whisper-ffi/`.
-  - `crates/promptforge/AGENTS.md` governs `crates/promptforge/`.
-  - `crates/promptforge-agent/AGENTS.md` governs `crates/promptforge-agent/`.
-  - `crates/promptforge-core/AGENTS.md` governs `crates/promptforge-core/`.
-  - `crates/promptforge-core-support/AGENTS.md` governs `crates/promptforge-core-support/`.
-  - `crates/promptforge-lua/AGENTS.md` governs `crates/promptforge-lua/`.
-  - `crates/promptforge-model-client/AGENTS.md` governs `crates/promptforge-model-client/`.
-  - `crates/promptforge-parser/AGENTS.md` governs `crates/promptforge-parser/`.
-  - `crates/promptforge-store/AGENTS.md` governs `crates/promptforge-store/`.
-  - `crates/promptforge-tools/AGENTS.md` governs `crates/promptforge-tools/`.
-  - `crates/promptforge-web-search/AGENTS.md` governs `crates/promptforge-web-search/`.
-  - `crates/promptforge-webfetch/AGENTS.md` governs `crates/promptforge-webfetch/`.
+  - `crates/runvil/AGENTS.md` governs `crates/runvil/`.
+  - `crates/runvil-agent/AGENTS.md` governs `crates/runvil-agent/`.
+  - `crates/runvil-core/AGENTS.md` governs `crates/runvil-core/`.
+  - `crates/runvil-core-support/AGENTS.md` governs `crates/runvil-core-support/`.
+  - `crates/runvil-lua/AGENTS.md` governs `crates/runvil-lua/`.
+  - `crates/runvil-model-client/AGENTS.md` governs `crates/runvil-model-client/`.
+  - `crates/runvil-parser/AGENTS.md` governs `crates/runvil-parser/`.
+  - `crates/runvil-store/AGENTS.md` governs `crates/runvil-store/`.
+  - `crates/runvil-tools/AGENTS.md` governs `crates/runvil-tools/`.
+  - `crates/runvil-web-search/AGENTS.md` governs `crates/runvil-web-search/`.
+  - `crates/runvil-webfetch/AGENTS.md` governs `crates/runvil-webfetch/`.
   - `crates/shared-loopback/AGENTS.md` governs `crates/shared-loopback/`.
   - `crates/shared-progress/AGENTS.md` governs `crates/shared-progress/`.
   - `crates/shared-protocol/AGENTS.md` governs `crates/shared-protocol/`.
@@ -272,7 +272,7 @@ isProject: false
 
 - Component and piece: Component 1 of 8, regression boundaries; first split the Gateway Realtime suite by authentication, protocol, lifecycle, recovery, overload, and canonical sequence while preserving every discovered test.
 - Dependency: starts from the plan seed because later Gateway and Realtime refactors need stable concern-level test homes and a recorded pre-refactor test count.
-- Debt IDs: `PF-RTSTT-DC-006`.
+- Debt IDs: `RV-RTSTT-DC-006`.
 - Artifacts: `crates/gateway/tests/it/realtime_stt.rs`, `crates/gateway/tests/it/realtime_stt/*.rs`, `crates/gateway/tests/it/main.rs`, and focused support extracted only when shared by the new files.
 - Scope: move tests without changing assertions, fixtures, ignored status, or production behavior; verify the discovered test count before and after the split without adding a persistent ratchet yet.
 - Exclusions: no profile-switch, decoder, fixture-resolution, or production changes; unrelated defects are recorded separately.
@@ -282,7 +282,7 @@ isProject: false
 
 - Component and piece: Component 1 of 8, regression boundaries; split Workshop `realtime_relay` and `chat_gate` coverage by authentication, protocol, lifecycle, recovery, overload, and canonical sequence while preserving every discovered test.
 - Dependency: depends on Step 1 only for one consistent count-preserving split convention; it must precede Workshop decoder, reducer, supervisor, and sidecar changes so moved assertions retain stable ownership.
-- Debt IDs: `PF-RTSTT-DC-006`.
+- Debt IDs: `RV-RTSTT-DC-006`.
 - Artifacts: `crates/workshop-server/tests/it/realtime_relay.rs`, `crates/workshop-server/tests/it/realtime_relay/*.rs`, `crates/workshop-server/tests/it/chat_gate.rs`, `crates/workshop-server/tests/it/chat_gate/*.rs`, and `crates/workshop-server/tests/it/main.rs`.
 - Scope: move tests and narrowly shared fixtures without semantic edits; verify exact before and after counts for both source suites without adding persistent ratchets yet.
 - Exclusions: no production relay, session-agent, UI, Gateway binding, or sidecar behavior changes.
@@ -292,7 +292,7 @@ isProject: false
 
 - Component and piece: Component 1 of 8, regression boundaries; add one repository gate for physical-line ceilings and exact test-count records for the three split suites.
 - Dependency: depends on Steps 1 and 2 because the selected decision is to split first, prove count preservation, and only then freeze the resulting concern boundaries.
-- Debt IDs: `PF-RTSTT-DC-006`.
+- Debt IDs: `RV-RTSTT-DC-006`.
 - Artifacts: create `tools/check-integration-test-ceilings.mjs`, `tools/check-integration-test-ceilings.test.mjs`, and `tools/integration-test-ceilings.json` covering `crates/gateway/tests/it/realtime_stt/`, `crates/workshop-server/tests/it/realtime_relay/`, and `crates/workshop-server/tests/it/chat_gate/`; wire the gate in `.github/workflows/ci.yml`.
 - Scope: enforce physical-line ceilings, exact manifest coverage, and recorded test totals with path-normalized tests.
 - Exclusions: do not impose ceilings on unrelated suites or alter any production module ceiling.
@@ -303,7 +303,7 @@ isProject: false
 
 - Component and piece: Component 2 of 8, `gateway-logging`; establish one immutable limits object and bounded record formatting with a valid-text truncation marker.
 - Dependency: depends on Step 3 only as the completed regression foundation; within logging it is first because queue, wait, shutdown, and segment budgets consume the same limits object.
-- Debt IDs: `PF-GWLOG-001`, with contract input for `PF-GWLOG-004` and `PF-GWLOG-005`.
+- Debt IDs: `RV-GWLOG-001`, with contract input for `RV-GWLOG-004` and `RV-GWLOG-005`.
 - Artifacts: `crates/gateway-logging/src/config.rs`, `writer.rs`, `queue.rs`, `lib.rs`, and their unit tests.
 - Scope: define maximum formatted record bytes, aggregate queued bytes, producer wait, shutdown wait, segment bytes, and aggregate retained bytes; bound formatting and count rejected or truncated records in the same observable loss episode.
 - Exclusions: no queue-order change, producer timeout, disk rotation, or redaction expansion yet; log message content otherwise stays unchanged.
@@ -313,7 +313,7 @@ isProject: false
 
 - Component and piece: Component 2 of 8, `gateway-logging`; make queue admission enforce aggregate bytes, assign sequence under the mutex, and close one pressure episode at a defined low-water transition.
 - Dependency: depends on Step 4 because admission must use the shared record and aggregate byte limits and its loss accounting; it precedes timeout work because wait outcomes need final admission semantics.
-- Debt IDs: `PF-GWLOG-001`, `PF-GWLOG-002`, `PF-GWLOG-003`.
+- Debt IDs: `RV-GWLOG-001`, `RV-GWLOG-002`, `RV-GWLOG-003`.
 - Artifacts: `crates/gateway-logging/src/queue.rs`, `writer.rs`, and queue concurrency tests.
 - Scope: preserve lane priority inside one successful-admission order, enforce strict peak queued bytes, and emit exactly one summary with dropped and truncated counts per pressure episode.
 - Exclusions: no indefinite retention guarantee, sink implementation change, segment rotation, or redaction work.
@@ -323,7 +323,7 @@ isProject: false
 
 - Component and piece: Component 2 of 8, `gateway-logging`; apply the selected bounded-loss policy to protected producers, sink stalls, and runtime shutdown.
 - Dependency: depends on Step 5 because finite waits must terminate in the queue's explicit loss-accounting path and preserve successful-admission order.
-- Debt IDs: `PF-GWLOG-005`, plus `PF-GWLOG-003` loss observability.
+- Debt IDs: `RV-GWLOG-005`, plus `RV-GWLOG-003` loss observability.
 - Artifacts: `crates/gateway-logging/src/queue.rs`, `worker.rs`, `runtime.rs`, `crates/gateway/src/main.rs`, and stalled-sink and saturated-shutdown tests.
 - Scope: protected producers wait only for the configured budget and then record loss through a preallocated path; shutdown waits only for its budget, attempts an emergency diagnostic, and detaches rather than joining forever.
 - Exclusions: no emergency spool, no unbounded protected-record retention, no unrelated Gateway shutdown redesign, and no claim of lossless logging during a permanent stall.
@@ -333,7 +333,7 @@ isProject: false
 
 - Component and piece: Component 2 of 8, `gateway-logging`; replace run-count-only retention with fixed-size segments under one aggregate disk-byte budget.
 - Dependency: depends on Step 4 for segment and aggregate budgets and on Step 5 for bounded terminal records; it is independent of Step 6 behavior but follows it to avoid overlapping worker and runtime edits.
-- Debt IDs: `PF-GWLOG-004`.
+- Debt IDs: `RV-GWLOG-004`.
 - Artifacts: `crates/gateway-logging/src/config.rs`, `worker.rs`, `runtime.rs`, and rotation tests.
 - Scope: retain `gateway.log` and numbered diagnostic names, reserve marker and terminal-record space, prune oldest segments before admission, and prove active plus retained bytes stay within budget.
 - Exclusions: no per-run discard, no prune-only active-file strategy, and no rename of diagnostic files.
@@ -343,7 +343,7 @@ isProject: false
 
 - Component and piece: Component 2 of 8, `gateway-logging`; classify and redact structured fields and secret types before formatting, with the bounded textual scanner retained as defense in depth.
 - Dependency: depends on Step 4 because pre-format output must honor the bounded writer and on Step 5 because rejected or truncated records share loss accounting; it follows Steps 6 and 7 to minimize conflicting edits.
-- Debt IDs: `PF-GWLOG-006`.
+- Debt IDs: `RV-GWLOG-006`.
 - Artifacts: `crates/gateway-logging/src/redact.rs`, `writer.rs`, `lib.rs`, and their adversarial redaction tests.
 - Scope: cover Basic and Bearer authorization, cookies, URLs, prompts, paths, payloads, multiline and nested errors, and classified credential fields without persisting protected values.
 - Exclusions: no unrelated log wording changes and no unbounded scanner or second sink.
@@ -356,9 +356,9 @@ isProject: false
 - Dependency: depends only on the regression foundation ending at Step 3 and is intentionally independent of logging; Rust and TypeScript must land together so no layer continues accepting `[workshop.stt]`.
 - Debt IDs: `STT-CORE-001`.
 - Artifacts: `crates/gateway-config/src/config/imp.rs`, `config/accessors.rs`, `config/tests/schema.rs`, `config/tests/serialize.rs`, `config/tests/validation.rs`, `crates/gateway-config-ui/ui/src/services/config-store.ts`, `src/services/config-store.test.mjs`, and `src/views/settings-sections.test.mjs`.
-- Scope: keep `config-version = 2`, delete `migrate_legacy_stt` and `canonicalizeStt` immediately, reject legacy and mixed forms through unknown-field validation, and leave canonical `[stt]` parsing and UI serialization unchanged. Verify `C:\Users\Vinnie\.promptforge\gateway.toml` has no legacy section, record its SHA-256, perform no write to it, and prove the already-canonical file is byte-for-byte identical afterward.
+- Scope: keep `config-version = 2`, delete `migrate_legacy_stt` and `canonicalizeStt` immediately, reject legacy and mixed forms through unknown-field validation, and leave canonical `[stt]` parsing and UI serialization unchanged. Verify `C:\Users\Vinnie\.runvil\gateway.toml` has no legacy section, record its SHA-256, perform no write to it, and prove the already-canonical file is byte-for-byte identical afterward.
 - Exclusions: no migration command, schema version 3, deprecation window, automatic rewrite, or repair of the canonical local file.
-- Focused verification: from the repository root run `cargo test -p gateway-config`; from `crates/gateway-config-ui/ui` run `npm run typecheck`, `npm run build`, and `npm test`; in PowerShell compare `Get-FileHash C:\Users\Vinnie\.promptforge\gateway.toml -Algorithm SHA256` before and after the read-only local check.
+- Focused verification: from the repository root run `cargo test -p gateway-config`; from `crates/gateway-config-ui/ui` run `npm run typecheck`, `npm run build`, and `npm test`; in PowerShell compare `Get-FileHash C:\Users\Vinnie\.runvil\gateway.toml -Algorithm SHA256` before and after the read-only local check.
 - Component boundary: ends Component 3; review Step 9 against the Step 8 commit, including the paired Rust and TypeScript deletion and the local hash evidence.
 
 ### Step 10: Centralize native STT fixture resolution [completed]
@@ -367,7 +367,7 @@ isProject: false
 - Dependency: depends on Step 3's stable test layout; it precedes API snapshots because the canonical resolver surface must exist before its feature-enabled contract is recorded.
 - Debt IDs: `STT-CORE-002`.
 - Artifacts: create `crates/gateway-stt-engine/src/test_fixtures/native.rs`; update `crates/gateway-stt/tests/common/mod.rs`, `crates/gateway-stt-backend-whisper/src/prompt.rs`, `crates/gateway-stt-backend-whisper/tests/native_whisper.rs`, `crates/gateway/tests/it/realtime_stt/`, and affected `Cargo.toml` feature wiring.
-- Scope: expose one non-production resolver, preserve `PROMPTFORGE_WHISPER_LIBRARY`, `PROMPTFORGE_WHISPER_MODEL`, and `PROMPTFORGE_WHISPER_AUDIO`, and require each caller to pass its fallback root explicitly.
+- Scope: expose one non-production resolver, preserve `RUNVIL_WHISPER_LIBRARY`, `RUNVIL_WHISPER_MODEL`, and `RUNVIL_WHISPER_AUDIO`, and require each caller to pass its fallback root explicitly.
 - Exclusions: no fifth production STT crate, no installed speech behavior change, and no native fixture download redesign.
 - Focused verification: from the repository root run `cargo test -p gateway-stt -F test-fixtures`, `cargo test -p gateway-stt-backend-whisper -F test-fixtures`, and `cargo test -p gateway`.
 
@@ -416,7 +416,7 @@ isProject: false
 
 - Component and piece: Component 5 of 8, Gateway profile switching; harden prepared persistence names before moving transaction ownership.
 - Dependency: depends on Step 1's split Gateway coverage and is the first profile-switch piece because the transaction must inherit settled temporary-file ownership semantics.
-- Debt IDs: `PF-RTSTT-DC-002`.
+- Debt IDs: `RV-RTSTT-DC-002`.
 - Artifacts: `crates/gateway/src/config_write.rs`, its `PreparedFile` tests, and relevant profile-switch integration tests under `crates/gateway/tests/it/profiles.rs`.
 - Scope: add one process-random nonce and bounded `create_new` retry, test deterministic collisions and crash residue, and delete residue only when ownership is proven.
 - Exclusions: no broad temporary-file cleanup, rollback redesign, config format change, or deletion of unproven residue.
@@ -426,7 +426,7 @@ isProject: false
 
 - Component and piece: Component 5 of 8, Gateway profile switching; create a private transaction module for target, cancellation, prepared persistence, prior runtime snapshot, and prepared and cutover phase values.
 - Dependency: depends on Step 15 because moved preparation must use the final collision and ownership contract; it precedes terminal phases so tests can pin preparation and cutover independently.
-- Debt IDs: `PF-RTSTT-DC-001`.
+- Debt IDs: `RV-RTSTT-DC-001`.
 - Artifacts: create `crates/gateway/src/profile_switch.rs`; move `PreparedPersistence`, `CutoverState`, `prepare_cutover`, persistence helpers, and their tests from `crates/gateway/src/lib.rs` and `config_write.rs`.
 - Scope: preserve locks, cancellation points, persistence ordering, old-runtime capture, and external behavior while making invalid preparation and cutover order unrepresentable.
 - Exclusions: no wire change, installed behavior change, new lock, terminal commit rewrite, or unrelated reduction of the root module.
@@ -436,7 +436,7 @@ isProject: false
 
 - Component and piece: Component 5 of 8, Gateway profile switching; represent staged, committed, rolled-back, indeterminate, and terminal outcomes as values and delegate root orchestration to the transaction.
 - Dependency: depends on Step 16 because terminal transitions consume the prepared and cutover phase values and their owned rollback state.
-- Debt IDs: `PF-RTSTT-DC-001`.
+- Debt IDs: `RV-RTSTT-DC-001`.
 - Artifacts: `crates/gateway/src/profile_switch.rs`, `crates/gateway/src/lib.rs`, `config_write.rs`, `config_apply.rs`, and profile-switch unit and integration tests.
 - Scope: preserve every cancellation, rollback, indeterminate-persistence, atomic-publication, speech-replacement, and featureless path; move only helpers owned by this transaction.
 - Exclusions: no Gateway API change, no altered timeout policy, no profile schema change, and no cleanup outside the extracted responsibility.
@@ -447,7 +447,7 @@ isProject: false
 
 - Component and piece: Component 6 of 8, Workshop Realtime UI; introduce one pure exhaustive decoder used by production and canonical fixture mutation tests.
 - Dependency: depends on Step 2's stable Workshop integration boundaries and precedes reducer work because the reducer may accept only typed trusted events.
-- Debt IDs: `PF-RTSTT-DC-003`.
+- Debt IDs: `RV-RTSTT-DC-003`.
 - Artifacts: `crates/workshop-server/ui/src/services/realtime-transcription.ts`, create `src/services/realtime-event-decoder.ts`, and update `test/realtime-wire-fixtures.mjs` and `test/stt-stream.mjs`.
 - Scope: return a discriminated union after exact validation of required and nullable fields, IDs, content index, revision, transcript partition, audio spans, completion usage, and unsupported event types; production and canonical sequence tests call the same decoder.
 - Exclusions: no speech protocol change, relay change, reconnect policy change, or dictation ownership refactor.
@@ -457,7 +457,7 @@ isProject: false
 
 - Component and piece: Component 6 of 8, Workshop Realtime UI; give each `SttInputTarget` one insertion-context operation.
 - Dependency: depends on Step 18 only for settled typed service inputs and precedes the registry because composition policy must leave lifecycle state before reducer extraction.
-- Debt IDs: `DC-PF-P2-005`.
+- Debt IDs: `DC-RV-P2-005`.
 - Artifacts: `crates/workshop-server/ui/src/ui/stt.ts`, `prompt-input.ts`, textarea target code, `test/prompt-input.mjs`, and `test/stt-stream.mjs`.
 - Scope: `insertionContext` returns the selected range, original text, and immutable required prefix for textarea and ProseMirror targets.
 - Exclusions: no editor replacement, document-wide read in the registry, transcript reducer, or visual behavior change.
@@ -467,7 +467,7 @@ isProject: false
 
 - Component and piece: Component 6 of 8, Workshop Realtime UI; extract pure take state and transitions before production wiring.
 - Dependency: depends on Step 18 for typed events and Step 19 for target-owned insertion context, which together define all reducer inputs.
-- Debt IDs: `PF-RTSTT-DC-004`, `DC-PF-P2-005`.
+- Debt IDs: `RV-RTSTT-DC-004`, `DC-RV-P2-005`.
 - Artifacts: create `crates/workshop-server/ui/src/ui/take-registry.ts` and `test/take-registry.mjs`; use types from `realtime-event-decoder.ts` and `stt.ts`.
 - Scope: model overlap, tombstones, precommit binding, rollback, reconnect, sequential spacing, completion authority, and selection replacement; emit editor, capture, status, and wire effects without performing them.
 - Exclusions: no DOM, socket, capture-service, status-service, or document-structure access inside the reducer and no production wiring yet.
@@ -477,7 +477,7 @@ isProject: false
 
 - Component and piece: Component 6 of 8, Workshop Realtime UI; make `setupStt` interpret reducer effects and remove the callback-owned maps, sets, flags, and editor offsets.
 - Dependency: depends on Step 20 because production wiring must consume a fully tested pure transition surface rather than define state transitions in callbacks.
-- Debt IDs: `PF-RTSTT-DC-004`, `DC-PF-P2-005`.
+- Debt IDs: `RV-RTSTT-DC-004`, `DC-RV-P2-005`.
 - Artifacts: `crates/workshop-server/ui/src/ui/realtime-stt.ts`, `take-registry.ts`, `test/stt-stream.mjs`, `test/prompt-input.mjs`, and affected UI boot tests.
 - Scope: preserve capture, wire, status, textarea, ProseMirror, rollback, reconnect, and spacing behavior while giving the registry exclusive take ownership.
 - Exclusions: no protocol decoder change after Step 18, no editor internals in lifecycle code, and no unrelated UI cleanup.
@@ -488,7 +488,7 @@ isProject: false
 
 - Component and piece: Component 7 of 8, Workshop agent supervision; build a pure event and transition model before changing the async loop.
 - Dependency: depends on Step 21 only for prior component closure; it deliberately retains the existing `GatewayBinding` generation interface, which later sidecar publication changes must preserve.
-- Debt IDs: `PF-RTSTT-DC-005`.
+- Debt IDs: `RV-RTSTT-DC-005`.
 - Artifacts: create `crates/workshop-server/src/session_agents/supervisor/transition.rs`; update `session_agents/lifecycle.rs` and focused transition-table tests.
 - Scope: model run completion, catalog generation, Gateway generation, operator cancellation, accepted input, and terminal settlement; decide wait, cancel, preserve, relaunch, or close effects.
 - Exclusions: no async orchestration rewrite, model client change, catalog semantics change, or sidecar publication change in this step.
@@ -498,7 +498,7 @@ isProject: false
 
 - Component and piece: Component 7 of 8, Workshop agent supervision; reduce the async supervisor loop to event collection and effect execution.
 - Dependency: depends on Step 22 because run and accepted-turn ownership must be decided by the tested transition table before branch interactions are removed.
-- Debt IDs: `PF-RTSTT-DC-005`.
+- Debt IDs: `RV-RTSTT-DC-005`.
 - Artifacts: `crates/workshop-server/src/session_agents/supervisor.rs`, `supervisor/catalog.rs`, `supervisor/transition.rs`, `lifecycle.rs`, and agent integration coverage under `crates/workshop-server/tests/it/agents.rs`.
 - Scope: preserve delayed catalog handling, replacement during accepted input, operator cancel, retained history, close behavior, and exactly-once settlement.
 - Exclusions: no Gateway binding representation change, catalog filtering change, protocol change, or unrelated session cleanup.
@@ -509,7 +509,7 @@ isProject: false
 
 - Component and piece: Component 8 of 8, sidecar trust and lifecycle; make successful validation produce a public but unforgeable capability.
 - Dependency: depends on stable existing sidecar resolution tests and precedes all publication changes because raw files must become incapable of crossing the Workshop mutation boundary.
-- Debt IDs: `DC-PF-P2-002`.
+- Debt IDs: `DC-RV-P2-002`.
 - Artifacts: create `crates/shared-sidecar/src/validated.rs`; update `lib.rs`, `stale.rs`, `file.rs`, `health.rs`, and their capability tests and public documentation.
 - Scope: keep constructors private; prove process image, boot identity, health, and bearer acceptance; expose only redacted accessors and internal data needed to build a consumer snapshot.
 - Exclusions: no caller-only validation, no public constructor, no secret-bearing debug output, and no shift of supervision ownership into `workshop-server`.
@@ -519,7 +519,7 @@ isProject: false
 
 - Component and piece: Component 8 of 8, sidecar trust and lifecycle; narrow the public updater and place validated identity in the immutable binding snapshot.
 - Dependency: depends on Step 24 because `GatewayUpdater` must accept the unforgeable capability rather than revalidate or trust a raw `ConnectionFile`; it also supplies the authoritative identity consumed by Steps 26 and 27.
-- Debt IDs: `DC-PF-P2-002`, `DC-PF-P2-003`.
+- Debt IDs: `DC-RV-P2-002`, `DC-RV-P2-003`.
 - Artifacts: `crates/workshop-server/src/gateway_binding.rs`, `serve.rs`, `app.rs`, `lib.rs`, tests, and `crates/workshop/src/gateway.rs`.
 - Scope: make `GatewayUpdater::replace_sidecar` accept only `ValidatedConnection`, remove raw-file publication from the public Workshop server API, and atomically publish clients plus validated identity in one `GatewayBinding` snapshot.
 - Exclusions: no separate identity store, no per-process bearer rotation, no LAN Gateway shutdown authority, and no supervision move across components.
@@ -529,7 +529,7 @@ isProject: false
 
 - Component and piece: Component 8 of 8, sidecar trust and lifecycle; remove duplicate Gateway identity ownership from the desktop shell.
 - Dependency: depends on Step 25 because quit must read the same validated snapshot that current HTTP and model clients use, including after replacement.
-- Debt IDs: `DC-PF-P2-003`.
+- Debt IDs: `DC-RV-P2-003`.
 - Artifacts: `crates/workshop/src/main.rs`, `menu.rs`, `gateway.rs`, `crates/workshop-server/src/gateway_binding.rs`, and replacement-raced-with-quit tests.
 - Scope: remove `GatewaySlot`, target exactly one current validated local generation, and preserve explicit LAN Gateway behavior; prove same-port, same-key, and configured-key replacement remain atomic.
 - Exclusions: no shutdown of configured LAN Gateways, no second identity cache, no credential rotation, and no menu redesign.
@@ -539,7 +539,7 @@ isProject: false
 
 - Component and piece: Component 8 of 8, sidecar trust and lifecycle; make resolve, validation, wait, launch, supervision, and publication cancellation-aware and finitely joined.
 - Dependency: depends on Steps 25 and 26 because cancellation must prevent publication into the authoritative snapshot and quit must target that same snapshot.
-- Debt IDs: `DC-PF-P2-001`.
+- Debt IDs: `DC-RV-P2-001`.
 - Artifacts: `crates/workshop/src/gateway.rs`, `main.rs`, `crates/shared-sidecar/src/stale.rs`, `health.rs`, `lock.rs`, and blocking-phase tests in those modules.
 - Scope: `GatewaySupervisor` owns and joins its thread under a finite shutdown budget; tests block each phase, request Workshop exit, and prove bounded termination with no later launch, probe, or publication.
 - Exclusions: no abandoned supervisor thread, unbounded join, process kill, emergency supervisor, or change to separate Gateway process ownership.
@@ -549,7 +549,7 @@ isProject: false
 
 - Component and piece: Component 8 of 8, sidecar trust and lifecycle; separate boot planning and one-shot launch from continuous supervision, validated identity, and recovery tests, then freeze the new boundaries.
 - Dependency: depends on Step 27 because the selected order is to settle cancellation and joined ownership before extracting modules and recording their final ceilings.
-- Debt IDs: `DC-PF-P2-004`, with closure verification for every debt ID in this plan.
+- Debt IDs: `DC-RV-P2-004`, with closure verification for every debt ID in this plan.
 - Artifacts: `crates/workshop/src/gateway.rs`; create `crates/workshop/src/gateway/boot.rs`, `supervisor.rs`, `identity.rs`, `tests/boot.rs`, `tests/recovery.rs`, and `tests/identity.rs`; add `crates/workshop/module-ceilings.toml` and `crates/workshop/tests/module_ceiling.rs`; append settled implementation facts only to `vibe/archdoc-next.md`, and update public documentation only for facts settled by Steps 15 through 28. Never edit `vibe/archdoc.md` during the run.
 - Scope: preserve boot, launch, validation, recovery, publication, and shutdown behavior; record ceilings for every resulting module and run its focused component gates.
 - Exclusions: no pre-documentation of planned APIs, unrelated debt cleanup, component ownership reassignment, speech behavior change, or expansion beyond defects introduced, worsened, or exposed by this plan.
@@ -598,7 +598,7 @@ isProject: false
 - Component and piece: release ergonomics; add the supported `cargo workshop` command that builds Gateway and Workshop together while preserving explicit installer staging.
 - Dependency: follows functional dictation closure so the final operator build uses the corrected binaries.
 - Artifacts: `.cargo/config.toml`, a `build-workshop` orchestration crate following the repository's `build-*` convention, `tools/stage-gateway-sidecar.mjs`, focused command tests, and `README.md`.
-- Scope: `cargo workshop` and `cargo workshop --release` build Gateway first, derive the host triple, stage the normal Gateway output under Tauri's required target-suffixed temporary name, build Workshop in the identical profile, and remove staging on success and every handled failure. `--target <triple>` applies the same explicit target to both builds and their target paths. The command accepts only the documented release and target options, rejects product features and every other unsupported argument, preserves the primary failure when cleanup also fails, reports cleanup failure separately, and leaves `promptforge-gateway[.exe]` and `promptforge-workshop[.exe]` as the final outputs.
+- Scope: `cargo workshop` and `cargo workshop --release` build Gateway first, derive the host triple, stage the normal Gateway output under Tauri's required target-suffixed temporary name, build Workshop in the identical profile, and remove staging on success and every handled failure. `--target <triple>` applies the same explicit target to both builds and their target paths. The command accepts only the documented release and target options, rejects product features and every other unsupported argument, preserves the primary failure when cleanup also fails, reports cleanup failure separately, and leaves `runvil-gateway[.exe]` and `runvil-workshop[.exe]` as the final outputs.
 - Exclusions: no recursive Cargo invocation from `workshop/build.rs`, unstable binary artifact dependencies, placeholder executable, product rename, embedded Gateway, persistent staged copy, or release-workflow weakening. Plain `cargo build -p workshop` remains a low-level package build that requires its external binary to exist.
 - Focused verification: from a clean missing staging directory run `cargo test -p build-workshop`, `cargo workshop`, and `cargo workshop --release`; prove both normal executable names exist; inject Gateway, staging, Workshop, and cleanup failures in deterministic command-runner tests; run `node --test tools/stage-gateway-sidecar.test.mjs`, Workshop build and tests, repository formatting, warnings-denied lint, and strict documentation; require staging to be absent afterward.
 
