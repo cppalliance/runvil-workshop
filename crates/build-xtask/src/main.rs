@@ -12,7 +12,6 @@ mod manifest;
 mod new_crate;
 mod no_doctests;
 mod product;
-mod site;
 mod tidy;
 mod type_size;
 mod unsafe_allowlist;
@@ -40,11 +39,6 @@ fn main() -> ExitCode {
             },
             None => usage(),
         },
-        Some("site") => site::run(
-            root,
-            std::env::var_os(site::DOCS_VAR).as_deref(),
-            &args[2..],
-        ),
         Some("tidy") => {
             let violations = tidy::all_violations(root);
             if violations.is_empty() {
@@ -62,9 +56,6 @@ fn main() -> ExitCode {
 }
 
 fn usage() -> ExitCode {
-    eprintln!(
-        "usage: cargo xtask new-crate <workshop-name> | cargo xtask tidy | \
-         cargo xtask site [--books-only]"
-    );
+    eprintln!("usage: cargo xtask new-crate <workshop-name> | cargo xtask tidy");
     ExitCode::from(2)
 }
