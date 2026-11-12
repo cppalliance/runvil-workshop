@@ -22,8 +22,10 @@
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 
-// `build-workshop` lays the payload out under these names and its tests
-// read them from this file, so a rename here fails there.
+// The installers, built in `cppalliance/runvil`, lay the payload out under
+// these names. The tests of `build-workshop` read the Plugin directory's
+// names and the macOS Workshop bundle's from this file, so a rename of one
+// of those fails there.
 
 /// The macOS Workshop bundle's directory name.
 pub const WORKSHOP_BUNDLE_NAME: &str = "Runvil.app";

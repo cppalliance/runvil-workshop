@@ -4,7 +4,7 @@ This crate is the Workshop desktop app, `runvil-workshop`: a Tauri window around
 
 ## How it ships
 
-The Runvil installer offers Workshop and the gateway as separate components, and on Windows also Speech to Text. The gateway is the release `gateway-pin/pin.json` names, from [cppalliance/runvil-gateway](https://github.com/cppalliance/runvil-gateway).
+The Runvil installer offers Workshop and the gateway as separate components, and on Windows also Speech to Text. The installers are built in [cppalliance/runvil](https://github.com/cppalliance/runvil), from the bundle that `cargo workshop bundle` builds here. The gateway is the release `gateway-pin/pin.json` names, from [cppalliance/runvil-gateway](https://github.com/cppalliance/runvil-gateway).
 
 - Windows: one NSIS setup, built from `installer.nsi`, installs into `%LOCALAPPDATA%\Runvil`. The gateway, `runvil-gateway.exe`, travels inside Workshop's bundle and sits beside `runvil-workshop.exe`.
 - macOS: a Qt IFW installer in a DMG places `Runvil.app` and `Runvil Gateway.app` side by side, in `/Applications/Runvil` by default.
@@ -39,4 +39,4 @@ An update replaces the Plugin directory with Workshop on every platform, because
 
 ## Building
 
-`cargo workshop` builds this app for development around the pinned gateway, and `cargo workshop installer` builds a platform's installer; `crates/build-workshop/README.md` covers both.
+`cargo workshop` builds this app for development around the pinned gateway, and `cargo workshop bundle` builds one platform's Tauri bundle, which that platform's installer is built from in `cppalliance/runvil`; `crates/build-workshop/README.md` covers both.
