@@ -7,7 +7,7 @@
 //! each library to `deps` in the profile's directory whenever it builds
 //! Workshop, and each mode takes them from there. A build copies them
 //! into `plugins` beside Workshop in the target directory. A macOS or
-//! Linux installer has Tauri copy them into Workshop's bundle, so the
+//! Linux bundle build has Tauri copy them into Workshop's bundle, so the
 //! updater, which replaces only that bundle, replaces the libraries with
 //! it. The Windows setup takes them from `deps` itself, in
 //! `crates/workshop/desktop/installer.nsi`.
@@ -15,7 +15,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::installer::System;
+use crate::bundle::System;
 
 // The names Workshop's Plugin directory lookup searches
 // (`crates/workshop/gateway-discovery/src/peer.rs`); a test reads that file
@@ -31,8 +31,8 @@ pub(crate) const APPIMAGE_PLUGIN_PARENT: &str = "usr/lib/runvil";
 
 /// The library of each Plugin Workshop ships, as its `workshop-plugin-*`
 /// crate names it: the std Plugin's, which holds the file tools, and the
-/// bashkit Plugin's, which holds the shell. `installer.nsi` and the two
-/// scripts in `.github/installers` name the same two.
+/// bashkit Plugin's, which holds the shell. `installer.nsi` and the
+/// install tests in `cppalliance/runvil` name the same two.
 pub(crate) const LIBRARIES: [&str; 2] = ["plugin_std", "plugin_bashkit"];
 
 /// The file name Cargo gives each shipped library for `target`, in the

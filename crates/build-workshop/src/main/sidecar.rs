@@ -183,14 +183,33 @@ pub(super) fn stage(workspace_root: &Path, target: &str, source: &Path) -> Resul
         fs::create_dir_all(parent)
             .map_err(|error| format!("cannot create {}: {error}", parent.display()))?;
     }
-    fs::copy(source, &destination).map_err(|error| {
+    copy_file(source, &destination)?;
+    Ok(destination)
+}
+
+/// Copies the Gateway to where it runs as a program beside Workshop. On
+/// Unix the copy gets mode `0755` whatever the source's mode; Windows has
+/// no mode to set.
+pub(super) fn copy_executable(source: &Path, destination: &Path) -> Result<(), String> {
+    copy_file(source, destination)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        fs::set_permissions(destination, fs::Permissions::from_mode(0o755)).map_err(|error| {
+            format!("cannot make {} executable: {error}", destination.display())
+        })?;
+    }
+    Ok(())
+}
+
+fn copy_file(source: &Path, destination: &Path) -> Result<(), String> {
+    fs::copy(source, destination).map(|_| ()).map_err(|error| {
         format!(
             "cannot copy {} to {}: {error}",
             source.display(),
             destination.display()
         )
-    })?;
-    Ok(destination)
+    })
 }
 
 /// Removing a sidecar that was never staged succeeds, so cleanup can run

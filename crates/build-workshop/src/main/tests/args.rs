@@ -1,5 +1,4 @@
-//! Unit tests for the build and installer modes' arguments. The `manifest`
-//! mode's are in `manifest-args.rs`.
+//! Unit tests for the build and bundle modes' arguments.
 
 use super::*;
 
@@ -35,10 +34,10 @@ fn parses_only_the_documented_profile_and_target_options() {
 }
 
 #[test]
-fn parses_the_installer_mode_with_its_gateway_binary() {
+fn parses_the_bundle_mode_with_its_gateway_binary() {
     assert_eq!(
-        parse_arguments(&arguments(&["installer"])).expect("installer"),
-        Request::Installer(InstallerRequest {
+        parse_arguments(&arguments(&["bundle"])).expect("bundle"),
+        Request::Bundle(BundleRequest {
             target: None,
             sign: false,
             gateway_binary: None,
@@ -46,15 +45,15 @@ fn parses_the_installer_mode_with_its_gateway_binary() {
     );
     assert_eq!(
         parse_arguments(&arguments(&[
-            "installer",
+            "bundle",
             "--gateway-binary",
             "gateway/runvil-gateway.exe",
             "--sign",
             "--target",
             "x86_64-pc-windows-msvc",
         ]))
-        .expect("signed installer"),
-        Request::Installer(InstallerRequest {
+        .expect("signed bundle"),
+        Request::Bundle(BundleRequest {
             target: Some("x86_64-pc-windows-msvc".to_owned()),
             sign: true,
             gateway_binary: Some(PathBuf::from("gateway/runvil-gateway.exe")),
@@ -68,19 +67,12 @@ fn rejects_product_features_and_other_unsupported_arguments() {
         arguments(&["--features", "local"]),
         arguments(&["--profile", "dist"]),
         arguments(&["gateway"]),
+        arguments(&["installer"]),
+        arguments(&["manifest"]),
         arguments(&["--sign"]),
-        arguments(&["installer", "--source", "gateway"]),
+        arguments(&["bundle", "--source", "gateway"]),
         // The sidecar mode is gone; the slot is the fetch script's.
         arguments(&["sidecar", "stage", "--target", "x86_64-pc-windows-msvc"]),
-        arguments(&[
-            "manifest",
-            "--assets",
-            "dist",
-            "--base-url",
-            "https://example.invalid",
-            "--gateway-binary",
-            "g",
-        ]),
     ] {
         let error = parse_arguments(&args)
             .expect_err("unsupported argument")
@@ -104,22 +96,22 @@ fn rejects_duplicate_incomplete_or_malformed_options() {
         arguments(&["--target", "../outside"]),
         arguments(&["--gateway-binary"]),
         arguments(&["--gateway-binary", "a", "--gateway-binary", "b"]),
-        arguments(&["installer", "--sign", "--sign"]),
-        arguments(&["installer", "--target", "--sign"]),
-        arguments(&["installer", "--gateway-binary", "--sign"]),
+        arguments(&["bundle", "--sign", "--sign"]),
+        arguments(&["bundle", "--target", "--sign"]),
+        arguments(&["bundle", "--gateway-binary", "--sign"]),
     ] {
         assert!(parse_arguments(&args).is_err(), "{args:?}");
     }
 }
 
 #[test]
-fn installer_release_says_the_installer_always_builds_release() {
-    let error = parse_arguments(&arguments(&["installer", "--target", "x", "--release"]))
-        .expect_err("installer --release")
+fn bundle_release_says_the_bundle_always_builds_release() {
+    let error = parse_arguments(&arguments(&["bundle", "--target", "x", "--release"]))
+        .expect_err("bundle --release")
         .to_string();
 
     assert!(
-        error.starts_with("`installer` always builds the release profile; drop `--release`"),
+        error.starts_with("`bundle` always builds the release profile; drop `--release`"),
         "{error}"
     );
 }

@@ -1,7 +1,7 @@
 //! Unit tests for where both modes find the Gateway: the given binary, the
 //! staged slot and its stub marker, the pin, and the copy beside Workshop.
 
-use super::installer_tests::{node_found, request};
+use super::bundle_tests::{node_found, request};
 use super::*;
 
 fn build_request(target: Option<&str>, gateway_binary: Option<PathBuf>) -> BuildRequest {
@@ -25,22 +25,22 @@ fn a_missing_gateway_names_the_fetch_script_and_runs_no_command() {
     assert!(error.primary.contains(&fetch), "{error}");
     assert!(runner.commands.is_empty());
 
-    let error = build_installer(&request(target, false), environment, &mut runner)
-        .expect_err("no Gateway for the installer");
+    let error = build_bundle(&request(target, false), environment, &mut runner)
+        .expect_err("no Gateway for the bundle");
     assert!(error.primary.contains(&fetch), "{error}");
     assert!(runner.commands.is_empty());
 }
 
 #[test]
-fn a_staged_stub_refuses_the_installer_but_builds_workshop() {
+fn a_staged_stub_refuses_the_bundle_but_builds_workshop() {
     let test_environment = environment();
     let environment = &test_environment.environment;
     let target = "x86_64-unknown-linux-gnu";
     let stub = test_environment.stage_stub(target);
 
     let mut runner = FakeRunner::default();
-    let error = build_installer(&request(target, false), environment, &mut runner)
-        .expect_err("a stub installer");
+    let error =
+        build_bundle(&request(target, false), environment, &mut runner).expect_err("a stub bundle");
     assert!(error.primary.contains("compile-only stub"), "{error}");
     assert!(
         error.primary.contains(&format!(
@@ -83,16 +83,15 @@ fn the_flag_wins_over_the_variable_which_wins_over_the_slot() {
             test_environment.environment.gateway_sidecar = Some(named("variable"));
         }
         let environment = &test_environment.environment;
-        let mut installer_request = request(target, false);
+        let mut bundle_request = request(target, false);
         if flag {
-            installer_request.gateway_binary = Some(named("flag"));
+            bundle_request.gateway_binary = Some(named("flag"));
         }
         // A mismatched version stops the run after the version check.
         let mut runner =
             FakeRunner::with_responses(vec![node_found(), success("runvil-gateway 0.0.1\n")]);
 
-        build_installer(&installer_request, environment, &mut runner)
-            .expect_err("version mismatch");
+        build_bundle(&bundle_request, environment, &mut runner).expect_err("version mismatch");
 
         let program = if expected == "slot" {
             slot
@@ -227,7 +226,7 @@ fn a_host_build_replaces_the_gateway_beside_workshop_without_writing_into_it() {
 }
 
 #[test]
-fn an_unpinned_gateway_refuses_the_installer_before_any_command() {
+fn an_unpinned_gateway_refuses_the_bundle_before_any_command() {
     let test_environment = environment();
     let environment = &test_environment.environment;
     let target = "aarch64-apple-darwin";
@@ -235,7 +234,7 @@ fn an_unpinned_gateway_refuses_the_installer_before_any_command() {
     test_environment.pin("PLACEHOLDER");
     let mut runner = FakeRunner::default();
 
-    let error = build_installer(&request(target, false), environment, &mut runner)
+    let error = build_bundle(&request(target, false), environment, &mut runner)
         .expect_err("an unpinned Gateway");
 
     assert!(error.primary.contains("names no version"), "{error}");

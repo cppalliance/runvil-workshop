@@ -1,14 +1,13 @@
-//! Builds Workshop or each platform's installer around the pinned Gateway
-//! release. For Windows targets the Gateway is Tauri's sidecar inside
-//! Workshop's bundle; macOS and Linux payloads carry it beside Workshop, and
-//! Qt IFW packages them into one installer. The Gateway is its own product
-//! in `cppalliance/runvil-gateway`, so nothing here compiles it. Every
-//! build and every installer carries the libraries of the std Plugin and
-//! the bashkit Plugin in Workshop's Plugin directory: `plugins` beside
-//! Workshop in a build and on Windows, and inside Workshop's bundle on
-//! macOS and Linux (`plugin`). The
-//! `manifest` mode verifies every platform's published files as one release
-//! and writes its `latest.json` and `SHA256SUMS`.
+//! Builds Workshop, or its Tauri bundle for one platform, with the pinned
+//! Gateway release. For Windows targets the Gateway is Tauri's sidecar
+//! inside Workshop's bundle; macOS and Linux install it beside Workshop,
+//! so their bundles do not hold it. The Gateway is its own product in
+//! `cppalliance/runvil-gateway`, so nothing here compiles it. Every build
+//! and every bundle holds the libraries of the std Plugin and the bashkit
+//! Plugin in Workshop's Plugin directory: `plugins` beside Workshop in a
+//! build and on Windows, and inside Workshop's bundle on macOS and Linux
+//! (`plugin`). The installers are built from the bundle in
+//! `cppalliance/runvil`.
 
 use std::ffi::OsString;
 use std::fmt;
@@ -17,14 +16,11 @@ use std::path::PathBuf;
 use std::process::{Child, ExitCode};
 use std::sync::atomic::AtomicUsize;
 use std::sync::{Arc, Mutex};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 #[path = "main/args.rs"]
 mod args;
-#[path = "main/installer.rs"]
-mod installer;
-#[path = "main/manifest.rs"]
-mod manifest;
+#[path = "main/bundle.rs"]
+mod bundle;
 #[path = "main/pipeline.rs"]
 mod pipeline;
 #[path = "main/plugin.rs"]
@@ -35,7 +31,7 @@ mod runner;
 mod sidecar;
 
 use args::{Request, parse_arguments};
-use installer::build_installer;
+use bundle::build_bundle;
 use pipeline::build_workshop;
 use runner::install_cancel_handler;
 
@@ -120,12 +116,6 @@ struct BuildEnvironment {
     signing_key: Option<OsString>,
     /// The Gateway binary `RUNVIL_GATEWAY_SIDECAR` names, when set.
     gateway_sidecar: Option<PathBuf>,
-    /// `QTIFWDIR` and `PATH`, where the macOS and Linux installers find
-    /// Qt IFW.
-    qtifw_dir: Option<OsString>,
-    path: Option<OsString>,
-    /// Today's UTC date, `YYYY-MM-DD`, for the IFW packages' `ReleaseDate`.
-    release_date: String,
 }
 
 /// The environment variable naming the workspace root in place of the
@@ -203,9 +193,6 @@ impl BuildEnvironment {
             Some(value) => Some(PathBuf::from(value)),
             None => None,
         };
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map_err(|error| anyhow::anyhow!("the system clock is before 1970: {error}"))?;
         Ok(Self {
             workspace_root,
             target_root,
@@ -215,9 +202,6 @@ impl BuildEnvironment {
             tauri_cli,
             signing_key,
             gateway_sidecar,
-            qtifw_dir: std::env::var_os("QTIFWDIR"),
-            path: std::env::var_os("PATH"),
-            release_date: installer::ifw::utc_date(now.as_secs()),
         })
     }
 
@@ -303,10 +287,9 @@ fn main() -> ExitCode {
         Request::Build(request) => {
             with_process_runner(|runner| build_workshop(request, &environment, runner))
         }
-        Request::Installer(request) => {
-            with_process_runner(|runner| build_installer(request, &environment, runner))
+        Request::Bundle(request) => {
+            with_process_runner(|runner| build_bundle(request, &environment, runner))
         }
-        Request::Manifest(request) => run_manifest(request, &environment),
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,
@@ -322,23 +305,6 @@ fn with_process_runner(
 ) -> Result<(), String> {
     let cancel = install_cancel_handler().map_err(|error| error.to_string())?;
     build(&mut ProcessRunner::new(cancel)).map_err(|error| error.to_string())
-}
-
-fn run_manifest(
-    request: &args::ManifestRequest,
-    environment: &BuildEnvironment,
-) -> Result<(), String> {
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_err(|error| format!("the system clock is before 1970: {error}"))?;
-    manifest::write(request, &environment.workspace_root, now.as_secs())?;
-    println!(
-        "wrote {} and {} in {}",
-        manifest::MANIFEST,
-        manifest::CHECKSUMS,
-        request.assets.display()
-    );
-    Ok(())
 }
 
 #[cfg(test)]

@@ -1,327 +1,440 @@
-//! Unit tests for the per-platform Tauri configs, the macOS Gateway
-//! bundle, and the macOS installer sequences.
+//! Unit tests for the bundle mode's platform table, its command sequence,
+//! and its preflight.
 
-use serde_json::Value;
-
-use super::ifw_tests::{ifw_built, ifw_commands, ifw_found, installer_path};
-use super::installer_tests::{
-    bundle, bundled, bundled_plugins, collect_signature, expected_commands, node_found, output,
-    request, version_printed,
-};
 use super::*;
-use crate::installer::Platform;
-use crate::installer::bundle::{self, BundleSources};
+use crate::bundle::{Platform, System};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
-fn tauri_config(name: &str) -> Value {
-    let path = repository_root()
-        .join("crates")
-        .join("workshop")
-        .join("desktop")
-        .join(name);
-    let text = std::fs::read_to_string(&path).expect("Tauri config");
-    serde_json::from_str(&text).expect("Tauri config JSON")
+fn release(environment: &BuildEnvironment, target: &str) -> PathBuf {
+    environment.target_root.join(target).join("release")
 }
 
-#[test]
-fn each_platform_config_builds_the_installer_bundle_and_only_windows_carries_the_gateway() {
-    let base = tauri_config("tauri.conf.json");
-    assert_eq!(base["bundle"].get("targets"), None);
-    assert_eq!(base["bundle"].get("externalBin"), None);
-    for (file, target) in [
-        ("tauri.windows.conf.json", "x86_64-pc-windows-msvc"),
-        ("tauri.macos.conf.json", "aarch64-apple-darwin"),
-        ("tauri.linux.conf.json", "x86_64-unknown-linux-gnu"),
-    ] {
-        let config = tauri_config(file);
-        let platform = Platform::from_triple(target).expect("platform");
-        assert_eq!(
-            config["bundle"]["targets"],
-            serde_json::json!([platform.bundle()]),
-            "{file}"
-        );
-        let external = config["bundle"].get("externalBin");
-        if sidecar::bundles_sidecar(target) {
-            assert_eq!(
-                external,
-                Some(&serde_json::json!(["binaries/runvil-gateway"])),
-                "{file}"
+/// The staged Gateway, which the version check runs.
+fn gateway(environment: &BuildEnvironment, target: &str) -> PathBuf {
+    sidecar::sidecar_path(&environment.workspace_root, target)
+}
+
+/// Tauri's bundle directory named `directory` for `target`, which the
+/// bundle mode prints.
+fn bundle_directory(environment: &BuildEnvironment, target: &str, directory: &str) -> PathBuf {
+    release(environment, target).join("bundle").join(directory)
+}
+
+/// The signature Tauri writes beside the updater file `path` under
+/// `--sign`.
+fn signature(path: &Path) -> PathBuf {
+    let mut signature = path.as_os_str().to_owned();
+    signature.push(".sig");
+    PathBuf::from(signature)
+}
+
+pub(super) fn node_found() -> FakeResponse {
+    success("v22.0.0\n")
+}
+
+pub(super) fn version_printed() -> FakeResponse {
+    success(&format!("runvil-gateway {GATEWAY_VERSION}\n"))
+}
+
+/// A Tauri build that writes `files`, with a Gateway in the slot: one the
+/// fetch script staged for any target, or a given one staged for Windows.
+pub(super) fn bundled(
+    sidecar: PathBuf,
+    files: Vec<PathBuf>,
+    response: FakeResponse,
+) -> FakeResponse {
+    act(
+        move || {
+            assert!(
+                sidecar.is_file(),
+                "no Gateway in the slot during the bundle"
             );
-        } else {
-            assert_eq!(external, None, "{file}");
-        }
-    }
-}
-
-#[test]
-fn the_appimage_bundles_the_gstreamer_plugins_beside_the_core_webkit_brings() {
-    let linux = tauri_config("tauri.linux.conf.json");
-    assert_eq!(
-        linux["bundle"]["linux"]["appimage"]["bundleMediaFramework"],
-        Value::Bool(true)
-    );
-}
-
-#[test]
-fn the_gateway_bundle_holds_the_versioned_plist_the_executable_and_the_icon() {
-    let temp = tempfile::tempdir().expect("temporary root");
-    let gateway = temp.path().join("runvil-gateway");
-    write_file(&gateway, b"gateway");
-    let app = temp.path().join("Runvil Gateway.app");
-    let sources = BundleSources::in_workspace(&repository_root());
-    // The guard in `assemble` only checks that the placeholder appears, so
-    // anywhere but the two version keys would defeat it.
-    let template = std::fs::read_to_string(&sources.info_plist).expect("template");
-    assert_eq!(template.matches("@VERSION@").count(), 2, "{template}");
-
-    bundle::assemble(&sources, &gateway, GATEWAY_VERSION, &app).expect("assemble");
-
-    let mut files = Vec::new();
-    collect_files(&app, &app, &mut files);
-    files.sort();
-    assert_eq!(
-        files,
-        [
-            "Contents/Info.plist",
-            "Contents/MacOS/runvil-gateway",
-            "Contents/Resources/icon.icns",
-        ]
-    );
-    let plist =
-        std::fs::read_to_string(app.join("Contents").join("Info.plist")).expect("Info.plist");
-    assert!(
-        plist.contains(&format!(
-            "<key>CFBundleShortVersionString</key>\n    <string>{GATEWAY_VERSION}</string>"
-        )),
-        "{plist}"
-    );
-    assert!(
-        plist.contains(&format!(
-            "<key>CFBundleVersion</key>\n    <string>{GATEWAY_VERSION}</string>"
-        )),
-        "{plist}"
-    );
-    assert!(!plist.contains("@VERSION@"), "{plist}");
-    assert!(
-        plist.contains("<key>CFBundleExecutable</key>\n    <string>runvil-gateway</string>"),
-        "{plist}"
-    );
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt as _;
-        let executable = app.join("Contents").join("MacOS").join("runvil-gateway");
-        let mode = std::fs::metadata(executable)
-            .expect("executable")
-            .permissions()
-            .mode();
-        assert_eq!(mode & 0o777, 0o755);
-    }
-}
-
-#[test]
-fn a_template_without_the_placeholder_or_a_missing_icon_fails_naming_the_file() {
-    let temp = tempfile::tempdir().expect("temporary root");
-    let gateway = temp.path().join("runvil-gateway");
-    write_file(&gateway, b"gateway");
-    let real = BundleSources::in_workspace(&repository_root());
-    let fixed = temp.path().join("Info.plist");
-    write_file(&fixed, b"<plist><string>1.0.0</string></plist>");
-
-    let error = bundle::assemble(
-        &BundleSources {
-            info_plist: fixed.clone(),
-            icon: real.icon.clone(),
+            for file in files {
+                write_file(&file, b"bundle");
+            }
         },
-        &gateway,
-        GATEWAY_VERSION,
-        &temp.path().join("a.app"),
+        response,
     )
-    .expect_err("no placeholder");
-    assert!(error.contains(&fixed.display().to_string()), "{error}");
-    assert!(error.contains("@VERSION@"), "{error}");
-
-    let missing = temp.path().join("icon.icns");
-    let error = bundle::assemble(
-        &BundleSources {
-            info_plist: real.info_plist,
-            icon: missing.clone(),
-        },
-        &gateway,
-        GATEWAY_VERSION,
-        &temp.path().join("b.app"),
-    )
-    .expect_err("no icon");
-    assert!(error.contains(&missing.display().to_string()), "{error}");
 }
 
-pub(super) fn collect_files(root: &Path, directory: &Path, files: &mut Vec<String>) {
-    for entry in std::fs::read_dir(directory).expect("read directory") {
-        let path = entry.expect("entry").path();
-        if path.is_dir() {
-            collect_files(root, &path, files);
-        } else {
-            let relative = path.strip_prefix(root).expect("under root");
-            files.push(relative.to_string_lossy().replace('\\', "/"));
-        }
+/// The library of each Plugin Workshop ships, inside the Workshop bundle
+/// a Tauri build leaves for a macOS or Linux `target`, where the build's
+/// configuration has Tauri copy them.
+pub(super) fn bundled_plugins(environment: &BuildEnvironment, target: &str) -> Vec<PathBuf> {
+    let (plugins, names) = if target.contains("apple") {
+        (
+            bundle_directory(environment, target, "macos")
+                .join("Runvil.app")
+                .join("Contents")
+                .join("Resources")
+                .join("plugins"),
+            ["libplugin_std.dylib", "libplugin_bashkit.dylib"],
+        )
+    } else {
+        (
+            bundle_directory(environment, target, "appimage")
+                .join("Runvil.AppDir")
+                .join("usr")
+                .join("lib")
+                .join("runvil")
+                .join("plugins"),
+            ["libplugin_std.so", "libplugin_bashkit.so"],
+        )
+    };
+    names.iter().map(|name| plugins.join(name)).collect()
+}
+
+/// The `--config` text that has Tauri copy the libraries of `target`'s
+/// release build into Workshop's bundle, or `None` for Windows.
+fn plugin_config(environment: &BuildEnvironment, target: &str) -> Option<String> {
+    let deps = release(environment, target).join("deps");
+    let config = if target.contains("apple") {
+        serde_json::json!({
+            "bundle": { "macOS": { "files": {
+                "Resources/plugins/libplugin_std.dylib": deps.join("libplugin_std.dylib"),
+                "Resources/plugins/libplugin_bashkit.dylib":
+                    deps.join("libplugin_bashkit.dylib"),
+            } } }
+        })
+    } else if target.contains("linux") {
+        serde_json::json!({
+            "bundle": { "linux": { "appimage": { "files": {
+                "/usr/lib/runvil/plugins/libplugin_std.so": deps.join("libplugin_std.so"),
+                "/usr/lib/runvil/plugins/libplugin_bashkit.so":
+                    deps.join("libplugin_bashkit.so"),
+            } } } }
+        })
+    } else {
+        return None;
+    };
+    Some(config.to_string())
+}
+
+/// The commands a bundle build of `target` runs once the target is known:
+/// the `node` check, the Gateway version check, and the Tauri build of
+/// the bundle format `format`.
+fn expected_commands(
+    environment: &BuildEnvironment,
+    target: &str,
+    format: &str,
+    sign: bool,
+) -> Vec<CommandSpec> {
+    let plugin_config = plugin_config(environment, target);
+    let mut tauri = vec![
+        environment.tauri_cli.to_str().expect("UTF-8 CLI"),
+        "build",
+        "--ci",
+        "--target",
+        target,
+        "--bundles",
+        format,
+    ];
+    if !sign {
+        tauri.extend(["--config", "tauri.unsigned.conf.json"]);
+    }
+    // The libraries of this release build go into the bundle, so the
+    // updater replaces them with Workshop.
+    if let Some(config) = &plugin_config {
+        tauri.extend(["--config", config.as_str()]);
+    }
+    vec![
+        command(
+            environment,
+            "selected-node",
+            &["--version"],
+            OutputMode::Capture,
+        ),
+        CommandSpec {
+            program: gateway(environment, target),
+            args: strings(&["--version"]),
+            current_dir: environment.workspace_root.clone(),
+            envs: Vec::new(),
+            output_mode: OutputMode::Capture,
+        },
+        CommandSpec {
+            current_dir: environment
+                .workspace_root
+                .join("crates")
+                .join("workshop")
+                .join("desktop"),
+            envs: target_root_env(environment),
+            ..command(environment, "selected-node", &tauri, OutputMode::Inherit)
+        },
+    ]
+}
+
+pub(super) fn request(target: &str, sign: bool) -> BundleRequest {
+    BundleRequest {
+        target: Some(target.to_owned()),
+        sign,
+        gateway_binary: None,
     }
 }
 
-/// The payload Gateway bundle's `Info.plist`.
-fn payload_plist(payload: &Path) -> String {
-    std::fs::read_to_string(
-        payload
-            .join("Runvil Gateway.app")
-            .join("Contents")
-            .join("Info.plist"),
-    )
-    .expect("Info.plist")
+#[test]
+fn maps_each_supported_triple_to_its_platform() {
+    for (target, system) in [
+        ("x86_64-pc-windows-msvc", System::Windows),
+        ("aarch64-pc-windows-msvc", System::Windows),
+        ("aarch64-apple-darwin", System::MacOs),
+        ("x86_64-apple-darwin", System::MacOs),
+        ("x86_64-unknown-linux-gnu", System::Linux),
+        ("aarch64-unknown-linux-gnu", System::Linux),
+    ] {
+        assert_eq!(
+            Platform::from_triple(target),
+            Ok(Platform { system }),
+            "{target}"
+        );
+    }
+    for target in [
+        "x86_64-pc-windows-gnu",
+        "x86_64-unknown-linux-musl",
+        "i686-pc-windows-msvc",
+        "x86_64-unknown-freebsd",
+        "x86_64-uwp-windows-msvc",
+        "aarch64-apple-ios",
+        "x86_64-unknown-linux-gnux32",
+    ] {
+        let error = Platform::from_triple(target).expect_err(target);
+        assert!(error.contains(target), "{error}");
+    }
 }
 
 #[test]
-fn macos_signed_collects_the_payload_and_publishes_workshop_s_updater() {
+fn windows_unsigned_builds_the_setup_on_the_unsigned_config() {
+    let test_environment = environment();
+    let environment = &test_environment.environment;
+    let target = "x86_64-pc-windows-msvc";
+    let staged = test_environment.stage_gateway(target);
+    let nsis = bundle_directory(environment, target, "nsis");
+    let setup = nsis.join(format!("Runvil_{VERSION}_x64-setup.exe"));
+    // A setup left by an earlier build at another version must not stay
+    // beside this build's.
+    let stale = nsis.join("Runvil_0.0.1_x64-setup.exe");
+    write_file(&stale, b"stale");
+    let mut runner = FakeRunner::with_responses(vec![
+        node_found(),
+        version_printed(),
+        bundled(staged.clone(), vec![setup.clone()], success("")),
+    ]);
+
+    build_bundle(&request(target, false), environment, &mut runner).expect("bundle");
+
+    assert_eq!(
+        runner.commands,
+        expected_commands(environment, target, "nsis", false)
+    );
+    assert!(setup.is_file());
+    assert!(!stale.exists(), "an earlier build's setup was left");
+    assert_eq!(std::fs::read_dir(&nsis).expect("bundle").count(), 1);
+    assert!(staged.is_file(), "a staged Gateway must outlive the build");
+}
+
+#[test]
+fn windows_signed_leaves_the_setup_and_its_signature_in_the_bundle_directory() {
     let mut test_environment = environment();
     set_signing_key(&mut test_environment.environment);
     let environment = &test_environment.environment;
-    let target = "aarch64-apple-darwin";
+    let target = "x86_64-pc-windows-msvc";
     let staged = test_environment.stage_gateway(target);
-    let macos = bundle(environment, target, "macos");
-    let updater = macos.join("Runvil.app.tar.gz");
-    let output_root = output(environment, target);
-    let mut responses = vec![
-        ifw_found(),
+    let nsis = bundle_directory(environment, target, "nsis");
+    let setup = nsis.join(format!("Runvil_{VERSION}_x64-setup.exe"));
+    let mut runner = FakeRunner::with_responses(vec![
+        node_found(),
+        version_printed(),
+        bundled(staged, vec![signature(&setup), setup.clone()], success("")),
+    ]);
+
+    build_bundle(&request(target, true), environment, &mut runner).expect("bundle");
+
+    assert_eq!(
+        runner.commands,
+        expected_commands(environment, target, "nsis", true)
+    );
+    assert!(setup.is_file());
+    assert!(signature(&setup).is_file());
+    assert_eq!(std::fs::read_dir(&nsis).expect("bundle").count(), 2);
+}
+
+#[test]
+fn linux_unsigned_from_the_host_bundles_the_appimage_with_the_plugin_configuration() {
+    let test_environment = environment();
+    let environment = &test_environment.environment;
+    let target = "x86_64-unknown-linux-gnu";
+    let staged = test_environment.stage_gateway(target);
+    let directory = bundle_directory(environment, target, "appimage");
+    let appimage = directory.join(format!("Runvil_{VERSION}_amd64.AppImage"));
+    let stale = directory.join("Runvil_0.0.1_amd64.AppImage");
+    write_file(&stale, b"stale");
+    let mut runner = FakeRunner::with_responses(vec![
+        success(&format!("cargo 1.89.0\nhost: {target}\n")),
         node_found(),
         version_printed(),
         bundled(
             staged.clone(),
             [
                 vec![
-                    macos
-                        .join("Runvil.app")
-                        .join("Contents")
-                        .join("MacOS")
-                        .join("runvil-workshop"),
-                    collect_signature(&updater),
-                    updater,
+                    appimage.clone(),
+                    directory.join("Runvil.AppDir").join("AppRun"),
                 ],
                 bundled_plugins(environment, target),
             ]
             .concat(),
             success(""),
         ),
-    ];
-    responses.extend(ifw_built(environment, target));
-    let mut runner = FakeRunner::with_responses(responses);
+    ]);
 
-    build_installer(&request(target, true), environment, &mut runner).expect("installer");
+    build_bundle(
+        &BundleRequest {
+            target: None,
+            sign: false,
+            gateway_binary: None,
+        },
+        environment,
+        &mut runner,
+    )
+    .expect("bundle");
 
-    let mut expected = expected_commands(environment, target, "app", true);
-    expected.extend(ifw_commands(environment, target));
+    let mut expected = vec![command(
+        environment,
+        "selected-cargo",
+        &["-vV"],
+        OutputMode::Capture,
+    )];
+    expected.extend(expected_commands(environment, target, "appimage", false));
     assert_eq!(runner.commands, expected);
-    assert!(installer_path(environment, target).is_file());
-    let payload = output_root.join("payload");
-    assert!(
-        payload
-            .join("Runvil.app")
-            .join("Contents")
-            .join("MacOS")
-            .join("runvil-workshop")
-            .is_file()
-    );
-    assert_eq!(
-        std::fs::read(
-            payload
-                .join("Runvil Gateway.app")
-                .join("Contents")
-                .join("MacOS")
-                .join("runvil-gateway")
-        )
-        .expect("gateway payload"),
-        b"gateway"
-    );
-    assert!(!payload.join("runvil-gateway").exists());
-    let publish = output_root.join("publish");
-    let app_updater = publish.join(format!("Runvil_{VERSION}_aarch64.app.tar.gz"));
-    assert!(app_updater.is_file());
-    assert!(collect_signature(&app_updater).is_file());
-    assert_eq!(std::fs::read_dir(&publish).expect("publish").count(), 3);
+    assert!(appimage.is_file());
+    assert!(!stale.exists(), "an earlier build's AppImage was left");
     assert!(staged.is_file(), "a staged Gateway must outlive the build");
 }
 
 #[test]
-fn macos_unsigned_publishes_only_the_dmg_around_the_pinned_gateway() {
-    let test_environment = environment();
+fn linux_signed_leaves_the_appimage_and_its_signature_in_the_bundle_directory() {
+    let mut test_environment = environment();
+    set_signing_key(&mut test_environment.environment);
     let environment = &test_environment.environment;
-    let target = "x86_64-apple-darwin";
+    let target = "aarch64-unknown-linux-gnu";
     let staged = test_environment.stage_gateway(target);
-    let app = bundle(environment, target, "macos").join("Runvil.app");
-    let mut responses = vec![
-        ifw_found(),
+    let appimage = bundle_directory(environment, target, "appimage")
+        .join(format!("Runvil_{VERSION}_aarch64.AppImage"));
+    let mut runner = FakeRunner::with_responses(vec![
         node_found(),
         version_printed(),
         bundled(
             staged,
             [
-                vec![app.join("Contents").join("MacOS").join("runvil-workshop")],
+                vec![signature(&appimage), appimage.clone()],
                 bundled_plugins(environment, target),
             ]
             .concat(),
             success(""),
         ),
-    ];
-    responses.extend(ifw_built(environment, target));
-    let mut runner = FakeRunner::with_responses(responses);
+    ]);
 
-    build_installer(&request(target, false), environment, &mut runner).expect("installer");
+    build_bundle(&request(target, true), environment, &mut runner).expect("bundle");
 
-    let mut expected = expected_commands(environment, target, "app", false);
-    expected.extend(ifw_commands(environment, target));
-    assert_eq!(runner.commands, expected);
-    let payload = output(environment, target).join("payload");
-    assert!(
-        payload
-            .join("Runvil.app")
-            .join("Contents")
-            .join("MacOS")
-            .join("runvil-workshop")
-            .is_file()
-    );
-    // The Gateway bundle states the pin's version, not Workshop's.
-    let plist = payload_plist(&payload);
-    assert!(
-        plist.contains(&format!("<string>{GATEWAY_VERSION}</string>")),
-        "{plist}"
-    );
-    assert!(
-        !plist.contains(&format!("<string>{VERSION}</string>")),
-        "{plist}"
-    );
-    assert!(!payload.join("runvil-gateway").exists());
-    // The Plugins' libraries sit inside Workshop's bundle, where the
-    // updater replaces them with Workshop, and nowhere beside it.
-    for library in ["libplugin_std.dylib", "libplugin_bashkit.dylib"] {
-        assert!(
-            payload
-                .join("Runvil.app")
-                .join("Contents")
-                .join("Resources")
-                .join("plugins")
-                .join(library)
-                .is_file(),
-            "{library}"
-        );
-    }
-    assert!(!payload.join("plugins").exists());
-    let installer = installer_path(environment, target);
     assert_eq!(
-        installer.file_name().expect("name"),
-        format!("Runvil_{VERSION}_x86_64-setup.dmg").as_str()
+        runner.commands,
+        expected_commands(environment, target, "appimage", true)
     );
-    assert!(installer.is_file());
+    assert!(appimage.is_file());
+    assert!(signature(&appimage).is_file());
+}
+
+#[test]
+fn macos_unsigned_bundles_the_app_with_the_plugin_configuration() {
+    let test_environment = environment();
+    let environment = &test_environment.environment;
+    let target = "x86_64-apple-darwin";
+    let staged = test_environment.stage_gateway(target);
+    let directory = bundle_directory(environment, target, "macos");
+    let workshop = directory
+        .join("Runvil.app")
+        .join("Contents")
+        .join("MacOS")
+        .join("runvil-workshop");
+    let stale = directory.join("Runvil.app.tar.gz");
+    write_file(&stale, b"stale");
+    let mut runner = FakeRunner::with_responses(vec![
+        node_found(),
+        version_printed(),
+        bundled(
+            staged.clone(),
+            [vec![workshop.clone()], bundled_plugins(environment, target)].concat(),
+            success(""),
+        ),
+    ]);
+
+    build_bundle(&request(target, false), environment, &mut runner).expect("bundle");
+
     assert_eq!(
-        std::fs::read_dir(output(environment, target).join("publish"))
-            .expect("publish")
-            .count(),
-        1
+        runner.commands,
+        expected_commands(environment, target, "app", false)
     );
+    assert!(workshop.is_file());
+    assert!(!stale.exists(), "an earlier build's updater file was left");
+    assert!(staged.is_file(), "a staged Gateway must outlive the build");
+}
+
+#[test]
+fn macos_signed_leaves_the_app_and_its_signed_updater_file_in_the_bundle_directory() {
+    let mut test_environment = environment();
+    set_signing_key(&mut test_environment.environment);
+    let environment = &test_environment.environment;
+    let target = "aarch64-apple-darwin";
+    let staged = test_environment.stage_gateway(target);
+    let directory = bundle_directory(environment, target, "macos");
+    let workshop = directory
+        .join("Runvil.app")
+        .join("Contents")
+        .join("MacOS")
+        .join("runvil-workshop");
+    let updater = directory.join("Runvil.app.tar.gz");
+    let mut runner = FakeRunner::with_responses(vec![
+        node_found(),
+        version_printed(),
+        bundled(
+            staged,
+            [
+                vec![workshop.clone(), signature(&updater), updater.clone()],
+                bundled_plugins(environment, target),
+            ]
+            .concat(),
+            success(""),
+        ),
+    ]);
+
+    build_bundle(&request(target, true), environment, &mut runner).expect("bundle");
+
+    assert_eq!(
+        runner.commands,
+        expected_commands(environment, target, "app", true)
+    );
+    assert!(workshop.is_file());
+    assert!(updater.is_file());
+    assert!(signature(&updater).is_file());
+}
+
+#[test]
+fn preflight_failures_run_no_command() {
+    let mut test_environment = environment();
+    let target = "x86_64-unknown-linux-gnu";
+    test_environment.stage_gateway(target);
+    let mut runner = FakeRunner::default();
+    let mut refusal = |environment: &BuildEnvironment, case: &str| {
+        build_bundle(&request(target, true), environment, &mut runner)
+            .expect_err(case)
+            .primary
+    };
+
+    let error = refusal(&test_environment.environment, "no signing key");
+    assert!(error.contains("TAURI_SIGNING_PRIVATE_KEY set"), "{error}");
+
+    set_signing_key(&mut test_environment.environment);
+    std::fs::remove_file(&test_environment.environment.tauri_cli).expect("remove CLI");
+    let error = refusal(&test_environment.environment, "no CLI");
+    assert!(error.contains("npm ci --prefix crates/workshop"), "{error}");
+    assert!(runner.commands.is_empty());
 }

@@ -1,33 +1,26 @@
-//! `cargo workshop installer`: builds Workshop for one target in release,
-//! bundles it with the pinned Tauri CLI, and collects each platform's
-//! installer payload and, under `--sign`, Workshop's updater files into
-//! `target/installer/<triple>/`. The payload's Gateway is the release
+//! `cargo workshop bundle`: builds Workshop for one target in release and
+//! bundles it with the pinned Tauri CLI. The output is Tauri's bundle
+//! directory for the platform, `<triple>/release/bundle/<nsis|macos|appimage>`
+//! in the target directory: the NSIS setup on Windows, `Runvil.app` on
+//! macOS, and the AppImage on Linux, each with Workshop's updater file and
+//! its signature under `--sign`. The Gateway is the release
 //! `gateway-pin/pin.json` names, staged by `tools/fetch-gateway-sidecar.mjs`
-//! or named by `--gateway-binary`. Windows ends with Tauri's NSIS setup;
-//! macOS and Linux end with a Qt IFW installer built from the payload.
+//! or named by `--gateway-binary`. Only the Windows setup holds the
+//! Gateway, as Workshop's sidecar. The installers are built from this
+//! bundle in `cppalliance/runvil`.
 
 use std::ffi::OsString;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
-use super::args::InstallerRequest;
+use super::args::BundleRequest;
 use super::pipeline::{resolve_target, run_checked, with_staged_sidecar};
 use super::sidecar::{self, GatewaySource};
 use super::{
     BuildEnvironment, BuildError, CommandRunner, CommandSpec, OutputMode, StepError, plugin,
 };
 
-// This file is loaded through a path attribute, so its children need one
-// too to resolve under `installer/`.
-#[path = "installer/bundle.rs"]
-pub(super) mod bundle;
-#[path = "installer/collect.rs"]
-pub(super) mod collect;
-#[path = "installer/ifw.rs"]
-pub(super) mod ifw;
-
-pub(super) const VERSION: &str = env!("CARGO_PKG_VERSION");
 /// Applied to unsigned builds: it turns off `createUpdaterArtifacts`, which
 /// would otherwise demand the release key.
 const UNSIGNED_CONFIG: &str = "tauri.unsigned.conf.json";
@@ -35,12 +28,12 @@ const UNSIGNED_CONFIG: &str = "tauri.unsigned.conf.json";
 /// `node` is found up front instead.
 const NODE_CHECK: &str = "`node --version` (the Tauri CLI runs on `node` from PATH)";
 
-/// The Gateway release an installer carries: its executable and the
+/// The Gateway release a bundle is built with: its executable and the
 /// version `gateway-pin/pin.json` names.
 #[derive(Debug, Eq, PartialEq)]
-pub(super) struct Gateway {
-    pub(super) binary: PathBuf,
-    pub(super) version: String,
+struct Gateway {
+    binary: PathBuf,
+    version: String,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -51,35 +44,24 @@ pub(super) enum System {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) enum Arch {
-    X86_64,
-    Aarch64,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) struct Platform {
     pub(super) system: System,
-    pub(super) arch: Arch,
 }
 
 impl Platform {
     pub(super) fn from_triple(target: &str) -> Result<Self, String> {
         let parts: Vec<&str> = target.split('-').collect();
-        let arch = match parts.first() {
-            Some(&"x86_64") => Some(Arch::X86_64),
-            Some(&"aarch64") => Some(Arch::Aarch64),
-            _ => None,
-        };
+        let supported_arch = matches!(parts.first(), Some(&("x86_64" | "aarch64")));
         let system = match parts.get(1..) {
             Some(["pc", "windows", "msvc"]) => Some(System::Windows),
             Some(["apple", "darwin"]) => Some(System::MacOs),
             Some(["unknown", "linux", "gnu"]) => Some(System::Linux),
             _ => None,
         };
-        match (system, arch) {
-            (Some(system), Some(arch)) => Ok(Self { system, arch }),
+        match system {
+            Some(system) if supported_arch => Ok(Self { system }),
             _ => Err(format!(
-                "installer target `{target}` is not supported; supported: x86_64 or aarch64 \
+                "bundle target `{target}` is not supported; supported: x86_64 or aarch64 \
                  with pc-windows-msvc, apple-darwin, or unknown-linux-gnu"
             )),
         }
@@ -103,8 +85,8 @@ impl Platform {
     }
 }
 
-pub(super) fn build_installer(
-    request: &InstallerRequest,
+pub(super) fn build_bundle(
+    request: &BundleRequest,
     environment: &BuildEnvironment,
     runner: &mut impl CommandRunner,
 ) -> Result<(), BuildError> {
@@ -119,7 +101,7 @@ pub(super) fn build_installer(
         sidecar::gateway_source(given, &environment.workspace_root, &target).map_err(failure)?;
     if source == (GatewaySource::Staged { stub: true }) {
         return Err(failure(format!(
-            "the Gateway staged for {target} at {} is a compile-only stub, which an installer \
+            "the Gateway staged for {target} at {} is a compile-only stub, which a bundle \
              cannot ship; run `node tools/fetch-gateway-sidecar.mjs --target {target}` to stage \
              the release gateway-pin/pin.json names, or pass --gateway-binary",
             sidecar::sidecar_path(&environment.workspace_root, &target).display()
@@ -129,15 +111,11 @@ pub(super) fn build_installer(
         binary: source.binary(&environment.workspace_root, &target),
         version: sidecar::pinned_version(&environment.workspace_root).map_err(failure)?,
     };
-    let ifw = match platform.system {
-        System::Windows => None,
-        System::MacOs | System::Linux => Some(check_ifw(environment, runner)?),
-    };
     run_checked(runner, &node_check_command(environment), NODE_CHECK)?;
     let release = environment.target_root.join(&target).join("release");
     let bundle_directory = release.join("bundle").join(platform.bundle_directory());
-    // A bundle left by an earlier build, possibly at another version, would
-    // make the collection ambiguous.
+    // A bundle left by an earlier build, possibly at another version, must
+    // not sit beside this build's in the directory this mode prints.
     remove_directory(&bundle_directory)?;
     check_gateway_version(runner, environment, &gateway)?;
     // The Windows setup takes the Plugins' libraries from the build
@@ -169,109 +147,11 @@ pub(super) fn build_installer(
         &plugin::library_names(&target),
     )
     .map_err(failure)?;
-    let output = environment.target_root.join("installer").join(&target);
-    collect::collect(
-        &environment.workspace_root,
-        &release,
-        &gateway,
-        platform,
-        request.sign,
-        &output,
-    )
-    .map_err(failure)?;
-    let installer = match &ifw {
-        Some(ifw) => build_ifw_installer(ifw, environment, platform, &gateway, &output, runner)?,
-        None => output
-            .join("publish")
-            .join(collect::installer_name(platform)),
-    };
-    println!("installer: {}", installer.display());
+    println!("bundle: {}", bundle_directory.display());
     Ok(())
 }
 
-fn check_ifw(
-    environment: &BuildEnvironment,
-    runner: &mut impl CommandRunner,
-) -> Result<ifw::Ifw, BuildError> {
-    let cwd = std::env::current_dir()
-        .map_err(|error| failure(format!("cannot read the current directory: {error}")))?;
-    let ifw = ifw::locate(
-        environment.qtifw_dir.as_deref(),
-        environment.path.as_deref(),
-        &cwd,
-    )
-    .map_err(failure)?;
-    let printed = run_checked(
-        runner,
-        &ifw::version_command(&ifw, &environment.workspace_root),
-        &format!(
-            "Qt IFW version check (`{} --version`)",
-            ifw.installerbase.display()
-        ),
-    )?;
-    ifw::check_version(&ifw, &printed).map_err(failure)?;
-    Ok(ifw)
-}
-
-/// Stages the IFW definition around `output`'s payload and builds the
-/// installer into `output/publish/`, returning its path.
-fn build_ifw_installer(
-    ifw: &ifw::Ifw,
-    environment: &BuildEnvironment,
-    platform: Platform,
-    gateway: &Gateway,
-    output: &Path,
-    runner: &mut impl CommandRunner,
-) -> Result<PathBuf, BuildError> {
-    let stage = output.join("ifw");
-    let publish = output.join("publish");
-    ifw::stage(
-        &ifw::Sources::in_workspace(&environment.workspace_root),
-        &output.join("payload"),
-        platform,
-        &environment.release_date,
-        &gateway.version,
-        &stage,
-    )
-    .map_err(failure)?;
-    let built = ifw::binarycreator_output(platform, &stage, &publish);
-    run_checked(
-        runner,
-        &ifw::binarycreator_command(ifw, &stage, &built),
-        "Qt IFW binarycreator",
-    )?;
-    require_output("Qt IFW binarycreator", &built)?;
-    if platform.system != System::MacOs {
-        return Ok(built);
-    }
-    run_checked(
-        runner,
-        &ifw::adhoc_sign_command(&built),
-        "Installer app ad hoc signing (codesign)",
-    )?;
-    let dmg = ifw::dmg_path(platform, &publish);
-    let app_folder = stage.join("dmg");
-    run_checked(
-        runner,
-        &ifw::hdiutil_command(&app_folder, &dmg),
-        "DMG wrap (hdiutil)",
-    )?;
-    require_output("DMG wrap (hdiutil)", &dmg)?;
-    Ok(dmg)
-}
-
-fn require_output(step: &str, path: &Path) -> Result<(), BuildError> {
-    if path.exists() {
-        Ok(())
-    } else {
-        Err(failure(format!(
-            "{step} succeeded but wrote nothing at {}",
-            path.display()
-        )))
-    }
-}
-
-fn preflight(request: &InstallerRequest, environment: &BuildEnvironment) -> Result<(), BuildError> {
+fn preflight(request: &BundleRequest, environment: &BuildEnvironment) -> Result<(), BuildError> {
     if !environment.tauri_cli.is_file() {
         return Err(failure(format!(
             "the Tauri CLI is missing at {}; run `npm ci --prefix crates/workshop` first",
@@ -289,7 +169,7 @@ fn preflight(request: &InstallerRequest, environment: &BuildEnvironment) -> Resu
 }
 
 /// Runs the Gateway's `--version` and requires the version the pin names,
-/// so an installer never ships a Gateway other than the pinned release.
+/// so no bundle is built with a Gateway other than the pinned release.
 fn check_gateway_version(
     runner: &mut impl CommandRunner,
     environment: &BuildEnvironment,

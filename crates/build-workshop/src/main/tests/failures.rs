@@ -1,8 +1,7 @@
 //! Unit tests for failure, cancellation, and sidecar cleanup paths of both
 //! modes. A given Gateway exercises the Windows staging and cleanup.
 
-use super::ifw_tests::ifw_found;
-use super::installer_tests::{bundled, node_found, output, request, version_printed};
+use super::bundle_tests::{bundled, node_found, request, version_printed};
 use super::*;
 
 /// A debug build for `target` with a Gateway given from outside the slot,
@@ -215,7 +214,7 @@ fn a_gateway_other_than_the_pinned_release_fails_naming_the_pin() {
     let mut runner =
         FakeRunner::with_responses(vec![node_found(), success("runvil-gateway 0.0.1\n")]);
 
-    let error = build_installer(&request(target, false), environment, &mut runner)
+    let error = build_bundle(&request(target, false), environment, &mut runner)
         .expect_err("version mismatch");
 
     assert!(
@@ -242,7 +241,7 @@ fn a_failed_version_check_stops_before_the_bundle() {
     let mut runner =
         FakeRunner::with_responses(vec![node_found(), failure("bad CPU type in executable")]);
 
-    let error = build_installer(&request(target, false), environment, &mut runner)
+    let error = build_bundle(&request(target, false), environment, &mut runner)
         .expect_err("version check failure");
 
     assert!(
@@ -263,7 +262,7 @@ fn cancellation_before_the_version_check_runs_no_bundle_and_keeps_the_staged_gat
     let mut runner =
         FakeRunner::with_responses(vec![node_found(), FakeResponse::CanceledBeforeStart]);
 
-    let error = build_installer(&request(target, false), environment, &mut runner)
+    let error = build_bundle(&request(target, false), environment, &mut runner)
         .expect_err("version check cancellation");
 
     assert!(
@@ -275,7 +274,7 @@ fn cancellation_before_the_version_check_runs_no_bundle_and_keeps_the_staged_gat
 }
 
 #[test]
-fn a_failed_unstartable_or_canceled_bundle_collects_nothing_and_removes_only_a_given_gateway() {
+fn a_failed_unstartable_or_canceled_bundle_removes_only_a_given_gateway() {
     let cases = || {
         [
             (
@@ -297,25 +296,20 @@ fn a_failed_unstartable_or_canceled_bundle_collects_nothing_and_removes_only_a_g
         for (response, expected) in cases() {
             let test_environment = environment();
             let environment = &test_environment.environment;
-            let mut installer_request = request(target, false);
+            let mut bundle_request = request(target, false);
             let named = given.then(|| test_environment.given_gateway(target));
             if given {
-                installer_request.gateway_binary.clone_from(&named);
+                bundle_request.gateway_binary.clone_from(&named);
             } else {
                 test_environment.stage_gateway(target);
             }
-            let ifw = (!sidecar::bundles_sidecar(target)).then(ifw_found);
-            let mut runner = FakeRunner::with_responses(
-                ifw.into_iter()
-                    .chain([
-                        node_found(),
-                        version_printed(),
-                        bundled(test_environment.sidecar(target), Vec::new(), response),
-                    ])
-                    .collect(),
-            );
+            let mut runner = FakeRunner::with_responses(vec![
+                node_found(),
+                version_printed(),
+                bundled(test_environment.sidecar(target), Vec::new(), response),
+            ]);
 
-            let error = build_installer(&installer_request, environment, &mut runner)
+            let error = build_bundle(&bundle_request, environment, &mut runner)
                 .expect_err("bundle failure");
 
             assert!(error.primary.contains(expected), "{target}: {error}");
@@ -333,7 +327,6 @@ fn a_failed_unstartable_or_canceled_bundle_collects_nothing_and_removes_only_a_g
                 !given,
                 "{target}: only a given Gateway is removed"
             );
-            assert!(!output(environment, target).exists(), "{target}");
         }
     }
 }
@@ -343,7 +336,7 @@ fn an_unsupported_target_fails_before_building() {
     let test_environment = environment();
     let mut runner = FakeRunner::default();
 
-    let error = build_installer(
+    let error = build_bundle(
         &request("x86_64-unknown-freebsd", false),
         &test_environment.environment,
         &mut runner,
@@ -360,13 +353,13 @@ fn a_missing_node_fails_before_the_gateway_version_check() {
     let environment = &test_environment.environment;
     let target = "x86_64-unknown-linux-gnu";
     test_environment.stage_gateway(target);
-    let mut runner = FakeRunner::with_responses(vec![
-        ifw_found(),
-        FakeResponse::SpawnFailed(io::ErrorKind::NotFound, "program not found"),
-    ]);
+    let mut runner = FakeRunner::with_responses(vec![FakeResponse::SpawnFailed(
+        io::ErrorKind::NotFound,
+        "program not found",
+    )]);
 
-    let error = build_installer(&request(target, false), environment, &mut runner)
-        .expect_err("missing node");
+    let error =
+        build_bundle(&request(target, false), environment, &mut runner).expect_err("missing node");
 
     assert!(
         error
@@ -374,5 +367,5 @@ fn a_missing_node_fails_before_the_gateway_version_check() {
             .contains("the Tauri CLI runs on `node` from PATH) could not start"),
         "{error}"
     );
-    assert_eq!(runner.commands.len(), 2);
+    assert_eq!(runner.commands.len(), 1);
 }

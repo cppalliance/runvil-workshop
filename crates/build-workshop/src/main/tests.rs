@@ -7,28 +7,22 @@ use std::path::Path;
 use tempfile::TempDir;
 
 use super::*;
-use args::InstallerRequest;
+use args::BundleRequest;
 
 #[path = "tests/args.rs"]
 mod args_tests;
 #[path = "tests/bundle.rs"]
 mod bundle_tests;
-#[path = "tests/collect.rs"]
-mod collect_tests;
+#[path = "tests/config.rs"]
+mod config_tests;
 #[path = "tests/failures.rs"]
 mod failures;
 #[path = "tests/gateway.rs"]
 mod gateway_tests;
-#[path = "tests/ifw.rs"]
-mod ifw_tests;
-#[path = "tests/installer.rs"]
-mod installer_tests;
 #[path = "tests/plugin.rs"]
 mod plugin_tests;
 #[path = "tests/sidecar.rs"]
 mod sidecar_tests;
-#[path = "tests/stage.rs"]
-mod stage_tests;
 
 enum FakeResponse {
     Completed(CommandResult),
@@ -293,16 +287,6 @@ fn environment() -> TestEnvironment {
     let tauri_cli = temp.path().join("tauri-cli").join("tauri.js");
     std::fs::create_dir_all(&workspace_root).expect("workspace root");
     write_file(&tauri_cli, b"");
-    let sources = installer::bundle::BundleSources::in_workspace(&repository_root());
-    let copies = installer::bundle::BundleSources::in_workspace(&workspace_root);
-    for (source, copy) in [
-        (sources.info_plist, copies.info_plist),
-        (sources.icon, copies.icon),
-    ] {
-        write_file(&copy, &std::fs::read(source).expect("bundle source"));
-    }
-    ifw_tests::copy_sources(&repository_root(), &workspace_root);
-    let qtifw_dir = Some(ifw_tests::fake_ifw(temp.path()).into_os_string());
     let test_environment = TestEnvironment {
         temp,
         environment: BuildEnvironment {
@@ -314,9 +298,6 @@ fn environment() -> TestEnvironment {
             tauri_cli,
             signing_key: None,
             gateway_sidecar: None,
-            qtifw_dir,
-            path: None,
-            release_date: "2026-10-11".to_owned(),
         },
     };
     test_environment.pin(GATEWAY_VERSION);

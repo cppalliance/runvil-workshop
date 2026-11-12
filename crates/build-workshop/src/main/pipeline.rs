@@ -6,7 +6,6 @@ use std::io;
 use std::path::Path;
 
 use super::args::valid_target_triple;
-use super::installer::collect::copy_executable;
 use super::sidecar::{self, GatewaySource};
 use super::{
     BuildEnvironment, BuildError, BuildRequest, CommandRunner, CommandSpec, OutputMode, Profile,
@@ -75,7 +74,7 @@ pub(super) fn build_workshop(
             let fresh = beside.with_extension("new");
             // One left by a build that stopped mid-copy may be read-only.
             let _ = fs::remove_file(&fresh);
-            copy_executable(&gateway, &fresh)
+            sidecar::copy_executable(&gateway, &fresh)
                 .and_then(|()| {
                     fs::rename(&fresh, &beside).map_err(|error| {
                         format!(

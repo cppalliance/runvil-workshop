@@ -1,12 +1,11 @@
 //! Unit tests for the libraries of the Plugins Workshop ships: the name
 //! Cargo gives each for each target, where a build places them, what a
-//! build that left one out says, and how an installer gets them into
-//! Workshop's bundle.
+//! build that left one out says, how a bundle build gets them into
+//! Workshop's bundle, and the names Workshop's lookup shares.
 
-use super::ifw_tests::ifw_found;
-use super::installer_tests::{bundled, bundled_plugins, node_found, request, version_printed};
+use super::bundle_tests::{bundled, bundled_plugins, node_found, request, version_printed};
 use super::*;
-use crate::installer::System;
+use crate::bundle::System;
 
 #[test]
 fn each_library_is_named_as_cargo_names_it_for_each_target() {
@@ -218,7 +217,7 @@ fn the_bundle_configuration_copies_each_library_into_each_platform_s_bundle() {
 }
 
 #[test]
-fn a_bundle_tauri_left_without_a_library_fails_the_installer_and_collects_nothing() {
+fn a_bundle_tauri_left_without_a_library_fails_the_bundle_build() {
     for (target, directory, tree) in [
         ("aarch64-apple-darwin", "macos", "Runvil.app"),
         ("x86_64-unknown-linux-gnu", "appimage", "Runvil.AppDir"),
@@ -247,13 +246,12 @@ fn a_bundle_tauri_left_without_a_library_fails_the_installer_and_collects_nothin
             let mut files = vec![built];
             files.extend(bundled_plugins(environment, target).into_iter().take(kept));
             let mut runner = FakeRunner::with_responses(vec![
-                ifw_found(),
                 node_found(),
                 version_printed(),
                 bundled(staged, files, success("")),
             ]);
 
-            let error = build_installer(&request(target, false), environment, &mut runner)
+            let error = build_bundle(&request(target, false), environment, &mut runner)
                 .expect_err("the bundle lacks a library");
 
             assert!(
@@ -265,10 +263,6 @@ fn a_bundle_tauri_left_without_a_library_fails_the_installer_and_collects_nothin
             assert!(
                 error.primary.contains(tree) && error.primary.contains(lacks),
                 "{target}: the error names the missing file: {error}"
-            );
-            assert!(
-                !environment.target_root.join("installer").exists(),
-                "{target}: nothing is collected"
             );
         }
     }
@@ -285,4 +279,45 @@ fn a_windows_bundle_is_not_checked_for_a_library_inside_it() {
         ),
         Ok(())
     );
+}
+
+/// The string constant `name` declares in Rust source `text`.
+fn declared(text: &str, name: &str) -> String {
+    let start = text
+        .find(&format!("pub const {name}: &str = \""))
+        .unwrap_or_else(|| panic!("no `{name}` constant"));
+    let value = &text[start..];
+    let value = &value[value.find('"').expect("open quote") + 1..];
+    value[..value.find('"').expect("close quote")].to_owned()
+}
+
+#[test]
+fn the_plugin_directory_names_match_workshop_s_plugin_directory_lookup() {
+    let peer = repository_root()
+        .join("crates")
+        .join("workshop")
+        .join("gateway-discovery")
+        .join("src")
+        .join("peer.rs");
+    let text = std::fs::read_to_string(&peer).expect("peer.rs");
+    for (name, ours) in [
+        ("PLUGIN_DIR_NAME", plugin::PLUGIN_DIR_NAME),
+        ("MACOS_PLUGIN_PARENT", plugin::MACOS_PLUGIN_PARENT),
+        ("APPIMAGE_PLUGIN_PARENT", plugin::APPIMAGE_PLUGIN_PARENT),
+    ] {
+        assert_eq!(declared(&text, name), ours, "{name} in {}", peer.display());
+    }
+    // The same file names the macOS Workshop bundle, and the bundle check
+    // must look for the libraries inside a bundle of that name.
+    let bundle = Path::new("bundle");
+    let library = "libplugin_std.dylib";
+    let error =
+        plugin::check_bundled(System::MacOs, bundle, &[library.to_owned()]).expect_err("no bundle");
+    let inside = bundle
+        .join(declared(&text, "WORKSHOP_BUNDLE_NAME"))
+        .join("Contents")
+        .join(plugin::MACOS_PLUGIN_PARENT)
+        .join(plugin::PLUGIN_DIR_NAME)
+        .join(library);
+    assert!(error.contains(&inside.display().to_string()), "{error}");
 }
