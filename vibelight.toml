@@ -1,0 +1,12 @@
+# Written by vibelight. It chooses the crates a plain `vibelight` outlines:
+# edit `exclude` to change which of them are analyzed.
+workspace = true
+follow = ["**"]
+exclude = [
+    "crates/build-ui",  # build tooling
+    "crates/build-workshop",  # run by the cargo alias `workshop`
+    "crates/build-xtask",  # run by the cargo alias `xtask`
+]
+out = ".vibelight"
+# Doc text that repeats on purpose, so the doc-text leads ignore it.
+boilerplate = ["cargo test -p build-xtask"]
