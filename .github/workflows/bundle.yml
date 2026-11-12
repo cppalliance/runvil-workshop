@@ -1,0 +1,254 @@
+name: Bundle
+run-name: Workshop bundles (${{ github.event_name == 'pull_request' && 'pull request' || 'dispatched' }})
+
+# Builds Workshop's Tauri bundle for the five targets (Windows x64, macOS
+# ARM and Intel, Linux x64 and ARM64) with `cargo workshop bundle`.
+# cppalliance/runvil builds each platform's installer from such a bundle,
+# installs it on a fresh machine of that kind, and publishes the release;
+# nothing here is installed or published.
+#
+# Every build runs with --sign. The key is a run key that prepare generates
+# and nothing trusts, so this workflow reads no secret.
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - .github/workflows/bundle.yml
+      - Cargo.toml
+      - Cargo.lock
+      - crates/build-workshop/**
+      - crates/workshop/desktop/installer.nsi
+      - crates/workshop/desktop/build.rs
+      - crates/workshop/desktop/src/gateway/**
+      - crates/workshop/desktop/*.plist
+      - crates/workshop/desktop/tauri*.conf.json
+      - crates/workshop/desktop/icons/**
+      - crates/workshop/plugin-std/**
+      - crates/workshop/plugin-bashkit/**
+      - crates/workshop/package.json
+      - crates/workshop/package-lock.json
+      - crates/workshop/gateway-discovery/src/**
+      - gateway-pin/**
+      - tools/**
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bundle-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      execution-sha: ${{ steps.identity.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Report the execution identity
+        id: identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha=$(git rev-parse HEAD)
+          [ "$sha" = "$GITHUB_SHA" ] || { echo "checkout $sha does not match event SHA $GITHUB_SHA"; exit 1; }
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "Execution SHA: $sha" | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: crates/workshop/package-lock.json
+
+      # Nothing trusts this key: released Workshops embed only the release
+      # key, and tauri build only warns when the key does not match
+      # plugins.updater.pubkey. So fork pull requests build signed too, and
+      # the key showing in a log or the artifact list costs nothing.
+      - name: Generate the run key
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci --prefix crates/workshop
+          mkdir -p "$RUNNER_TEMP/run-key"
+          node crates/workshop/node_modules/@tauri-apps/cli/tauri.js signer generate --ci -w "$RUNNER_TEMP/run-key/run.key"
+          test -s "$RUNNER_TEMP/run-key/run.key"
+          test -s "$RUNNER_TEMP/run-key/run.key.pub"
+
+      - name: Upload the run key
+        uses: actions/upload-artifact@v4
+        with:
+          name: run-signing-key
+          path: ${{ runner.temp }}/run-key
+          if-no-files-found: error
+          # As long as the bundles, so a rerun of a failed build still
+          # finds it.
+          retention-days: 7
+
+  build:
+    name: build (${{ matrix.platform }})
+    needs: prepare
+    # The slowest installer build so far took about 20 minutes; a hung one
+    # should not hold the run for GitHub's 6-hour default.
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        # `bundle` is Tauri's bundle directory for the platform, and `files`
+        # matches what the build leaves there for an installer: the setup,
+        # the app's updater archive, or the AppImage, each with its
+        # signature.
+        include:
+          - platform: windows
+            runner: windows-latest
+            triple: x86_64-pc-windows-msvc
+            bundle: nsis
+            files: Runvil_*-setup.exe*
+          - platform: macos-arm
+            runner: macos-latest
+            triple: aarch64-apple-darwin
+            bundle: macos
+            files: Runvil.app.tar.gz*
+          - platform: macos-intel
+            runner: macos-latest
+            triple: x86_64-apple-darwin
+            bundle: macos
+            files: Runvil.app.tar.gz*
+          # ubuntu-22.04 keeps the AppImage at the glibc 2.35 floor.
+          - platform: linux
+            runner: ubuntu-22.04
+            triple: x86_64-unknown-linux-gnu
+            bundle: appimage
+            files: Runvil_*.AppImage*
+          # The installer build in cppalliance/runvil runs Linux ARM64 on
+          # 24.04, for the glibc 2.38 its Qt IFW needs, so this build does
+          # too.
+          - platform: linux-arm
+            runner: ubuntu-24.04-arm
+            triple: aarch64-unknown-linux-gnu
+            bundle: appimage
+            files: Runvil_*.AppImage*
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.execution-sha }}
+
+      - name: Report the execution SHA
+        shell: bash
+        run: |
+          actual=$(git rev-parse HEAD)
+          expected="${{ needs.prepare.outputs.execution-sha }}"
+          [ "$actual" = "$expected" ] || { echo "checkout $actual does not match execution SHA $expected"; exit 1; }
+          echo "Execution SHA: $actual"
+
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+
+      - name: Add the Rust target
+        run: rustup target add ${{ matrix.triple }}
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          key: ${{ matrix.triple }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: crates/workshop/package-lock.json
+
+      # The workshop install brings the pinned Tauri CLI.
+      - name: Install UI dependencies
+        shell: bash
+        run: npm ci --prefix crates/workshop
+
+      # The Gateway is its own product: every bundle is built with the
+      # release gateway-pin/pin.json names, which the fetch verifies against
+      # the pin's sha256 and stages where cargo workshop bundle reads it.
+      - name: Stage the pinned Gateway
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node tools/fetch-gateway-sidecar.mjs --target ${{ matrix.triple }}
+
+      # A mirror that does not answer makes apt-get wait for a long time, so
+      # the step fails after 20 minutes. It normally takes under one.
+      - name: Install the Linux build packages
+        timeout-minutes: 20
+        if: startsWith(matrix.platform, 'linux')
+        run: |
+          sudo apt-get update
+          # xdg-utils: the AppImage bundler shells out to xdg-open, which the
+          # ARM runner images do not preinstall (the x64 image does).
+          # https://github.com/tauri-apps/tauri-action/issues/1319
+          # The GStreamer plugins and patchelf: bundleMediaFramework
+          # (tauri.linux.conf.json) copies every installed plugin into the
+          # AppImage beside the GStreamer core WebKitGTK already brings, and
+          # patchelf sets their rpath. Without them the bundled core finds no
+          # microphone, since it cannot load a system's plugins built for
+          # another GStreamer version. https://v2.tauri.app/distribute/appimage/
+          sudo apt-get install -y --no-install-recommends \
+            gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-pulseaudio \
+            gstreamer1.0-alsa patchelf \
+            libwebkit2gtk-4.1-dev libssl-dev librsvg2-dev xdg-utils
+          # Tauri's linuxdeploy is an AppImage; extracting it needs no FUSE,
+          # which the 24.04 image may lack.
+          # https://github.com/AppImage/AppImageKit/wiki/FUSE
+          echo "APPIMAGE_EXTRACT_AND_RUN=1" >> "$GITHUB_ENV"
+
+      # The Gateway version check inside cargo workshop bundle runs the
+      # x86_64 Gateway.
+      - name: Install Rosetta
+        if: matrix.platform == 'macos-intel'
+        run: |
+          if ! arch -x86_64 /usr/bin/true 2>/dev/null; then
+            sudo softwareupdate --install-rosetta --agree-to-license
+          fi
+          arch -x86_64 /usr/bin/true || { echo "Rosetta is required to run the x86_64 Gateway, and it does not run"; exit 1; }
+
+      - name: Download the run key
+        uses: actions/download-artifact@v4
+        with:
+          name: run-signing-key
+          path: ${{ runner.temp }}/run-key
+
+      - name: Build the signed bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAURI_SIGNING_PRIVATE_KEY=$(cat "$RUNNER_TEMP/run-key/run.key")
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD=
+          export TAURI_SIGNING_PRIVATE_KEY TAURI_SIGNING_PRIVATE_KEY_PASSWORD
+          cargo workshop bundle --target ${{ matrix.triple }} --sign
+
+      # The Gateway reaches the setup only through tauri.windows.conf.json's
+      # externalBin; 7-Zip lists an NSIS setup's files.
+      - name: The setup holds the Gateway
+        if: matrix.platform == 'windows'
+        shell: bash
+        run: |
+          setup=$(ls target/x86_64-pc-windows-msvc/release/bundle/nsis/Runvil_*_x64-setup.exe)
+          listing=$(7z l "$setup")
+          grep -F runvil-gateway.exe <<< "$listing" || { echo "$listing"; echo "runvil-gateway.exe is not in $setup"; exit 1; }
+
+      - name: Clean tree
+        shell: bash
+        run: |
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "the bundle build dirtied the repository:"
+            git status --porcelain
+            exit 1
+          fi
+
+      - name: Upload the bundle's files
+        uses: actions/upload-artifact@v4
+        with:
+          name: bundle-${{ matrix.platform }}
+          path: target/${{ matrix.triple }}/release/bundle/${{ matrix.bundle }}/${{ matrix.files }}
+          if-no-files-found: error
+          retention-days: 7
