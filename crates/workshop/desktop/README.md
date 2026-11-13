@@ -29,7 +29,7 @@ Each installer puts two libraries there, each from a repository of its own, pinn
 
 A Workshop with no Plugin directory, or one whose std library does not load, refuses an agent that requires `std` and says that `runvil/std` is not installed. It does the same for `bash` and the bashkit library.
 
-`runvil-workshop --plugins` prints each Plugin the installation loads, as its name and its version, and exits. A library that does not load goes to stderr with the reason. Workshop keeps no log, so this is the way to see why an agent has no file tools or no shell.
+`runvil-workshop --plugins` prints each library Plugin the installation loads, as its name and its version, and exits. The web and mcp Plugins are compiled into Workshop, so the list leaves them out. A library that does not load goes to stderr with the reason. Workshop keeps no log, so this is the way to see why an agent has no file tools or no shell.
 
 ## Updates
 

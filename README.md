@@ -35,7 +35,7 @@ Workshop is a Host: it runs prompts through the Harness and makes every policy d
 
 | Code | Repository | Pinned by |
 |---|---|---|
-| The Engine and the Harness | [cppalliance/runvil-harness](https://github.com/cppalliance/runvil-harness) | commit, in the root `Cargo.toml` |
+| The Engine, the Harness, and the web and mcp Plugins | [cppalliance/runvil-harness](https://github.com/cppalliance/runvil-harness) | commit, in the root `Cargo.toml` |
 | The C Plugin contract | [cppalliance/runvil-plugin-api](https://github.com/cppalliance/runvil-plugin-api) | commit, in the root `Cargo.toml` |
 | The std Plugin, which holds the file tools | [cppalliance/runvil-plugin-std](https://github.com/cppalliance/runvil-plugin-std) | commit, in the root `Cargo.toml` |
 | The bashkit Plugin, which holds the shell | [cppalliance/runvil-plugin-bashkit](https://github.com/cppalliance/runvil-plugin-bashkit) | commit, in the root `Cargo.toml` |

@@ -21,14 +21,14 @@ The script downloads the release asset, checks its SHA-256 against the pin, and 
 
 ## The Plugins Workshop ships
 
-Two Plugins ship with Workshop, each a dynamic library whose code is in a repository of its own, pinned by commit in the root `Cargo.toml`:
+Two library Plugins ship with Workshop, each a dynamic library whose code is in a repository of its own, pinned by commit in the root `Cargo.toml`:
 
 - The std Plugin, from [cppalliance/runvil-plugin-std](https://github.com/cppalliance/runvil-plugin-std), holds the file tools. Its library is `plugin_std.dll`, `libplugin_std.so`, or `libplugin_std.dylib`.
 - The bashkit Plugin, from [cppalliance/runvil-plugin-bashkit](https://github.com/cppalliance/runvil-plugin-bashkit), holds the shell. Its library is `plugin_bashkit.dll`, `libplugin_bashkit.so`, or `libplugin_bashkit.dylib`.
 
 Nothing here builds them by name: the Workshop server depends on `workshop-plugin-std` and `workshop-plugin-bashkit`, so Cargo writes each library to `deps` in the profile's directory whenever it builds Workshop. Each mode takes the libraries from there. A build copies them into `plugins` beside Workshop in the target directory. A macOS or Linux bundle build has Tauri copy them into Workshop's bundle, at `Runvil.app/Contents/Resources/plugins` or at `usr/lib/runvil/plugins` in the AppImage, so the updater, which replaces only that bundle, replaces the libraries with it. The bundle build fails when the bundle Tauri built does not hold each library. A Workshop run with plain `cargo run -p workshop` has no Plugin directory, so its agents have no file tools and no shell; run `cargo workshop` once to place the libraries. Plain Cargo builds do not refresh the placed copies, so run `cargo workshop` again after a pin or the contract version changes.
 
-`LIBRARIES` in `src/main/plugin.rs` names the two. A third Plugin adds its name there and in `crates/workshop/desktop/installer.nsi`, and the install tests in `cppalliance/runvil` add it too.
+`LIBRARIES` in `src/main/plugin.rs` names the two. A third library Plugin adds its name there and in `crates/workshop/desktop/installer.nsi`, and the install tests in `cppalliance/runvil` add it too.
 
 ## Building a bundle
 
