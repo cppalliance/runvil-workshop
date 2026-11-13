@@ -22,8 +22,6 @@ uses:
   - web
 ---
 
-# Steer
-
 ## Conversation
 
 ```lua

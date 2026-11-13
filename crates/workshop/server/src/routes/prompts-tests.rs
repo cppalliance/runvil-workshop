@@ -64,8 +64,6 @@ models:
   fast: {}
 ---
 
-# Full
-
 ## Only
 
 Body text.
@@ -119,7 +117,7 @@ async fn a_full_frontmatter_prompt_answers_every_contract_section() {
 
 #[tokio::test]
 async fn a_broken_yaml_key_answers_parse_frontmatter_with_the_line() {
-    let text = "---\nname: [unclosed\ndescription: x\n---\n\n# T\n\n## S\n\np\n";
+    let text = "---\nname: [unclosed\ndescription: x\n---\n\n## S\n\np\n";
     let body = serde_json::json!({ "name": "broken", "text": text });
     let (status, json) = post_contract(body).await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
@@ -150,7 +148,7 @@ fn an_internal_parse_failure_names_no_prompt_line() {
 
 #[tokio::test]
 async fn a_prompt_without_args_yields_the_implicit_prose_field() {
-    let text = "---\nname: plain\ndescription: no args\n---\n\n# Plain\n\n## S\n\np\n";
+    let text = "---\nname: plain\ndescription: no args\n---\n\n## S\n\np\n";
     let body = serde_json::json!({ "name": "plain", "text": text });
     let (status, json) = post_contract(body).await;
     assert_eq!(status, StatusCode::OK);
@@ -172,8 +170,7 @@ async fn a_prompt_without_args_yields_the_implicit_prose_field() {
 
 #[tokio::test]
 async fn a_lua_error_answers_parse_lua() {
-    let text =
-        "---\nname: badlua\ndescription: bad lua\n---\n\n# Bad\n\n## S\n\n```lua\nreturn (\n```\n";
+    let text = "---\nname: badlua\ndescription: bad lua\n---\n\n## S\n\n```lua\nreturn (\n```\n";
     let body = serde_json::json!({ "name": "badlua", "text": text });
     let (status, json) = post_contract(body).await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
@@ -193,7 +190,7 @@ async fn the_contract_has_no_tools_section() {
 
 #[tokio::test]
 async fn the_dto_serializes_absent_declarations_as_nulls() {
-    let text = "---\nname: nulls\ndescription: absent keys\n---\n\n# Nulls\n\n## S\n\np\n";
+    let text = "---\nname: nulls\ndescription: absent keys\n---\n\n## S\n\np\n";
     let body = serde_json::json!({ "name": "nulls", "text": text });
     let (status, json) = post_contract(body).await;
     assert_eq!(status, StatusCode::OK);

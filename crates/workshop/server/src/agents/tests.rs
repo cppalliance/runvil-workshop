@@ -53,7 +53,7 @@ fn requiring(pack: &str) -> String {
     format!(
         "---\nname: browses\ndescription: needs {pack}\nrunvil: 0\n\
         uses:\n  - {pack}\n---\n\n\
-        # Browses\n\n## Only\n\n```lua\nreturn 'browsed'\n```\n"
+        ## Only\n\n```lua\nreturn 'browsed'\n```\n"
     )
 }
 
@@ -142,7 +142,7 @@ fn mcp_file(text: &str) -> (tempfile::TempDir, std::path::PathBuf) {
 #[tokio::test]
 async fn every_run_holds_the_packs_the_three_plugins_add_and_the_builtins() {
     let lists = "---\nname: lists\ndescription: reads its Packs\nrunvil: 0\n---\n\n\
-        # Lists\n\n## Only\n\n```lua\n\
+        ## Only\n\n```lua\n\
         local names = {}\n\
         for _, id in ipairs({ 'web', 'subagents', 'mcp', 'std', 'user' }) do\n\
           names[#names + 1] = tools.packs.get(id).name\n\
@@ -417,7 +417,7 @@ fn only_a_plugin_directory_with_a_shipped_library_gives_the_host_its_pack() {
 /// A prompt that declares `std` and returns what `std/read` answers for
 /// `/notes.md`, then what `std/write` answers.
 const READS_NOTES: &str = "---\nname: reads\ndescription: reads a file\nrunvil: 0\n\
-    uses:\n  - std\n---\n\n# Reads\n\n## Only\n\n```lua\n\
+    uses:\n  - std\n---\n\n## Only\n\n```lua\n\
     local read = tools.call('std/read', { path = '/notes.md' })\n\
     local write = tools.call('std/write', { path = '/out.md', contents = 'x' })\n\
     return read .. '|' .. write\n```\n";
@@ -480,7 +480,7 @@ async fn without_a_plugin_directory_a_prompt_requiring_a_shipped_pack_is_refused
 /// A prompt that declares `bash` and returns what `bash/shell` answers
 /// for a command that reads `/notes.md` and then writes a file.
 const RUNS_A_COMMAND: &str = "---\nname: shells\ndescription: runs a command\nrunvil: 0\n\
-    uses:\n  - bash\n---\n\n# Shells\n\n## Only\n\n```lua\n\
+    uses:\n  - bash\n---\n\n## Only\n\n```lua\n\
     return tools.call('bash/shell', { command = 'cat /notes.md; echo x > /out.md' })\n```\n";
 
 #[tokio::test]

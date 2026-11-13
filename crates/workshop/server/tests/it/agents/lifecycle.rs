@@ -153,9 +153,9 @@ async fn a_program_that_returns_frames_run_ended_and_a_later_message_is_refused(
         json!({
             "type": "agent_event",
             "index": 2,
-            "event": { "kind": "run_ended", "section": "Echo", "turn": 0, "content": "" },
+            "event": { "kind": "run_ended", "section": "echo", "turn": 0, "content": "" },
         }),
-        "the run's end frames right after the message it returned on, under the prompt's title"
+        "the run's end frames right after the message it returned on, under the prompt's name"
     );
 
     answer(&mut socket, "too late").await;
@@ -183,8 +183,6 @@ runvil: 0
 uses:
   - user
 ---
-
-# Boom
 
 ## Conversation
 

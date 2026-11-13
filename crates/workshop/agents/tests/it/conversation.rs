@@ -115,7 +115,7 @@ async fn an_agent_that_fails_to_parse_reports_a_run_failure_and_records_no_run()
     let conversation = table.open("unclosed");
     let recorder = Arc::new(MemoryRecorder::new());
     let mut errors = conversation.subscribe_errors();
-    let unclosed = "---\nname: unclosed\ndescription: d\nrunvil: 0\n\n# Title\n".to_owned();
+    let unclosed = "---\nname: unclosed\ndescription: d\nrunvil: 0\n\n## Only\n".to_owned();
     let (host, _setup) = run_for(&conversation, Arc::clone(&recorder), unclosed.clone());
     let parse_failure = host
         .parse(AGENT)
@@ -152,7 +152,7 @@ async fn a_completed_report_reports_nothing_and_ends_the_conversation() {
     let recorder = Arc::new(MemoryRecorder::new());
     let mut errors = conversation.subscribe_errors();
 
-    ended(start(&conversation, &recorder, prompt("return 'done'"))).await;
+    ended(start(&conversation, &recorder, prompt("return 'finished'"))).await;
 
     assert!(
         reports(&mut errors).is_empty(),
@@ -160,7 +160,11 @@ async fn a_completed_report_reports_nothing_and_ends_the_conversation() {
     );
     assert_eq!(conversation.state(), SessionState::Closed);
     let run = conversation.run_id().expect("the recorder began the run");
-    assert_eq!(recorder.result(run), Some(Ok("done".to_owned())));
+    assert_eq!(
+        recorder.result(run),
+        Some(Ok("finished".to_owned())),
+        "the result is the text the agent's Lua returned, where a run with no text ends as `done`"
+    );
     assert!(table.get(conversation.id()).is_none());
 }
 

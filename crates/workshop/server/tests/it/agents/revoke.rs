@@ -19,8 +19,6 @@ uses:
   - user
 ---
 
-# Roots
-
 ## Conversation
 
 ```lua

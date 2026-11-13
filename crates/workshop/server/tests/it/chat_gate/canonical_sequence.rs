@@ -203,8 +203,8 @@ async fn gate_a_conversation_round_advertises_the_shell_after_the_file_tools() {
 
 /// GATE 12 - web tools. The chat's `## Conversation` section offers the
 /// `web` Pack, so the rounds its model loop sends advertise the
-/// Pack's fetch and search tools; an offer in the H1 would not reach
-/// them.
+/// Pack's fetch and search tools; an offer above that heading would not
+/// reach them.
 #[tokio::test]
 async fn gate_a_conversation_round_advertises_the_web_tools() {
     let server = spawn_chat_server(&["test-model"]).await;

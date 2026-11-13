@@ -43,7 +43,7 @@ pub(crate) fn prompt(lua: &str) -> String {
     format!(
         "---\nname: fixture\ndescription: a conversation fixture\nrunvil: 0\n\
          uses:\n  - user\n---\n\n\
-         # Fixture\n\n## Conversation\n\n```lua\n{lua}\n```\n"
+         ## Conversation\n\n```lua\n{lua}\n```\n"
     )
 }
 

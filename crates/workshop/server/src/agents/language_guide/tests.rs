@@ -211,8 +211,6 @@ uses:
   - std
 ---
 
-# Sees the mapping
-
 ## Only
 
 ```lua
@@ -253,8 +251,6 @@ description: reads two mapped directories with the shell
 runvil: 0
 uses: [bash]
 ---
-
-# Shells over the mappings
 
 ## Only
 

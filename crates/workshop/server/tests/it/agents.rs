@@ -39,8 +39,6 @@ uses:
   - user
 ---
 
-# Echo
-
 ## Conversation
 
 ```lua
