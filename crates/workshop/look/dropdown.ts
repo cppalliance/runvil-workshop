@@ -27,6 +27,15 @@ export interface DropdownItem {
   onClick: () => void;
 }
 
+/** A titled group of action rows inside a dropdown menu. */
+export interface DropdownGroup {
+  readonly heading: string;
+  readonly items: readonly DropdownItem[];
+}
+
+/** One top-level entry in a dropdown menu: an action row or a titled group. */
+export type DropdownEntry = DropdownItem | DropdownGroup;
+
 /** How one menu opens. Every field is optional; the default is the shared action menu. */
 export interface DropdownOptions {
   /**
@@ -63,7 +72,7 @@ export class DropdownMenu {
   /** Opens a menu of `items` anchored to `trigger`. */
   show(
     trigger: HTMLElement,
-    items: readonly DropdownItem[],
+    items: readonly DropdownEntry[],
     point?: Readonly<{ x: number; y: number }>,
     options: DropdownOptions = {},
   ): void {
@@ -89,7 +98,7 @@ export class DropdownMenu {
     menu.setAttribute("aria-orientation", "vertical");
 
     const buttons: HTMLButtonElement[] = [];
-    for (const item of items) {
+    const appendItem = (parent: HTMLElement, item: DropdownItem): void => {
       const button = document.createElement("button");
       button.type = "button";
       button.className =
@@ -137,7 +146,29 @@ export class DropdownMenu {
         this.close();
       });
       buttons.push(button);
-      menu.appendChild(button);
+      parent.appendChild(button);
+    };
+    for (const entry of items) {
+      if ("heading" in entry) {
+        if (entry.items.length === 0) {
+          continue;
+        }
+        const group = document.createElement("div");
+        group.className = "menu-group";
+        group.setAttribute("role", "group");
+        group.setAttribute("aria-label", entry.heading);
+        const heading = document.createElement("div");
+        heading.className = "menu-heading";
+        heading.setAttribute("aria-hidden", "true");
+        heading.textContent = entry.heading;
+        group.appendChild(heading);
+        for (const item of entry.items) {
+          appendItem(group, item);
+        }
+        menu.appendChild(group);
+      } else {
+        appendItem(menu, entry);
+      }
     }
 
     // The trigger's popup wiring is restored on close, so a trigger that

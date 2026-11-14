@@ -265,6 +265,85 @@ dropdown.show(trigger, [
   plain.dispose();
 }
 
+// --- Headed groups: role=group, inert heading, arrow keys skip heading -------
+
+{
+  let clicks = 0;
+  const grouped = new DropdownMenu();
+  grouped.show(
+    trigger,
+    [
+      { label: "Local", onClick: () => (clicks += 1) },
+      {
+        heading: "ChatGPT plan",
+        items: [
+          { label: "gpt-6.1-sol", onClick: () => (clicks += 1) },
+          { label: "o4-mini", onClick: () => (clicks += 1) },
+        ],
+      },
+    ],
+    undefined,
+    { skin: "composer" },
+  );
+  const menu = [...window.document.querySelectorAll(".menu-popup")].at(-1);
+  const group = menu?.querySelector(".menu-group");
+  const heading = group?.querySelector(".menu-heading");
+  const rows = itemsOf(menu);
+  check(
+    "an ungrouped row precedes the group in DOM order",
+    menu?.children[0] === rows[0] && menu?.children[1] === group,
+  );
+  check(
+    "the group exposes role=group with aria-label",
+    group?.getAttribute("role") === "group" && group.getAttribute("aria-label") === "ChatGPT plan",
+  );
+  check(
+    "the heading renders the title, is aria-hidden, and is neither a menuitem nor focusable",
+    heading?.textContent === "ChatGPT plan" &&
+      heading.getAttribute("aria-hidden") === "true" &&
+      heading.getAttribute("role") === null &&
+      heading.getAttribute("tabindex") === null &&
+      !(heading instanceof window.HTMLButtonElement),
+  );
+  heading?.click();
+  check("clicking the heading runs nothing and keeps the menu open", clicks === 0 && menu?.isConnected === true);
+
+  pressKey(menu, "ArrowDown");
+  check("ArrowDown starts on the ungrouped first item", window.document.activeElement === rows[0]);
+  pressKey(menu, "ArrowDown");
+  check("ArrowDown skips the heading into the group's first item", window.document.activeElement === rows[1]);
+  pressKey(menu, "ArrowUp");
+  check("ArrowUp skips the heading back to the ungrouped item", window.document.activeElement === rows[0]);
+  grouped.dispose();
+}
+
+{
+  const firstGroup = new DropdownMenu();
+  firstGroup.show(trigger, [
+    {
+      heading: "ChatGPT plan",
+      items: [
+        { label: "gpt-6.1-sol", onClick: () => undefined },
+        { label: "o4-mini", onClick: () => undefined },
+      ],
+    },
+  ]);
+  const menu = [...window.document.querySelectorAll(".menu-popup")].at(-1);
+  const rows = itemsOf(menu);
+  check(
+    "when all items belong to a group, the group and its heading stand first in the menu",
+    menu?.firstElementChild?.classList.contains("menu-group") === true &&
+      menu.firstElementChild.firstElementChild?.classList.contains("menu-heading") === true,
+  );
+  pressKey(menu, "ArrowDown");
+  check("ArrowDown from a group-first menu lands on the first menuitem", window.document.activeElement === rows[0]);
+  pressKey(menu, "Home");
+  check("Home skips a leading heading", window.document.activeElement === rows[0]);
+  pressKey(menu, "End");
+  check("End lands on the last menuitem", window.document.activeElement === rows[1]);
+  firstGroup.dispose();
+}
+
 // --- dispose() closes the open menu ------------------------------------------
 
 {
