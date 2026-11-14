@@ -11,12 +11,6 @@
 import { CatalogError, ErrorCatalog } from "./error-catalog";
 import { errorCode, errorMessage, isRecord, readJson, request } from "./json-request";
 
-/** The declared output file. */
-export interface RunContractFile {
-  readonly path: string;
-  readonly description: string;
-}
-
 /** A declared Pack: its one-segment name, such as `web`. */
 export interface RunContractPack {
   readonly id: string;
@@ -71,22 +65,10 @@ export interface RunContract {
   readonly runvil: number | null;
   /** The declared tool-loop cap; null for the runtime default. */
   readonly maxToolIterations: number | null;
-  readonly output: RunContractFile | null;
   readonly uses: readonly RunContractPack[];
   /** The `args` declaration: an object node. */
   readonly args: RunContractSchema;
   readonly models: readonly RunContractModel[];
-}
-
-function parseFile(value: unknown): RunContractFile | null {
-  if (!isRecord(value)) {
-    return null;
-  }
-  const { path, description } = value;
-  if (typeof path !== "string" || typeof description !== "string") {
-    return null;
-  }
-  return { path, description };
 }
 
 function parsePack(value: unknown): RunContractPack | null {
@@ -230,10 +212,6 @@ function parseContract(body: unknown): RunContract | null {
   if (max_tool_iterations !== null && typeof max_tool_iterations !== "number") {
     return null;
   }
-  const output = body.output === null ? null : parseFile(body.output);
-  if (body.output !== null && output === null) {
-    return null;
-  }
   if (!Array.isArray(uses) || !Array.isArray(models)) {
     return null;
   }
@@ -263,7 +241,6 @@ function parseContract(body: unknown): RunContract | null {
     description,
     runvil: runvil ?? null,
     maxToolIterations: max_tool_iterations ?? null,
-    output,
     uses: parsedPacks,
     args,
     models: parsedModels,

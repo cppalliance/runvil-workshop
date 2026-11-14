@@ -127,7 +127,6 @@ function contractFor(name) {
     description: `contract for ${name}`,
     runvil: 1,
     max_tool_iterations: 12,
-    output: { path: "out/verdicts.md", description: "the verdicts" },
     uses: [{ id: "tools/web" }],
     args: {
       type: "object",
@@ -400,12 +399,10 @@ check(
   "the description renders as a read-only row",
   rowText("description")?.textContent.includes("contract for prompt.md") === true,
 );
-const outputField = rowText("output")?.querySelector("input");
-check("the output row is a prefilled text field", outputField?.value === "out/verdicts.md");
 check(
   "the rows are one per contract item, the args in the order the server sends them",
   rows.map((row) => row.querySelector(".ws-run-panel__row-label")?.textContent).join(",") ===
-    "name,description,runvil,output,deep,focus,limit,opts,text,tone,topic,strong,small,fast,max_tool_iterations",
+    "name,description,runvil,deep,focus,limit,opts,text,tone,topic,strong,small,fast,max_tool_iterations",
 );
 const topicRow = rowText("topic");
 check(
@@ -515,7 +512,6 @@ renderContractRows(noArgsRows, {
   description: "",
   runvil: null,
   maxToolIterations: null,
-  output: null,
   uses: [],
   args: { type: "object", properties: {}, additionalProperties: false },
   models: [],
@@ -524,7 +520,7 @@ check(
   "a root with no properties draws no argument row",
   [...noArgsRows.querySelectorAll(".ws-run-panel__row-label")]
     .map((label) => label.textContent)
-    .join(",") === "name,output,max_tool_iterations",
+    .join(",") === "name,max_tool_iterations",
 );
 
 // --- Tree drag: dragstart sets the MIME type; a drop loads the prompt -------

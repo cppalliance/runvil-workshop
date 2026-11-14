@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 use runvil::Prompt;
 use runvil::model::ModelRole;
 use runvil::packs::PackRef;
-use runvil::prompt::{FileDecl, Frontmatter, RoleRequirements};
+use runvil::prompt::{Frontmatter, RoleRequirements};
 
 use crate::error::AppError;
 
@@ -50,8 +50,6 @@ struct ContractResponse {
     runvil: Option<u32>,
     /// The declared tool-loop cap; `null` for the runtime default.
     max_tool_iterations: Option<u32>,
-    /// The declared output file; `null` when absent.
-    output: Option<FileDto>,
     /// The declared Packs, in declaration order.
     uses: Vec<PackDto>,
     /// The `args` declaration as JSON Schema. The root is an object node,
@@ -59,24 +57,6 @@ struct ContractResponse {
     args: serde_json::Value,
     /// The declared model roles, sorted by label.
     models: Vec<ModelDto>,
-}
-
-/// The declared output file.
-#[derive(Debug, Serialize)]
-struct FileDto {
-    /// The store-internal path.
-    path: String,
-    /// The human-readable purpose.
-    description: String,
-}
-
-impl From<&FileDecl> for FileDto {
-    fn from(decl: &FileDecl) -> Self {
-        Self {
-            path: decl.path().to_owned(),
-            description: decl.description().to_owned(),
-        }
-    }
 }
 
 /// A declared Pack.
@@ -125,7 +105,6 @@ impl From<&Frontmatter> for ContractResponse {
             max_tool_iterations: frontmatter
                 .max_tool_iterations()
                 .map(std::num::NonZeroU32::get),
-            output: frontmatter.output().map(FileDto::from),
             uses: frontmatter.uses().iter().map(PackDto::from).collect(),
             args: frontmatter.args().as_json().clone(),
             models: ModelRole::ALL

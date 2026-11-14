@@ -38,7 +38,6 @@ const CONTRACT = {
   description: "Screens papers",
   runvil: 1,
   max_tool_iterations: 12,
-  output: { path: "out/verdicts.md", description: "the verdicts" },
   uses: [{ id: "tools/web" }],
   args: {
     type: "object",
@@ -96,11 +95,6 @@ const json = (body, status = 200) => ({
       contract.description === "Screens papers" &&
       contract.runvil === 1 &&
       contract.maxToolIterations === 12,
-  );
-  check(
-    "the output narrows",
-    contract.output?.path === "out/verdicts.md" &&
-      contract.output?.description === "the verdicts",
   );
   check(
     "uses narrow",
@@ -176,7 +170,6 @@ const json = (body, status = 200) => ({
       description: "",
       runvil: null,
       max_tool_iterations: null,
-      output: null,
       uses: [],
       args: {
         type: "object",
@@ -191,9 +184,7 @@ const json = (body, status = 200) => ({
   const contract = await fetchPromptContract("bare.md", "text");
   check(
     "absent sections narrow to null",
-    contract.runvil === null &&
-      contract.maxToolIterations === null &&
-      contract.output === null,
+    contract.runvil === null && contract.maxToolIterations === null,
   );
   check(
     "the default declaration narrows to one optional string named text",

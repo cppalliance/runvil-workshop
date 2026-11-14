@@ -39,9 +39,6 @@ name: full
 description: does everything
 runvil: 0
 max_tool_iterations: 5
-output:
-  path: out.md
-  description: the result
 uses:
   - web
   - fs
@@ -78,10 +75,6 @@ async fn a_full_frontmatter_prompt_answers_every_contract_section() {
     assert_eq!(json["description"], "does everything");
     assert_eq!(json["runvil"], 0);
     assert_eq!(json["max_tool_iterations"], 5);
-    assert_eq!(
-        json["output"],
-        serde_json::json!({ "path": "out.md", "description": "the result" })
-    );
     // Packs keep declaration order, each sent by its Pack id alone; the
     // map-backed sections are sorted by name or label.
     assert_eq!(
@@ -197,7 +190,6 @@ async fn the_dto_serializes_absent_declarations_as_nulls() {
     let (status, json) = post_contract(body).await;
     assert_eq!(status, StatusCode::OK);
     // Absent declarations serialize as explicit nulls, not missing keys.
-    assert!(json["output"].is_null());
     assert!(json["max_tool_iterations"].is_null());
     assert!(json["runvil"].is_null());
 }

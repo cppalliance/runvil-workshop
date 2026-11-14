@@ -2,7 +2,7 @@
 // pure DOM building over the narrowed RunContract. Every frontmatter
 // key present in the prompt except `uses`, which has nothing to
 // bind, appears as exactly one row: name, description, and runvil
-// read-only; output a text field; one row for each top-level property
+// read-only; one row for each top-level property
 // of the `args` schema, its control chosen by the property's type, with
 // the required marker and the default prefilled; model roles
 // read-only; max_tool_iterations numeric with the runtime-default
@@ -157,10 +157,6 @@ export function renderContractRows(container: HTMLElement, contract: RunContract
   if (contract.runvil !== null) {
     rows.appendChild(row("runvil", [readOnly(String(contract.runvil))]));
   }
-
-  rows.appendChild(
-    row("output", [textField(contract.output?.path ?? "", contract.output?.description ?? "")]),
-  );
 
   const required = contract.args.required ?? [];
   for (const [name, arg] of Object.entries(contract.args.properties ?? {})) {
