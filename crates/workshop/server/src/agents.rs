@@ -39,6 +39,9 @@
 
 mod bindings;
 mod broker;
+
+#[cfg(feature = "test-fixtures")]
+pub use broker::{one_plan_round, plan_model_ids};
 mod gateway;
 mod language_guide;
 mod relay;

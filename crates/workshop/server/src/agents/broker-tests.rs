@@ -37,8 +37,19 @@ use crate::app::test_helpers::spawn_gateway;
 /// A registry holding gateway handles bound to `base_url` under `key`,
 /// with the binding and the guard that keeps the registration alive.
 fn registry_with_gateway(base_url: &str, key: &str) -> (Registry, GatewayBinding, Registration) {
+    registry_with_plan_proof(base_url, key, None)
+}
+
+/// `registry_with_gateway`, and the binding carries `plan_proof` when one
+/// is given.
+fn registry_with_plan_proof(
+    base_url: &str,
+    key: &str,
+    plan_proof: Option<&str>,
+) -> (Registry, GatewayBinding, Registration) {
     let registry = Registry::new();
-    let binding = GatewayBinding::new(base_url, key).expect("the binding builds");
+    let binding = GatewayBinding::new_with_plan_proof(base_url, key, None, plan_proof)
+        .expect("the binding builds");
     let guard = workshop_gateway::register(
         &registry,
         GatewayHandles::new(binding.clone(), GatewayHealth::new()),
@@ -189,6 +200,79 @@ async fn without_a_gateway_registration_rounds_and_model_lists_fail_as_unavailab
         .await
         .expect_err("no gateway, no model list");
     assert_unavailable(&error);
+}
+
+#[tokio::test]
+async fn a_plan_proof_is_one_header_on_a_round_and_on_the_model_list() {
+    use std::sync::{Arc, Mutex};
+
+    const PROOF: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+    let seen: Arc<Mutex<Vec<Vec<String>>>> = Arc::new(Mutex::new(Vec::new()));
+    let slot = Arc::clone(&seen);
+    let app = keyed_gateway("first-model", "first-key").layer(axum::middleware::from_fn(
+        move |headers: HeaderMap, request: axum::extract::Request, next: axum::middleware::Next| {
+            let slot = Arc::clone(&slot);
+            async move {
+                let proofs: Vec<String> = headers
+                    .get_all("x-runvil-plan-proof")
+                    .iter()
+                    .filter_map(|value| value.to_str().ok().map(str::to_owned))
+                    .collect();
+                slot.lock().expect("capture lock").push(proofs);
+                next.run(request).await
+            }
+        },
+    ));
+    let gateway = spawn_gateway(app).await;
+    let (registry, _, _guard) = registry_with_plan_proof(&gateway, "first-key", Some(PROOF));
+    let broker = WorkshopBroker::new(registry);
+    assert_eq!(
+        listed(&broker).await.expect("the model list completes"),
+        ["first-model"]
+    );
+    assert_eq!(
+        round(&broker).await.expect("the round completes"),
+        "from first-model"
+    );
+    let captured = seen.lock().expect("capture lock").clone();
+    assert_eq!(
+        captured,
+        [vec![PROOF.to_owned()], vec![PROOF.to_owned()]],
+        "the model list and the round each send the proof once"
+    );
+    assert!(
+        !format!("{captured:?}").contains("owner"),
+        "only the plan proof is sent"
+    );
+}
+
+#[tokio::test]
+async fn a_binding_without_a_plan_proof_sends_none() {
+    use std::sync::{Arc, Mutex};
+
+    let seen: Arc<Mutex<Vec<usize>>> = Arc::new(Mutex::new(Vec::new()));
+    let slot = Arc::clone(&seen);
+    let app = keyed_gateway("first-model", "first-key").layer(axum::middleware::from_fn(
+        move |headers: HeaderMap, request: axum::extract::Request, next: axum::middleware::Next| {
+            let slot = Arc::clone(&slot);
+            async move {
+                slot.lock()
+                    .expect("capture lock")
+                    .push(headers.get_all("x-runvil-plan-proof").iter().count());
+                next.run(request).await
+            }
+        },
+    ));
+    let gateway = spawn_gateway(app).await;
+    let (registry, _, _guard) = registry_with_gateway(&gateway, "first-key");
+    let broker = WorkshopBroker::new(registry);
+    listed(&broker).await.expect("the model list completes");
+    round(&broker).await.expect("the round completes");
+    assert_eq!(
+        seen.lock().expect("capture lock").as_slice(),
+        &[0, 0],
+        "no proof means no header on either call"
+    );
 }
 
 #[tokio::test]

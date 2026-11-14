@@ -11,6 +11,8 @@ import type { GroupPanelPartInitParameters } from "dockview";
 import { WorkshopPart } from "@workshop/platform/workshop-part";
 import { AgentSessionService } from "../../services/agent-session";
 import { AgentSocket } from "../../services/agent-socket";
+import { CHATGPT_ACCOUNT } from "../../services/chatgpt-account";
+import { getServiceOrNull } from "@workshop/platform/service-registry";
 import type { ModelService } from "../../services/model-service";
 import type { SpeechCaptureService } from "../../services/speech-capture";
 import type { SttStatus } from "../../services/stt-status";
@@ -65,6 +67,12 @@ export class AgentPanel extends WorkshopPart implements AgentPanelHandle {
         }
       }),
     );
+    const account = getServiceOrNull(CHATGPT_ACCOUNT);
+    if (account !== null) {
+      this._register(service.onError((message) => {
+        void account.noteRoundFailure(message);
+      }));
+    }
     socket.connect();
     if (this.focusWhenBuilt) {
       this.focusWhenBuilt = false;

@@ -16,7 +16,7 @@ use axum::http::{HeaderValue, header};
 use axum::middleware::Next;
 use axum::response::Response;
 
-/// The policy value, one header for every response.
+/// The policy value prefix for every main-origin response (before `frame-src`).
 ///
 /// `img-src` keeps `https:` so model-written markdown can still render
 /// remote images. `style-src` keeps `'unsafe-inline'` because the UI's
@@ -24,36 +24,74 @@ use axum::response::Response;
 /// mounts its modules as `<style>` elements through style-mod, and Shiki
 /// emits inline `style` color attributes, which Chromium gates through
 /// the `style-src-attr` fallback to `style-src`. The directives that gate
-/// code execution and connections stay strict.
-const POLICY: &str = "default-src 'self'; script-src 'self'; \
-                      style-src 'self' 'unsafe-inline'; \
-                      connect-src 'self' ipc: http://ipc.localhost ws://127.0.0.1:* \
-                      ws://localhost:* ws://[::1]:*; img-src 'self' data: blob: https:; \
-                      worker-src 'self'; object-src 'none'; base-uri 'none'; \
-                      frame-ancestors 'none'";
+/// code execution and connections stay strict, `frame-src` is pinned
+/// exclusively to the separate config listener's exact origin once bound,
+/// and `frame-ancestors 'none'` forbids framing everywhere on the main origin.
+const POLICY_PREFIX: &str = "default-src 'self'; script-src 'self'; \
+                             style-src 'self' 'unsafe-inline'; \
+                             connect-src 'self' ipc: http://ipc.localhost ws://127.0.0.1:* \
+                             ws://localhost:* ws://[::1]:*; img-src 'self' data: blob: https:; \
+                             worker-src 'self'; object-src 'none'; base-uri 'none'";
 
-/// The same policy with self-framing allowed, for the proxied config SPA
-/// only: the Gateway Config panel iframes `/gateway/config/` from the
-/// workshop window, and `frame-ancestors 'none'` makes Chromium refuse
-/// the frame outright ("refused to connect"). `'self'` admits the
-/// same-origin desktop app and still forbids every foreign framer.
-const POLICY_FRAMEABLE: &str = "default-src 'self'; script-src 'self'; \
-                      style-src 'self' 'unsafe-inline'; \
-                      connect-src 'self' ipc: http://ipc.localhost ws://127.0.0.1:* \
-                      ws://localhost:* ws://[::1]:*; img-src 'self' data: blob: https:; \
-                      worker-src 'self'; object-src 'none'; base-uri 'none'; \
-                      frame-ancestors 'self'";
+const POLICY_NO_FRAMES: &str = "default-src 'self'; script-src 'self'; \
+                                style-src 'self' 'unsafe-inline'; \
+                                connect-src 'self' ipc: http://ipc.localhost ws://127.0.0.1:* \
+                                ws://localhost:* ws://[::1]:*; img-src 'self' data: blob: https:; \
+                                worker-src 'self'; object-src 'none'; base-uri 'none'; \
+                                frame-src 'none'; frame-ancestors 'none'";
 
-/// Middleware stamping `Content-Security-Policy` on every response,
-/// including error envelopes. The proxied config SPA (`/gateway/config/`)
-/// receives the self-frameable variant; everything else forbids framing.
-pub(crate) async fn header(request: Request, next: Next) -> Response {
-    let frameable = request.uri().path().starts_with("/gateway/config/");
-    let mut response = next.run(request).await;
-    response.headers_mut().insert(
-        header::CONTENT_SECURITY_POLICY,
-        HeaderValue::from_static(if frameable { POLICY_FRAMEABLE } else { POLICY }),
+/// Builds the main listener's CSP, pinning `frame-src` solely to `config_origin`.
+pub(crate) fn main_policy_for(config_origin: Option<&str>) -> HeaderValue {
+    match config_origin {
+        Some(origin) => {
+            let policy = format!("{POLICY_PREFIX}; frame-src {origin}; frame-ancestors 'none'");
+            HeaderValue::from_str(&policy)
+                .unwrap_or_else(|_| HeaderValue::from_static(POLICY_NO_FRAMES))
+        }
+        None => HeaderValue::from_static(POLICY_NO_FRAMES),
+    }
+}
+
+/// Builds the CSP stamped on every response from the separate config
+/// listener: restricts framing exclusively to `parent_origin` (the
+/// Workshop window's exact loopback origin) while keeping script/worker
+/// execution scoped to the config origin itself and withholding all
+/// Tauri IPC `connect-src` allowances.
+pub(crate) fn config_policy(parent_origin: &str) -> HeaderValue {
+    let policy = format!(
+        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; \
+         connect-src 'self'; img-src 'self' data: blob:; \
+         worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; \
+         frame-ancestors {parent_origin}"
     );
+    HeaderValue::from_str(&policy).unwrap_or_else(|_| HeaderValue::from_static(POLICY_NO_FRAMES))
+}
+
+/// Middleware stamping `Content-Security-Policy` on every main-listener
+/// response, including error envelopes.
+pub(crate) async fn header(
+    axum::extract::State(state): axum::extract::State<crate::app::AppState>,
+    request: Request,
+    next: Next,
+) -> Response {
+    let mut response = next.run(request).await;
+    response
+        .headers_mut()
+        .insert(header::CONTENT_SECURITY_POLICY, state.main_csp());
+    response
+}
+
+/// Middleware stamping the config listener's CSP on every response,
+/// including error envelopes.
+pub(crate) async fn stamp_config_policy(
+    policy: HeaderValue,
+    request: Request,
+    next: Next,
+) -> Response {
+    let mut response = next.run(request).await;
+    response
+        .headers_mut()
+        .insert(header::CONTENT_SECURITY_POLICY, policy);
     response
 }
 
@@ -93,24 +131,88 @@ mod tests {
                 .headers()
                 .get(header::CONTENT_SECURITY_POLICY)
                 .unwrap_or_else(|| panic!("{uri} is stamped with the policy"));
-            assert_eq!(value, POLICY, "{uri} is stamped with the exact policy");
+            assert_eq!(
+                value, POLICY_NO_FRAMES,
+                "{uri} is stamped with the exact policy"
+            );
         }
     }
 
     #[tokio::test]
-    async fn the_proxied_config_spa_allows_self_framing() {
-        // The Gateway Config panel iframes `/gateway/config/` from the
-        // workshop window; `frame-ancestors 'none'` there makes Chromium
-        // refuse the frame ("refused to connect"). The gateway is
-        // unreachable in this fixture, so the answer is a 502 - the
-        // middleware stamps the header on error envelopes too, which is
-        // the point: the policy must not depend on the proxy's outcome.
-        let response = get("/gateway/config/").await;
+    async fn the_main_router_forbids_framing_everywhere() {
+        for uri in ["/", "/app.js", "/health", "/gateway/config/"] {
+            let response = get(uri).await;
+            let value = response
+                .headers()
+                .get(header::CONTENT_SECURITY_POLICY)
+                .unwrap_or_else(|| panic!("{uri} is stamped with the policy"));
+            assert_eq!(value, POLICY_NO_FRAMES, "{uri} forbids framing");
+        }
+    }
+
+    #[tokio::test]
+    async fn the_main_router_pins_frame_src_exclusively_to_config_origin() {
+        let (state, _state_dir) = state_for("http://127.0.0.1:1");
+        let config_origin = "http://127.0.0.1:49999";
+        state.set_config_origin(config_origin.to_owned());
+        let response = router(state)
+            .oneshot(
+                Request::builder()
+                    .uri("/")
+                    .body(Body::empty())
+                    .expect("static request parts are valid"),
+            )
+            .await
+            .expect("the router is infallible");
         let value = response
             .headers()
             .get(header::CONTENT_SECURITY_POLICY)
-            .expect("the proxied config route is stamped with the policy");
-        assert_eq!(value, POLICY_FRAMEABLE, "self-framing for the panel");
+            .and_then(|v| v.to_str().ok())
+            .expect("main document is stamped with CSP");
+        assert!(
+            value.contains("frame-src http://127.0.0.1:49999"),
+            "main CSP must admit only the bound config origin in frame-src: {value}"
+        );
+        assert!(
+            !value.contains("frame-src http://127.0.0.1:*") && !value.contains("frame-src 'self'"),
+            "main CSP must not use a wildcard or self frame-src: {value}"
+        );
+        assert!(
+            value.contains("frame-ancestors 'none'"),
+            "main CSP must keep frame-ancestors 'none': {value}"
+        );
+    }
+
+    #[tokio::test]
+    async fn the_config_router_pins_frame_ancestors_to_main_origin() {
+        let (state, _state_dir) = state_for("http://127.0.0.1:1");
+        let main_origin = "http://127.0.0.1:49152";
+        let response = crate::app::config_router(state, main_origin)
+            .oneshot(
+                Request::builder()
+                    .uri("/")
+                    .body(Body::empty())
+                    .expect("static request parts are valid"),
+            )
+            .await
+            .expect("the router is infallible");
+        let value = response
+            .headers()
+            .get(header::CONTENT_SECURITY_POLICY)
+            .and_then(|v| v.to_str().ok())
+            .expect("the config response is stamped with CSP");
+        assert!(
+            value.contains("frame-ancestors http://127.0.0.1:49152"),
+            "config CSP must name the exact parent origin: {value}"
+        );
+        assert!(
+            !value.contains("frame-ancestors 'self'"),
+            "config CSP must not allow arbitrary same-origin framing: {value}"
+        );
+        assert!(
+            !value.contains("ipc:") && !value.contains("ipc.localhost"),
+            "config CSP must grant no Tauri IPC sources: {value}"
+        );
     }
 
     #[tokio::test]

@@ -54,6 +54,18 @@ pub(crate) async fn guard(request: Request, next: Next) -> Response {
     next.run(request).await
 }
 
+/// Guard for the separate config listener: allows only `GET`/`HEAD` from
+/// a loopback `Host` (refusing DNS rebinding and state-changing methods).
+pub(crate) async fn config_guard(request: Request, next: Next) -> Response {
+    if !matches!(*request.method(), Method::GET | Method::HEAD) {
+        return axum::http::StatusCode::METHOD_NOT_ALLOWED.into_response();
+    }
+    if !host_is_loopback(&request) {
+        return AppError::CrossSite.into_response();
+    }
+    next.run(request).await
+}
+
 /// Whether the request's authority is loopback, closing DNS rebinding: a
 /// page on a rebound hostname reaches this server with same-origin
 /// Sec-Fetch metadata and a freely chosen content type, but its `Host`
@@ -72,7 +84,7 @@ fn host_is_loopback(request: &Request) -> bool {
             None => return true,
         },
     };
-    is_loopback_origin(&format!("http://{authority}"))
+    workshop_support::is_loopback_http_url(&format!("http://{authority}"))
 }
 
 /// Whether the request declares an `application/json` body, ignoring
@@ -92,24 +104,9 @@ pub(crate) fn origin_allowed(headers: &HeaderMap) -> bool {
     let Some(origin) = headers.get(header::ORIGIN) else {
         return true;
     };
-    origin.to_str().is_ok_and(is_loopback_origin)
-}
-
-/// Whether `origin` parses as an http(s) URL whose host is loopback. The
-/// opaque `null` origin (sandboxed iframes) does not parse and is refused.
-fn is_loopback_origin(origin: &str) -> bool {
-    let Ok(url) = url::Url::parse(origin) else {
-        return false;
-    };
-    if !matches!(url.scheme(), "http" | "https") {
-        return false;
-    }
-    match url.host() {
-        Some(url::Host::Ipv4(address)) => address.is_loopback(),
-        Some(url::Host::Ipv6(address)) => address.is_loopback(),
-        Some(url::Host::Domain(domain)) => domain.eq_ignore_ascii_case("localhost"),
-        None => false,
-    }
+    origin
+        .to_str()
+        .is_ok_and(workshop_support::is_loopback_http_url)
 }
 
 #[cfg(test)]
@@ -135,7 +132,9 @@ mod tests {
             "http://[::1]:7910",
             "https://127.0.0.1",
         ] {
-            assert!(is_loopback_origin(origin), "{origin} must be allowed");
+            let mut headers = HeaderMap::new();
+            headers.insert(header::ORIGIN, origin.parse().expect("valid header"));
+            assert!(origin_allowed(&headers), "{origin} must be allowed");
         }
     }
 
@@ -149,7 +148,9 @@ mod tests {
             "null",
             "",
         ] {
-            assert!(!is_loopback_origin(origin), "{origin} must be refused");
+            let mut headers = HeaderMap::new();
+            headers.insert(header::ORIGIN, origin.parse().expect("valid header"));
+            assert!(!origin_allowed(&headers), "{origin} must be refused");
         }
     }
 

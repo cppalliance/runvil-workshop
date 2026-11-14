@@ -2,9 +2,9 @@
 //! crash-safe atomic writes, the gateway reconnect backoff, route
 //! deadline tiers, `workshop.toml` configuration, the generic retained
 //! broadcast bus the status, catalog, and menu buses are thin wrappers
-//! over, the shared error-message and envelope rendering, and the
-//! JSON state-bucket validator the user-state and workspace buckets
-//! both use.
+//! over, the shared error-message and envelope rendering, the loopback
+//! HTTP URL predicate, and the JSON state-bucket validator the
+//! user-state and workspace buckets both use.
 //!
 //! ## Invariants
 //!
@@ -22,6 +22,7 @@ mod deadline;
 mod error_message;
 #[cfg(feature = "test-fixtures")]
 pub mod fixtures;
+mod loopback;
 mod state_bucket;
 
 pub use atomic::{sweep_orphaned_temps, write_atomic};
@@ -36,4 +37,5 @@ pub use deadline::{
     with_deadline,
 };
 pub use error_message::{LEAK_DETAIL, envelope_response, render_message};
+pub use loopback::is_loopback_http_url;
 pub use state_bucket::{STATE_BUCKET_VALUE_CAP, StateBucketError, StateBucketValue};

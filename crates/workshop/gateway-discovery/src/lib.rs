@@ -51,10 +51,13 @@
 //!   one here. `cargo test -p build-xtask` enforces the product and
 //!   container boundaries.
 //! - The discovery file, the two lock file names, the stale rule, and the
-//!   three HTTP calls are exactly what `CONTRACT.md` says. A behavior change
-//!   here is a contract change, and `CONTRACT.md` changes with it.
-//! - A bearer key is never written to logs or `Debug` output. Every error
-//!   path that could echo a rejected request's status line redacts it.
+//!   three HTTP calls are exactly what `CONTRACT.md` says. The private file
+//!   beside them is read only to pair a plan proof, and it is not an attach
+//!   decision. A behavior change here is a contract change, and
+//!   `CONTRACT.md` changes with it.
+//! - A bearer key is never written to logs or `Debug` output. A plan proof
+//!   and an owner proof are redacted the same way. Every error path that
+//!   could echo a rejected request's status line redacts it.
 //! - Reading the file tolerates fields this crate does not know, so a newer
 //!   Gateway never breaks an older Workshop.
 //! - No writer ships in a production build: the file is the Gateway's to
@@ -69,6 +72,7 @@ mod health;
 mod lock;
 mod paths;
 mod peer;
+mod private;
 mod shutdown;
 mod stale;
 mod sys;
@@ -84,15 +88,16 @@ pub use crate::health::{HealthError, ProbeError, wait_for_health, wait_for_healt
 pub use crate::lock::GatewayInstanceLease;
 pub use crate::lock::{LaunchDecision, LaunchLock, launch_or_attach, launch_or_attach_cancellable};
 pub use crate::paths::{
-    GATEWAY_DISCOVERY_FILE_NAME, GATEWAY_LOG_FILE_NAME, INSTANCE_LOCK_FILE_NAME, LOCK_FILE_NAME,
-    default_run_dir, gateway_discovery_file_path, gateway_log_path, instance_lock_file_path,
-    lock_file_path, run_dir,
+    GATEWAY_DISCOVERY_FILE_NAME, GATEWAY_LOG_FILE_NAME, GATEWAY_PRIVATE_FILE_NAME,
+    INSTANCE_LOCK_FILE_NAME, LOCK_FILE_NAME, default_run_dir, gateway_discovery_file_path,
+    gateway_log_path, gateway_private_file_path, instance_lock_file_path, lock_file_path, run_dir,
 };
 pub use crate::peer::{
     APPIMAGE_PLUGIN_PARENT, GATEWAY_BUNDLE_NAME, MACOS_PLUGIN_PARENT, PLUGIN_DIR_NAME,
     WORKSHOP_APPIMAGE_NAME, WORKSHOP_BUNDLE_NAME, installed_gateway, installed_plugin_dir,
     running_appimage,
 };
+pub use crate::private::{GatewayPrivateFile, plan_proof_for_boot};
 pub use crate::shutdown::{ShutdownError, request_shutdown, request_shutdown_before};
 #[cfg(any(test, feature = "test-fixtures"))]
 #[doc(hidden)]

@@ -1,11 +1,12 @@
 //! workshop-gateway - the gateway subsystem: the bearer-authenticated
 //! HTTP client for the Runvil gateway's OpenAI-compatible API
-//! (`client`), the replaceable endpoint binding (`binding`) and
-//! discovery-file resolution (`resolve`), the reachability heartbeat
-//! (`heartbeat`), the catalog and profile refresh the heartbeat and the
-//! server's profile switch share (`refresh`), and the gateway progress
-//! subscriber (`progress`). Every production module is private, and
-//! the crate root's re-exports are the one public path.
+//! (`client`), the owner-authenticated ChatGPT account caller (`account`),
+//! the replaceable endpoint binding (`binding`) and discovery-file
+//! resolution (`resolve`), the reachability heartbeat (`heartbeat`), the
+//! catalog and profile refresh the heartbeat and the server's profile
+//! switch share (`refresh`), and the gateway progress subscriber
+//! (`progress`). Every production module is private, and the crate root's
+//! re-exports are the one public path.
 //!
 //! ## Invariants
 //!
@@ -15,7 +16,17 @@
 //! - No axum type appears in this crate's public API: the domain code
 //!   speaks `reqwest` statuses and raw bodies, and the server maps them
 //!   to HTTP responses.
-//! - A bearer key is never written to logs or `Debug` output.
+//! - A bearer key is never written to logs or `Debug` output. A plan proof
+//!   is redacted the same way: `GatewayClient` sends it only on
+//!   `GET /v1/models`, and `GatewaySnapshot` carries it so
+//!   `WorkshopBroker` can send it on model rounds as well. An owner proof
+//!   from `gateway-private.json` stays inside [`ChatgptAccount`]: it is
+//!   redacted in `Debug`, checked against `gateway.json`'s `(pid, epoch)`
+//!   boot identity before use, sent only over loopback `127.0.0.1` without
+//!   redirects or proxies, and never returned or carried in
+//!   [`ChatgptAccountError`]; [`ChatgptAccount`] returns the gateway's status
+//!   JSON and enable `(status, body)` replies as received, and the desktop app
+//!   projects both before anything reaches the page.
 //! - Workshop reaches model providers only through the gateway, so no
 //!   vendor credential passes through this crate or reaches the page or
 //!   Lua.
@@ -28,6 +39,7 @@
 //!   family, and its field names are pinned by a golden JSON test so drift
 //!   is caught.
 
+mod account;
 mod binding;
 mod client;
 mod handles;
@@ -39,6 +51,10 @@ mod resolve;
 pub mod test_gateway;
 mod version;
 
+pub use account::{
+    ChatgptAccount, ChatgptAccountError, ChatgptAccountOp, ChatgptHttpFailure, ChatgptJsonFailure,
+    ChatgptReadTarget, ChatgptSidecarFailure,
+};
 pub use binding::{GatewayBinding, GatewayPublicationError, GatewaySnapshot, GatewayUpdater};
 pub use client::{
     ForwardedResponse, GatewayClient, GatewayError, GatewayRealtimeSocket, GatewayResponse,

@@ -68,7 +68,10 @@ impl WorkshopBroker {
         {
             return Ok(broker.clone());
         }
-        let broker = GatewayBroker::new(gateway.endpoint, gateway.key);
+        let mut broker = GatewayBroker::new(gateway.endpoint, gateway.key);
+        if let Some(proof) = gateway.plan_proof {
+            broker = broker.with_plan_proof(proof);
+        }
         *cached = Some((gateway.generation, broker.clone()));
         Ok(broker)
     }
@@ -196,6 +199,104 @@ impl RunBroker {
             inner,
             conversation,
         }
+    }
+}
+
+/// Model ids from one [`WorkshopBroker`] pointed at this Gateway.
+///
+/// # Errors
+/// Returns an error when the temporary broker registration cannot be created
+/// or when fetching the Gateway's model catalog fails.
+#[cfg(feature = "test-fixtures")]
+pub async fn plan_model_ids(
+    base_url: &str,
+    api_key: &str,
+    plan_proof: Option<&str>,
+) -> Result<Vec<String>, String> {
+    let held = HeldBroker::new(base_url, api_key, plan_proof)?;
+    let catalog = held
+        .broker
+        .models()
+        .await
+        .map_err(|error| error.to_string())?;
+    Ok(catalog
+        .models()
+        .iter()
+        .map(|model| model.id().name().to_owned())
+        .collect())
+}
+
+/// One text round on `model` through [`WorkshopBroker`].
+///
+/// # Errors
+/// Returns an error when the temporary broker registration cannot be created,
+/// when `model` is not a valid gateway model id, or when the completion round
+/// fails or returns a non-text result.
+#[cfg(feature = "test-fixtures")]
+pub async fn one_plan_round(
+    base_url: &str,
+    api_key: &str,
+    plan_proof: Option<&str>,
+    model: &str,
+    prompt: &str,
+) -> Result<String, String> {
+    use std::num::NonZeroU32;
+
+    use runvil::ids::RoundId;
+    use runvil::model::{CompletionResult, ModelId, ModelInvocation};
+
+    let held = HeldBroker::new(base_url, api_key, plan_proof)?;
+    let model_id = ModelId::gateway(model).map_err(|_| "the model name is not valid".to_owned())?;
+    let Some(window) = NonZeroU32::new(4096) else {
+        return Err("the round's context window is zero".to_owned());
+    };
+    let completion = held
+        .broker
+        .chat(
+            ModelBinding::new(
+                "writer",
+                "the round's model",
+                model_id,
+                ModelInvocation::new(),
+                window,
+            ),
+            vec![Message::user(prompt)],
+            Vec::new(),
+            CompletionOptions::new(model),
+            Round::new(RoundId::new(1), ReplyOrigin::Infer),
+        )
+        .await
+        .map_err(|error| error.to_string())?;
+    match completion.result() {
+        CompletionResult::Text(text) => Ok(text.clone()),
+        other => Err(format!("the round did not reply with text: {other:?}")),
+    }
+}
+
+/// A broker whose gateway registration lives as long as this value.
+#[cfg(feature = "test-fixtures")]
+struct HeldBroker {
+    broker: WorkshopBroker,
+    _guard: workshop_registry::Registration,
+}
+
+#[cfg(feature = "test-fixtures")]
+impl HeldBroker {
+    fn new(base_url: &str, api_key: &str, plan_proof: Option<&str>) -> Result<Self, String> {
+        use workshop_gateway::{GatewayBinding, GatewayHandles, GatewayHealth};
+        use workshop_registry::Registry;
+
+        let registry = Registry::new();
+        let binding = GatewayBinding::new_with_plan_proof(base_url, api_key, None, plan_proof)
+            .map_err(|error| error.to_string())?;
+        let guard = workshop_gateway::register(
+            &registry,
+            GatewayHandles::new(binding, GatewayHealth::new()),
+        );
+        Ok(Self {
+            broker: WorkshopBroker::new(registry),
+            _guard: guard,
+        })
     }
 }
 

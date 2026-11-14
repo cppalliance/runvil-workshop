@@ -335,7 +335,41 @@ export async function bootWorkbench(name, run, options = {}) {
   });
   // The entry's name is content-hashed (dist/bundle/app-<hash>.js); the
   // build's manifest maps the logical name to it.
+  const shadowRoots = new Map();
+  if (options.captureShadows === true) {
+    const attach = window.Element.prototype.attachShadow;
+    window.Element.prototype.attachShadow = function attachAndRemember(init) {
+      const root = attach.call(this, init);
+      shadowRoots.set(this, root);
+      return root;
+    };
+  }
   const manifest = JSON.parse(await readFile(path.join(distDir, "manifest.json"), "utf8"));
+  if (options.frozenInvoke === true) {
+    // Tauri 2.11's invoke is a non-configurable property. The rest of the
+    // object is what the bundled window helpers read before any command.
+    const internals = {
+      metadata: {
+        currentWindow: { label: "main" },
+        currentWebview: { label: "main" },
+      },
+      transformCallback: () => 1,
+      unregisterCallback: () => undefined,
+    };
+    const signedOut = {
+      state: "signed_out",
+      email: null,
+      planGranted: false,
+      detail: "Signed out",
+      planModels: [],
+    };
+    const accountView = options.accountView ?? signedOut;
+    Object.defineProperty(internals, "invoke", {
+      value: (command) =>
+        Promise.resolve(String(command).startsWith("chatgpt_") ? accountView : null),
+    });
+    Object.defineProperty(window, "__TAURI_INTERNALS__", { value: internals });
+  }
   await import(pathToFileURL(path.join(distDir, manifest["app.js"])).href);
   const trackerSeam = await import(pathToFileURL(seams.__setDisposableTracker).href);
   const lifecycle = { setDisposableTracker: trackerSeam.__setDisposableTracker };
@@ -496,6 +530,7 @@ export async function bootWorkbench(name, run, options = {}) {
     registeredServiceIds,
     sleep,
     failures,
+    shadowRoots,
   };
 
   try {

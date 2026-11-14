@@ -48,6 +48,19 @@ pub(super) async fn select_model(
     }
 }
 
+/// Re-reads the Gateway catalog and pushes it to every window.
+pub(super) async fn refresh_models(
+    state: &WorkshopSocketState,
+    id: Option<&serde_json::Value>,
+    socket: &mut WebSocket,
+) {
+    let Some(snapshot) = state.gateway_snapshot() else {
+        send_error(socket, id, "the gateway is not connected").await;
+        return;
+    };
+    refresh_catalog(snapshot.client(), &state.push()).await;
+}
+
 /// Handles a `switch_profile` frame: `begin_switch` publishes the
 /// pending snapshot (`switching` set, `chat_ready` false) before this
 /// returns, and the selection itself runs on its own task. A refusal (a

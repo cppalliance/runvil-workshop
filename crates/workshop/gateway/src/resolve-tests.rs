@@ -307,6 +307,9 @@ fn the_report_names_the_winning_source_and_a_removed_file() {
         base_url: "http://127.0.0.1:4000".to_owned(),
         api_key: "k".to_owned(),
         identity: None,
+        plan_proof: Some(
+            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_owned(),
+        ),
         source: GatewaySource::Config,
         stale: Some(StaleReason::KeyRejected),
     };
@@ -327,6 +330,11 @@ fn the_report_names_the_winning_source_and_a_removed_file() {
         "the endpoint and its source are named: {}",
         connecting.description
     );
+    let proof = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+    assert!(
+        !stale_frame.description.contains(proof) && !connecting.description.contains(proof),
+        "the plan proof is not a status frame"
+    );
 }
 
 #[test]
@@ -335,9 +343,16 @@ fn debug_redacts_the_api_key() {
         base_url: "http://127.0.0.1:4000".to_owned(),
         api_key: "secret-key".to_owned(),
         identity: None,
+        plan_proof: Some(
+            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_owned(),
+        ),
         source: GatewaySource::Config,
         stale: None,
     };
     let rendered = format!("{resolved:?}");
     assert!(!rendered.contains("secret-key"), "key leaked: {rendered}");
+    assert!(
+        !rendered.contains("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"),
+        "plan proof leaked: {rendered}"
+    );
 }

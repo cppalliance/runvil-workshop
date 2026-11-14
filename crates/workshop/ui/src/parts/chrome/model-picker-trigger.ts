@@ -12,15 +12,15 @@ import "./model-picker-trigger.css";
 
 import { ICON_CHEVRON_DOWN } from "@workshop/look/icons";
 import { Disposable, toDisposable } from "@workshop/platform/lifecycle";
+import { PLAN_TAG, SIGN_IN_LABEL, type ChatgptAccount } from "../../services/chatgpt-account";
 import type { ModelService } from "../../services/model-service";
-import { DropdownMenu } from "@workshop/look/dropdown";
-import type { DropdownItem } from "@workshop/look/dropdown";
+import { DropdownMenu, type DropdownEntry, type DropdownItem } from "@workshop/look/dropdown";
 
 /** The trigger label when no model is selected. */
 const NO_SELECTION_LABEL = "Select model";
 
 /** The single menu row shown when the catalog is empty. */
-const EMPTY_CATALOG_LABEL = "No models found";
+const EMPTY_CATALOG_LABEL = SIGN_IN_LABEL;
 
 /** The trigger's tooltip. */
 const TRIGGER_TITLE = "Switch Model (Ctrl+/)";
@@ -38,7 +38,10 @@ export class ModelPickerTrigger extends Disposable {
   private readonly dropdown: DropdownMenu;
   private readonly labelSlot: HTMLSpanElement;
 
-  constructor(private readonly modelService: ModelService) {
+  constructor(
+    private readonly modelService: ModelService,
+    private readonly account?: ChatgptAccount,
+  ) {
     super();
 
     this.element = document.createElement("button");
@@ -80,14 +83,38 @@ export class ModelPickerTrigger extends Disposable {
   private showMenu(): void {
     const models = this.modelService.models;
     const current = this.modelService.current;
-    const items: DropdownItem[] =
+    const planIds = new Set(this.account?.snapshot.planModels ?? []);
+    const toItem = (id: string): DropdownItem => ({
+      label: id,
+      selected: id === current,
+      onClick: () => this.select(id),
+    });
+    const otherItems: DropdownItem[] = [];
+    const planItems: DropdownItem[] = [];
+    for (const model of models) {
+      if (planIds.has(model.id)) {
+        planItems.push(toItem(model.id));
+      } else {
+        otherItems.push(toItem(model.id));
+      }
+    }
+    const catalogEntries: DropdownEntry[] = [...otherItems];
+    // See the comment on PLAN_TAG for OpenAI's in-use guideline.
+    if (planItems.length > 0) {
+      catalogEntries.push({ heading: PLAN_TAG, items: planItems });
+    }
+    const signIn: DropdownItem = {
+      label: EMPTY_CATALOG_LABEL,
+      onClick: () => {
+        void this.account?.signIn();
+      },
+    };
+    const items: DropdownEntry[] =
       models.length === 0
-        ? [{ label: EMPTY_CATALOG_LABEL, onClick: () => {} }]
-        : models.map((model) => ({
-            label: model.id,
-            selected: model.id === current,
-            onClick: () => this.select(model.id),
-          }));
+        ? [signIn]
+        : this.account !== undefined && !this.account.signedIn
+          ? [signIn, ...catalogEntries]
+          : catalogEntries;
     this.dropdown.show(this.element, items, undefined, {
       skin: "composer",
       className: "ws-model-menu",

@@ -68,6 +68,14 @@ fn validated_gateway_fixture_process() {
     run_validated_gateway_fixture_process();
 }
 
+/// Model ids read through the server's Workshop broker.
+#[cfg(feature = "test-fixtures")]
+pub use crate::agents::plan_model_ids;
+
+/// One text round through the server's Workshop broker.
+#[cfg(feature = "test-fixtures")]
+pub use crate::agents::one_plan_round;
+
 /// Spawns a Workshop test server against the explicit configured Gateway.
 #[cfg(feature = "test-fixtures")]
 pub fn spawn(config: crate::Config) -> Result<crate::ServerHandle, crate::SpawnError> {

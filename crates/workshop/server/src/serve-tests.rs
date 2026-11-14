@@ -231,6 +231,120 @@ async fn an_idle_shutdown_completes_gracefully_without_spending_the_window() {
     );
 }
 
+/// Idle HTTP listeners must not allow `shutdown()` to report `Graceful`
+/// while a registered subsystem cleanup handle is still suspended.
+#[tokio::test]
+async fn a_held_registered_cleanup_delays_graceful_shutdown_until_released() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::{Arc, Mutex};
+    use workshop_registry::{BackgroundTaskAdapter, ShutdownHandle};
+
+    let (started_tx, started_rx) = std::sync::mpsc::channel();
+    let (release_tx, release_rx) = tokio::sync::oneshot::channel::<()>();
+    let finished = Arc::new(AtomicBool::new(false));
+    let started_slot = Arc::new(Mutex::new(Some(started_tx)));
+    let release_slot = Arc::new(Mutex::new(Some(release_rx)));
+    let task = Arc::new(BackgroundTaskAdapter::new({
+        let finished = Arc::clone(&finished);
+        move || {
+            let started = started_slot
+                .lock()
+                .expect("started lock")
+                .take()
+                .expect("task spawns once");
+            let release = release_slot
+                .lock()
+                .expect("release lock")
+                .take()
+                .expect("task spawns once");
+            let finished = Arc::clone(&finished);
+            ShutdownHandle::new(move || async move {
+                let _ = started.send(());
+                let _ = release.await;
+                finished.store(true, Ordering::Release);
+            })
+        }
+    }));
+
+    let dir = tempfile::TempDir::new().expect("tempdir");
+    let server = spawn_with_task(test_config("127.0.0.1:0", dir.path()), SHUTDOWN_GRACE, task)
+        .expect("server spawns");
+    let shutdown = std::thread::spawn(move || server.shutdown());
+
+    tokio::task::spawn_blocking(move || {
+        started_rx
+            .recv_timeout(Duration::from_secs(2))
+            .expect("registered cleanup began");
+    })
+    .await
+    .expect("wait task completes");
+
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    assert!(
+        !finished.load(Ordering::Acquire),
+        "cleanup should still be held"
+    );
+    assert!(
+        !shutdown.is_finished(),
+        "idle listeners must not report Graceful while registered cleanup is held"
+    );
+
+    release_tx.send(()).expect("release sends");
+    let outcome = tokio::task::spawn_blocking(move || shutdown.join().expect("shutdown thread"))
+        .await
+        .expect("join completes")
+        .expect("graceful shutdown succeeds");
+    assert_eq!(
+        outcome,
+        Termination::Graceful,
+        "cleanup released before the grace window must finish gracefully"
+    );
+    assert!(
+        finished.load(Ordering::Acquire),
+        "cleanup finished before graceful shutdown reported"
+    );
+}
+
+/// A registered cleanup handle that outlasts the grace window is abandoned
+/// by the watchdog and reported as `Forced`, even when both listeners are idle.
+#[tokio::test]
+async fn a_held_registered_cleanup_past_the_grace_window_forces_shutdown() {
+    use std::sync::{Arc, Mutex};
+    use workshop_registry::{BackgroundTaskAdapter, ShutdownHandle};
+
+    let (_hold_tx, hold_rx) = tokio::sync::oneshot::channel::<()>();
+    let hold_slot = Arc::new(Mutex::new(Some(hold_rx)));
+    let task = Arc::new(BackgroundTaskAdapter::new(move || {
+        let hold = hold_slot
+            .lock()
+            .expect("hold lock")
+            .take()
+            .expect("task spawns once");
+        ShutdownHandle::new(move || async move {
+            let _ = hold.await;
+        })
+    }));
+
+    let dir = tempfile::TempDir::new().expect("tempdir");
+    let server = spawn_with_task(test_config("127.0.0.1:0", dir.path()), TEST_GRACE, task)
+        .expect("server spawns");
+
+    let begun = std::time::Instant::now();
+    let outcome = server
+        .shutdown()
+        .expect("shutdown returns despite wedged registered cleanup");
+    assert_eq!(
+        outcome,
+        Termination::Forced,
+        "registered cleanup outlasting grace must force the stop"
+    );
+    assert!(
+        begun.elapsed() < Duration::from_secs(3),
+        "forced shutdown must return shortly after the grace window, took {:?}",
+        begun.elapsed()
+    );
+}
+
 #[test]
 fn server_shutdown_permanently_closes_every_host_updater_clone() {
     let dir = tempfile::TempDir::new().expect("tempdir");

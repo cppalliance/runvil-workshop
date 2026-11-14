@@ -31,6 +31,7 @@
 #[cfg(target_os = "windows")]
 #[expect(unsafe_code, reason = "raw WebView2 COM has no safe wrapper")]
 mod bridge;
+mod chatgpt;
 mod config;
 mod drops;
 mod gateway;
@@ -48,6 +49,7 @@ use std::time::Duration;
 
 use anyhow::Context as _;
 use tauri::ipc::CapabilityBuilder;
+use tauri::webview::PageLoadEvent;
 use tauri::{Manager as _, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_dialog::{DialogExt as _, MessageDialogKind};
 use tauri_plugin_opener::OpenerExt as _;
@@ -83,6 +85,12 @@ const WINDOW_PERMISSIONS: &[&str] = &[
     "process:allow-restart",
     "allow-desktop-update-supported",
     "allow-quit",
+    "allow-chatgpt-bind-capability",
+    "allow-chatgpt-status",
+    "allow-chatgpt-sign-in",
+    "allow-chatgpt-sign-out",
+    "allow-chatgpt-reset",
+    "allow-chatgpt-enable",
 ];
 
 fn main() -> ExitCode {
@@ -177,7 +185,13 @@ fn run() -> anyhow::Result<()> {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             desktop_update_supported,
-            quit::quit
+            quit::quit,
+            chatgpt::chatgpt_bind_capability,
+            chatgpt::chatgpt_status,
+            chatgpt::chatgpt_sign_in,
+            chatgpt::chatgpt_sign_out,
+            chatgpt::chatgpt_reset,
+            chatgpt::chatgpt_enable
         ])
         .on_menu_event(menu::handle_event)
         .setup(boot_and_open);
@@ -257,15 +271,16 @@ fn continue_teardown(
 /// while the dialog is up, because some platforms run dialogs on the event
 /// loop.
 fn boot_and_open(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
+    app.manage(chatgpt::ChatgptState::default());
     match boot() {
-        Ok((server, url, attachment, supervisor)) => {
+        Ok((server, url, config_url, attachment, supervisor)) => {
             // The capability must exist before the window does: the
             // authority resolves a window's grants at creation.
             app.add_capability(window_capability(&url))?;
             app.manage(GatewaySupervisorSlot::new(supervisor));
             app.manage(ServerSlot::new(Some(server)));
             menu::install(app, attachment.sidecar_identity().is_some())?;
-            open_window(app, &url)
+            open_window(app, &url, &config_url)
         }
         Err(error) => {
             eprintln!("{error:?}");
@@ -294,6 +309,7 @@ fn boot_and_open(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>>
 fn boot() -> anyhow::Result<(
     ServerHandle,
     url::Url,
+    url::Url,
     gateway::GatewayAttachment,
     Option<gateway::GatewaySupervisor>,
 )> {
@@ -307,6 +323,17 @@ fn boot() -> anyhow::Result<(
     {
         Ok(()) => {
             let url = url::Url::parse(server.url()).context("parse the workshop URL")?;
+            let config_url = match url::Url::parse(server.config_origin())
+                .context("parse the workshop config URL")
+            {
+                Ok(config_url) => config_url,
+                Err(error) => {
+                    if let Err(shutdown_error) = server.shutdown() {
+                        eprintln!("{shutdown_error:?}");
+                    }
+                    return Err(error);
+                }
+            };
             let supervisor = match gateway::supervise(&attachment, server.gateway_updater()) {
                 Ok(supervisor) => supervisor,
                 Err(error) => {
@@ -316,7 +343,7 @@ fn boot() -> anyhow::Result<(
                     return Err(error.context("supervise the local gateway"));
                 }
             };
-            Ok((server, url, attachment, supervisor))
+            Ok((server, url, config_url, attachment, supervisor))
         }
         Err(error) => {
             if let Err(shutdown_error) = server.shutdown() {
@@ -352,21 +379,60 @@ fn window_capability(url: &url::Url) -> CapabilityBuilder {
 /// on Linux, restored to the open workspace file's saved
 /// geometry, then shown. The saver that writes geometry back into the
 /// file is installed before the show, so the first layout pass is saved.
-fn open_window(app: &mut tauri::App, url: &url::Url) -> Result<(), Box<dyn std::error::Error>> {
+fn open_window(
+    app: &mut tauri::App,
+    url: &url::Url,
+    config_url: &url::Url,
+) -> Result<(), Box<dyn std::error::Error>> {
     let server_origin = url.origin();
+    let nav_origin = server_origin.clone();
+    let main_url = url.clone();
+    let config_origin = config_url.origin();
     let opener = app.handle().clone();
+    let load_opener = opener.clone();
     let builder = WebviewWindowBuilder::new(app, "main", WebviewUrl::External(url.clone()))
         .title("Runvil")
         .inner_size(1024.0, 768.0)
         .visible(false)
         .on_navigation(move |target| {
-            match navigation::classify_navigation(&server_origin, target.as_str()) {
+            match navigation::classify_navigation_with_config(
+                &nav_origin,
+                Some(&config_origin),
+                target.as_str(),
+            ) {
                 navigation::Navigation::Allow => true,
                 navigation::Navigation::OpenExternally => {
                     if let Err(error) = opener.opener().open_url(target.as_str(), None::<&str>) {
                         eprintln!("could not open {target} in the system browser: {error}");
                     }
                     false
+                }
+            }
+        })
+        .on_page_load(move |window, payload| {
+            if !matches!(payload.event(), PageLoadEvent::Started) {
+                return;
+            }
+            match navigation::classify_top_level_load(&server_origin, payload.url()) {
+                navigation::TopLevelLoadAction::AllowMainAndResetCapability => {
+                    window
+                        .state::<chatgpt::ChatgptState>()
+                        .reset_for_main_load();
+                }
+                navigation::TopLevelLoadAction::IgnoreNonHttp => {}
+                navigation::TopLevelLoadAction::RejectAndReturnMain => {
+                    if let Err(error) = load_opener
+                        .opener()
+                        .open_url(payload.url().as_str(), None::<&str>)
+                    {
+                        eprintln!(
+                            "could not open rejected top-level target {} in the system browser: {error}",
+                            payload.url()
+                        );
+                    }
+                    if let Err(error) = window.navigate(main_url.clone()) {
+                        eprintln!("could not return top frame to main origin: {error}");
+                    }
                 }
             }
         });
@@ -498,5 +564,42 @@ mod tests {
                 "{outcome:?} cannot prevent application teardown"
             );
         }
+    }
+
+    #[test]
+    fn non_main_origin_bind_between_reset_and_main_bind_is_refused_by_tauri_acl() {
+        // Build the production Tauri capability attached to the `main` window.
+        let main_url = url::Url::parse("http://127.0.0.1:49152/").expect("main URL");
+        let config_url = url::Url::parse("http://127.0.0.1:49153/?mode=panel").expect("config URL");
+        let CapabilityFile::Capability(capability) = window_capability(&main_url).build() else {
+            panic!("the builder produces a single capability");
+        };
+        let remote = capability.remote.expect("remote origins must be scoped");
+
+        // Layer that refuses: Tauri's IPC runtime ACL (`Capability::remote` / `Origin::Remote`).
+        // Even during the window between `ChatgptState::reset_for_main_load()` and the
+        // reloaded main document's `chatgpt_bind_capability` call, no frame on `config_url`
+        // (or any origin other than `main_url`) matches the Tauri ACL grant.
+        assert!(
+            !capability.local,
+            "refused by Tauri ACL: local origin disabled"
+        );
+        assert!(
+            WINDOW_PERMISSIONS.contains(&"allow-chatgpt-bind-capability"),
+            "chatgpt_bind_capability is governed by the window ACL capability"
+        );
+        let config_origin = config_url.origin().ascii_serialization();
+        assert_eq!(
+            remote.urls,
+            vec![main_url.origin().ascii_serialization()],
+            "refused by Tauri ACL: grant admits only main origin, never {config_origin}"
+        );
+        assert!(
+            !remote
+                .urls
+                .iter()
+                .any(|allowed| allowed == &config_origin || allowed.contains('*')),
+            "refused by Tauri ACL: config origin cannot invoke chatgpt_bind_capability before main bind"
+        );
     }
 }

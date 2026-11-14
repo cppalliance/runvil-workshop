@@ -13,6 +13,14 @@ import { createToastStack } from "@workshop/look/toast";
 import { Commands } from "@workshop/platform/command-registry";
 import { DisposableStore, toDisposable } from "@workshop/platform/lifecycle";
 import { ModelService, MODEL_SERVICE } from "./services/model-service";
+import {
+  ChatgptAccount,
+  CHATGPT_ACCOUNT,
+  sealAccountInvoke,
+  type AccountBackend,
+  type AccountView,
+  type EnableModelsReply,
+} from "./services/chatgpt-account";
 import { CLOSED_EDITORS } from "./services/closed-editors";
 import { COMMANDS_HISTORY } from "./services/commands-history";
 import { EDITOR_SETTINGS_SERVICE } from "./services/editor-settings-service";
@@ -32,10 +40,12 @@ import { createUiStorage, UI_STORAGE } from "./services/ui-storage";
 import { UPDATES, UpdateService } from "./services/update-service";
 import { WorkbenchService } from "./services/workbench-service";
 import { WorkshopSocket } from "./services/workshop-socket";
+import { CHATGPT_STATUS_ORDER, ChatgptStatus } from "./parts/chrome/chatgpt-status";
 import { CommandCenter } from "./parts/chrome/command-center";
 import { ClosedEditors } from "./parts/editor/closed-editors";
 import { EditorSettingsService } from "./parts/editor/editor-settings-service";
 import { setupGatewayConfigBridge } from "./parts/gateway/gateway-config-bridge";
+import { GATEWAY_CONFIG_FRAME_BRIDGE } from "./services/gateway-config-api";
 import { ActivityIndicator } from "./parts/status/activity-indicator";
 import { MicMeter } from "./parts/status/mic-meter";
 import { StatusBar } from "./parts/status/status-bar";
@@ -177,10 +187,19 @@ disposables.add(persistZoom((value) => storage.set("user", "zoom", value)));
 // Native Explorer drops arrive as a typed event from the desktop app;
 // each path becomes a workspace grant. Inert in a plain browser.
 disposables.add(setupWorkspaceDrops(statusBar));
+// Bind the main window's account capability before starting account
+// refresh or allowing the docked config iframe to load.
+const accountDesktop = desktopAccountBackend();
 // The Gateway Config panel's postMessage bridge: API forwards go through
 // the workshop server's key-attaching proxy, and the panel's action
 // notifications (apply, revert, download-started) land on the status bar.
-disposables.add(setupGatewayConfigBridge({ statusBar }));
+const configBridge = disposables.add(
+  setupGatewayConfigBridge({
+    statusBar,
+    startupReady: accountDesktop?.ready,
+  }),
+);
+registerService(GATEWAY_CONFIG_FRAME_BRIDGE, () => configBridge);
 const workshopSocket = disposables.add(new WorkshopSocket());
 
 // The model catalog and selection live in the ModelService, not module
@@ -219,6 +238,30 @@ const sttStatus: SttStatus = {
 };
 registerService(STT_STATUS, () => sttStatus);
 registerService(MODEL_SERVICE, () => modelService);
+if (accountDesktop !== null) {
+  const account = disposables.add(
+    new ChatgptAccount(
+      accountDesktop.backend,
+      () => workshopSocket.refreshModels(),
+      (id) => modelService.setCurrent(id),
+      () => modelService.models,
+      () => modelService.current,
+      workshopSocket.onModels,
+    ),
+  );
+  registerService(CHATGPT_ACCOUNT, () => account);
+  // Order below the mic meter (-1) so showing or hiding the item leaves the meter and LEDs pinned at the right edge.
+  // See the comment on PLAN_TAG for OpenAI's in-use guideline.
+  const slot = statusBar.registerSlot({
+    id: "chatgpt-account",
+    name: "ChatGPT plan",
+    order: CHATGPT_STATUS_ORDER,
+    activate: () => undefined,
+  });
+  disposables.add(new ChatgptStatus(account, slot.element));
+  disposables.add({ dispose: () => slot.dispose() });
+  void account.refresh();
+}
 registerService(SPEECH_CAPTURE, () => speechCapture);
 // The mic meter stands left of the recording LED and follows the same
 // shared capture the dictation surfaces take turns owning.
@@ -336,6 +379,11 @@ dock.layout(dockEl.clientWidth, dockEl.clientHeight);
 // layout policy's default (layout-boot.ts). The debounced saver installs after
 // the boot layout is in place, so the restore never echoes the same
 // envelope back to the file.
+// Hold panel mounting until the main window's capability bind has settled
+// so no cross-origin frame exists in the new document during reload bind.
+if (accountDesktop !== null) {
+  await accountDesktop.ready;
+}
 applyLayoutOrDefault(dock, storage.get("workspace", "layout"));
 disposables.add(startLayoutPersistence(dock, (value) => storage.set("workspace", "layout", value)));
 // The keybinding dispatcher owns every registered chord: one
@@ -367,3 +415,44 @@ disposables.add(
 // Every push handler above is wired, so release the socket's boot queue:
 // pushes that raced this module's execution now replay in arrival order.
 workshopSocket.ready();
+
+interface TauriInternals {
+  invoke(command: string, args?: Record<string, unknown>): Promise<unknown>;
+}
+
+/** The desktop IPC backend plus a startup gate that settles after capability bind. */
+function desktopAccountBackend(): { backend: AccountBackend; ready: Promise<void> } | null {
+  try {
+    const internals = (window as Window & { __TAURI_INTERNALS__?: TauriInternals }).__TAURI_INTERNALS__;
+    if (internals === undefined || typeof internals.invoke !== "function") {
+      return null;
+    }
+    const call = sealAccountInvoke(internals);
+    const bindPromise = call("chatgpt_bind_capability");
+    void bindPromise.catch((error: unknown) => {
+      console.error("ChatGPT account is off:", error instanceof Error ? error.message : "unavailable");
+    });
+    const ready = bindPromise.then(
+      () => undefined,
+      () => undefined,
+    );
+    const callAfterBind = async (command: string): Promise<unknown> => {
+      await bindPromise;
+      return call(command);
+    };
+    const view = (command: string): Promise<AccountView> => callAfterBind(command) as Promise<AccountView>;
+    return {
+      ready,
+      backend: {
+        status: () => view("chatgpt_status"),
+        signIn: () => view("chatgpt_sign_in"),
+        signOut: () => view("chatgpt_sign_out"),
+        reset: () => view("chatgpt_reset"),
+        enable: () => callAfterBind("chatgpt_enable") as Promise<EnableModelsReply>,
+      },
+    };
+  } catch (error) {
+    console.error("ChatGPT account is off:", error instanceof Error ? error.message : "unavailable");
+    return null;
+  }
+}

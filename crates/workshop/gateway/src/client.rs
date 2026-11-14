@@ -30,6 +30,9 @@ pub(crate) const HEALTH_PROBE_TIMEOUT: Duration = Duration::from_secs(2);
 /// on Linux, ~75 s on Windows).
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 
+/// Header a Host-supplied plan proof is sent in, and only on the model list.
+const PLAN_PROOF_HEADER: &str = "X-Runvil-Plan-Proof";
+
 /// Default whole-request timeout for non-streaming operations: the model
 /// catalog fetch and the profile selection. Forwarded requests and the
 /// progress subscription can legitimately run for minutes, so the same
@@ -101,6 +104,8 @@ pub struct GatewayClient {
     http: reqwest::Client,
     pub(crate) base_url: String,
     pub(crate) api_key: String,
+    /// Plan proof sent on `GET /v1/models` only. `None` sends no such header.
+    plan_proof: Option<String>,
     /// Whole-request bound for buffered calls; header-phase bound for
     /// streaming calls.
     request_timeout: Duration,
@@ -114,6 +119,7 @@ impl fmt::Debug for GatewayClient {
         f.debug_struct("GatewayClient")
             .field("base_url", &self.base_url)
             .field("api_key", &"<redacted>")
+            .field("plan_proof", &"<redacted>")
             .finish_non_exhaustive()
     }
 }
@@ -125,17 +131,30 @@ impl GatewayClient {
     /// An empty `api_key` disables authentication: requests then omit the
     /// `Authorization` header.
     ///
+    /// A loopback `base_url` is contacted directly. A redirect comes back as
+    /// its own status, and the process proxy is not used. Any other authority
+    /// keeps reqwest's defaults.
+    ///
     /// # Errors
     /// Returns [`GatewayError::Build`] if the TLS backend cannot initialize.
     pub fn new(base_url: &str, api_key: &str) -> Result<Self, GatewayError> {
-        let http = reqwest::Client::builder()
-            .connect_timeout(CONNECT_TIMEOUT)
+        // A loopback Gateway is that address. A redirect or a proxy would
+        // carry the bearer, and the plan proof when one is set, to somewhere
+        // else. Any other authority keeps redirects and the process proxy.
+        let mut builder = reqwest::Client::builder().connect_timeout(CONNECT_TIMEOUT);
+        if workshop_support::is_loopback_http_url(base_url) {
+            builder = builder
+                .redirect(reqwest::redirect::Policy::none())
+                .no_proxy();
+        }
+        let http = builder
             .build()
             .map_err(|source| GatewayError::Build(Box::new(source)))?;
         Ok(Self {
             http,
             base_url: base_url.trim_end_matches('/').to_string(),
             api_key: api_key.to_string(),
+            plan_proof: None,
             request_timeout: REQUEST_TIMEOUT,
             health_timeout: HEALTH_PROBE_TIMEOUT,
         })
@@ -178,6 +197,25 @@ impl GatewayClient {
         } else {
             request.bearer_auth(&self.api_key)
         }
+    }
+
+    /// Sends `plan_proof` as `X-Runvil-Plan-Proof` on the model list only.
+    ///
+    /// An empty proof is ignored, so the request stays as it is today.
+    /// Health, profile, status, and forwarded admin calls never carry it.
+    #[must_use]
+    pub fn with_plan_proof(mut self, plan_proof: impl Into<String>) -> Self {
+        let proof = plan_proof.into();
+        if !proof.is_empty() {
+            self.plan_proof = Some(proof);
+        }
+        self
+    }
+
+    /// The plan proof this client sends on the model list, when one was set.
+    #[must_use]
+    pub fn plan_proof(&self) -> Option<&str> {
+        self.plan_proof.as_deref()
     }
 
     /// The gateway's base URL as configured, trailing slash trimmed -
@@ -260,7 +298,16 @@ impl GatewayClient {
     /// completed and [`GatewayError::ReadBody`] if the response body cannot
     /// be read.
     pub async fn list_models(&self) -> Result<GatewayResponse, GatewayError> {
-        self.get_json("/v1/models").await
+        let mut request = self.authorize(self.http.get(format!("{}/v1/models", self.base_url)));
+        if let Some(proof) = &self.plan_proof {
+            request = request.header(PLAN_PROOF_HEADER, proof);
+        }
+        let response = request
+            .timeout(self.request_timeout)
+            .send()
+            .await
+            .map_err(|source| GatewayError::Transport(Box::new(source)))?;
+        read(response).await
     }
 
     /// Fetches the gateway's profile list from `GET /admin/profiles`.

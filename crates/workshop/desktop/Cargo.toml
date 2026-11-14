@@ -59,6 +59,7 @@ default = []
 
 [dev-dependencies]
 tempfile.workspace = true
+tokio.workspace = true
 workshop-server-api = { workspace = true, features = ["test-fixtures"] }
 
 [lints]

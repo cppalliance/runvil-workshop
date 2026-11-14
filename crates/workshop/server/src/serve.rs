@@ -14,7 +14,7 @@ use std::sync::mpsc;
 use std::thread::JoinHandle;
 use std::time::Duration;
 
-use crate::app::{StateError, router, state_with_gateway};
+use crate::app::{StateError, config_router, router, state_with_gateway};
 use workshop_gateway::{GatewayUpdater, ResolvedGateway};
 use workshop_support::Config;
 
@@ -49,6 +49,7 @@ pub enum Termination {
 #[derive(Debug)]
 pub struct ServerHandle {
     url: String,
+    config_origin: String,
     gateway: GatewayUpdater,
     initial_gateway_identity: Option<workshop_gateway::discovery::ValidatedConnection>,
     shutdown: Option<tokio::sync::oneshot::Sender<()>>,
@@ -62,6 +63,13 @@ impl ServerHandle {
     #[must_use]
     pub fn url(&self) -> &str {
         &self.url
+    }
+
+    /// Returns the separate loopback origin serving only the proxied
+    /// Gateway config documents (`http://127.0.0.1:<port>`).
+    #[must_use]
+    pub fn config_origin(&self) -> &str {
+        &self.config_origin
     }
 
     /// Returns the restricted local-Gateway handle used by an embedding
@@ -175,19 +183,51 @@ pub(crate) fn spawn_resolved(config: Config) -> Result<ServerHandle, SpawnError>
     spawn_inner(config, Some(gateway), SHUTDOWN_GRACE)
 }
 
+#[cfg(test)]
+type TestTaskHook =
+    Box<dyn FnOnce(&crate::app::AppState) -> Vec<workshop_registry::Registration> + Send>;
+#[cfg(not(test))]
+type TestTaskHook = ();
+
 /// [`spawn`] with the shutdown grace window injectable, so tests prove the
 /// forced path in milliseconds instead of waiting out the real window.
 /// Discovery is bypassed, so a test never consults the real run directory.
 #[cfg(test)]
 fn spawn_with_grace(config: Config, grace: Duration) -> Result<ServerHandle, SpawnError> {
     let gateway = ResolvedGateway::from_config(&config.gateway);
-    spawn_inner(config, Some(gateway), grace)
+    spawn_with_hook(config, Some(gateway), grace, None)
+}
+
+#[cfg(test)]
+fn spawn_with_task(
+    config: Config,
+    grace: Duration,
+    task: std::sync::Arc<dyn workshop_registry::BackgroundTask>,
+) -> Result<ServerHandle, SpawnError> {
+    let gateway = ResolvedGateway::from_config(&config.gateway);
+    spawn_with_hook(
+        config,
+        Some(gateway),
+        grace,
+        Some(Box::new(move |state| {
+            vec![state.registry().register_task(task)]
+        })),
+    )
 }
 
 fn spawn_inner(
     config: Config,
     gateway: Option<ResolvedGateway>,
     grace: Duration,
+) -> Result<ServerHandle, SpawnError> {
+    spawn_with_hook(config, gateway, grace, None)
+}
+
+fn spawn_with_hook(
+    config: Config,
+    gateway: Option<ResolvedGateway>,
+    grace: Duration,
+    test_hook: Option<TestTaskHook>,
 ) -> Result<ServerHandle, SpawnError> {
     // Composing state sweeps the state directory and reopening follows
     // the workspace pointer, so a refused address must fail before either.
@@ -205,7 +245,16 @@ fn spawn_inner(
     let (stopped_tx, stopped_rx) = mpsc::channel();
     let thread = std::thread::Builder::new()
         .name("workshop-server".to_string())
-        .spawn(move || serve_thread(config, gateway, ready_tx, shutdown_rx, &stopped_tx, grace))
+        .spawn(move || {
+            serve_thread(
+                config,
+                gateway,
+                ready_tx,
+                shutdown_rx,
+                &stopped_tx,
+                (grace, test_hook),
+            )
+        })
         .map_err(|e| {
             SpawnError::Io(std::io::Error::new(
                 e.kind(),
@@ -213,8 +262,9 @@ fn spawn_inner(
             ))
         })?;
     match ready_rx.recv() {
-        Ok(Ok((url, gateway))) => Ok(ServerHandle {
+        Ok(Ok((url, config_origin, gateway))) => Ok(ServerHandle {
             url,
+            config_origin,
             gateway,
             initial_gateway_identity,
             shutdown: Some(shutdown_tx),
@@ -245,10 +295,10 @@ fn spawn_inner(
 fn serve_thread(
     config: Config,
     gateway: ResolvedGateway,
-    ready: mpsc::Sender<Result<(String, GatewayUpdater), SpawnError>>,
+    ready: mpsc::Sender<Result<(String, String, GatewayUpdater), SpawnError>>,
     shutdown: tokio::sync::oneshot::Receiver<()>,
     stopped: &mpsc::Sender<Termination>,
-    grace: Duration,
+    (grace, test_hook): (Duration, Option<TestTaskHook>),
 ) -> std::io::Result<()> {
     let runtime = match tokio::runtime::Builder::new_multi_thread()
         .enable_all()
@@ -268,6 +318,10 @@ fn serve_thread(
                 return (Termination::Graceful, Ok(()));
             }
         };
+        #[cfg(test)]
+        let _test_registrations = test_hook.map(|hook| hook(&state));
+        #[cfg(not(test))]
+        let _ = test_hook;
         let listener = match reuse_bind(&config.server.bind) {
             Ok(listener) => listener,
             Err(error) => {
@@ -279,15 +333,30 @@ fn serve_thread(
             Ok(address) => address,
             Err(error) => return (Termination::Graceful, Err(error)),
         };
+        let config_listener = match reuse_bind("127.0.0.1:0") {
+            Ok(listener) => listener,
+            Err(error) => {
+                let _ = ready.send(Err(SpawnError::Io(error)));
+                return (Termination::Graceful, Ok(()));
+            }
+        };
+        let config_address = match config_listener.local_addr() {
+            Ok(address) => address,
+            Err(error) => return (Termination::Graceful, Err(error)),
+        };
+        let main_origin = format!("http://{address}");
+        let config_origin = format!("http://{config_address}");
+        state.set_config_origin(config_origin.clone());
         // The last-used workspace is restored after the bind, so a failed
         // bind never opens its file, and before readiness, so readiness
         // means the grants are already in place; a pointer that cannot be
         // followed starts ephemeral and never fails boot.
         state.reopen_last_workspace().await;
         let app = router(state.clone());
-        let _ = ready.send(Ok((format!("http://{address}"), state.gateway_updater())));
+        let config_app = config_router(state.clone(), &main_origin);
+        let _ = ready.send(Ok((main_origin, config_origin, state.gateway_updater())));
         // The subsystems' registered background tasks start with serving
-        // and stop inside the same graceful-shutdown signal, so they
+        // and stop inside the same graceful-shutdown window, so they
         // never outlive the server.
         let tasks: Vec<_> = state
             .registry()
@@ -295,33 +364,14 @@ fn serve_thread(
             .iter()
             .map(|task| task.spawn())
             .collect();
-        let (draining_tx, draining_rx) = tokio::sync::oneshot::channel();
-        let serve = async {
-            axum::serve(listener, app)
-                .with_graceful_shutdown(async move {
-                    let _ = shutdown.await;
-                    // Arm the watchdog before draining the background
-                    // tasks, so the grace window bounds the whole stop.
-                    let _ = draining_tx.send(());
-                    for task in tasks {
-                        task.shutdown().await;
-                    }
-                })
-                .await
-        };
-        // axum's graceful shutdown waits for every connection it still
-        // tracks - a request wedged mid-body parks it, while WebSockets
-        // detach at upgrade (both pinned by the shutdown tests); once the
-        // window lapses the watchdog wins the select and the graceful
-        // wait is abandoned with the serve future.
-        let watchdog = async {
-            let _ = draining_rx.await;
-            tokio::time::sleep(grace).await;
-        };
-        let outcome = tokio::select! {
-            result = serve => (Termination::Graceful, result),
-            () = watchdog => (Termination::Forced, Ok(())),
-        };
+        let outcome = serve_until_shutdown(
+            (listener, app),
+            (config_listener, config_app),
+            shutdown,
+            tasks,
+            grace,
+        )
+        .await;
         state.close_gateway_publication();
         outcome
     });
@@ -335,6 +385,89 @@ fn serve_thread(
     // Never `process::exit` here - this crate runs inside embedding binaries.
     runtime.shutdown_timeout(RUNTIME_TEARDOWN);
     result
+}
+
+/// Drives both listeners alongside the registered-task drain so an idle
+/// listener cannot report `Graceful` before cleanup finishes, while the
+/// watchdog bounds HTTP draining and registered cleanup together.
+async fn serve_until_shutdown(
+    (listener, app): (tokio::net::TcpListener, axum::Router),
+    (config_listener, config_app): (tokio::net::TcpListener, axum::Router),
+    shutdown: tokio::sync::oneshot::Receiver<()>,
+    tasks: Vec<workshop_registry::ShutdownHandle>,
+    grace: Duration,
+) -> (Termination, std::io::Result<()>) {
+    let (draining_tx, draining_rx) = tokio::sync::oneshot::channel();
+    let (stop_tx, stop_rx) = tokio::sync::watch::channel(false);
+    let mut main_stop = stop_rx.clone();
+    let mut config_stop = stop_rx;
+    let main_serve = async {
+        axum::serve(listener, app)
+            .with_graceful_shutdown(async move {
+                let _ = main_stop.wait_for(|&stopped| stopped).await;
+            })
+            .await
+    };
+    let config_serve = async {
+        axum::serve(config_listener, config_app)
+            .with_graceful_shutdown(async move {
+                let _ = config_stop.wait_for(|&stopped| stopped).await;
+            })
+            .await
+    };
+    let drain_tasks = async {
+        let _ = shutdown.await;
+        // Arm the watchdog before draining listeners and background
+        // tasks, so the grace window bounds the whole stop.
+        let _ = draining_tx.send(());
+        let _ = stop_tx.send(true);
+        for task in tasks {
+            task.shutdown().await;
+        }
+    };
+    let serve = async {
+        tokio::pin!(main_serve, config_serve, drain_tasks);
+        let mut main_res: Option<std::io::Result<()>> = None;
+        let mut config_res: Option<std::io::Result<()>> = None;
+        let mut drain_done = false;
+        while !(main_res.is_some() && config_res.is_some() && drain_done) {
+            tokio::select! {
+                res = &mut main_serve, if main_res.is_none() => {
+                    if res.is_err() && !*stop_tx.borrow() {
+                        return res;
+                    }
+                    main_res = Some(res);
+                }
+                res = &mut config_serve, if config_res.is_none() => {
+                    if res.is_err() && !*stop_tx.borrow() {
+                        return res;
+                    }
+                    config_res = Some(res);
+                }
+                () = &mut drain_tasks, if !drain_done => {
+                    drain_done = true;
+                }
+            }
+        }
+        match (main_res, config_res) {
+            (Some(main), Some(config)) => main.and(config),
+            (Some(res), None) | (None, Some(res)) => res,
+            (None, None) => Ok(()),
+        }
+    };
+    // axum's graceful shutdown waits for every connection it still
+    // tracks - a request wedged mid-body parks it, while WebSockets
+    // detach at upgrade (both pinned by the shutdown tests); once the
+    // window lapses the watchdog wins the select and the graceful
+    // wait (including any stalled cleanup task) is abandoned.
+    let watchdog = async {
+        let _ = draining_rx.await;
+        tokio::time::sleep(grace).await;
+    };
+    tokio::select! {
+        result = serve => (Termination::Graceful, result),
+        () = watchdog => (Termination::Forced, Ok(())),
+    }
 }
 
 /// Parses `address` as a socket address and refuses any that is not

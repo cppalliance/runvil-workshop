@@ -88,5 +88,9 @@ pub use agents::{PluginListing, list_plugin_dir};
 pub use app::{AppState, router};
 pub use serve::{ServerHandle, SpawnError, Termination, spawn};
 pub use workshop_gateway::discovery;
-pub use workshop_gateway::{GatewayPublicationError, GatewayUpdater, ResolvedGateway};
+pub use workshop_gateway::{
+    ChatgptAccount, ChatgptAccountError, ChatgptAccountOp, ChatgptHttpFailure, ChatgptJsonFailure,
+    ChatgptReadTarget, ChatgptSidecarFailure, GatewayPublicationError, GatewayUpdater,
+    ResolvedGateway,
+};
 pub use workshop_support::{AgentsConfig, Config, GatewayConfig, ServerConfig};

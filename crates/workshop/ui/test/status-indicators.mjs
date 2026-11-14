@@ -26,6 +26,10 @@ const bundle = await esbuild.build({
   stdin: {
     contents: `
       export { StatusBar } from "./src/parts/status/status-bar.ts";
+      export { ActivityIndicator } from "./src/parts/status/activity-indicator.ts";
+      export { MicMeter } from "./src/parts/status/mic-meter.ts";
+      export { CHATGPT_STATUS_ORDER } from "./src/parts/chrome/chatgpt-status.ts";
+      export { SpeechCaptureService } from "./src/services/speech-capture.ts";
       export { STATUS_INDICATORS } from "@workshop/platform/status-indicators";
       export { registerService } from "@workshop/platform/service-registry";
       export { TOAST_STACK } from "./src/services/toast-service.ts";
@@ -53,7 +57,16 @@ globalThis.getComputedStyle = window.getComputedStyle.bind(window);
 
 const bundlePath = path.join(os.tmpdir(), "runvil-status-indicators-test.mjs");
 await writeFile(bundlePath, bundle.outputFiles[0].text);
-const { StatusBar, STATUS_INDICATORS, registerService, TOAST_STACK } = await import(pathToFileURL(bundlePath).href);
+const {
+  StatusBar,
+  ActivityIndicator,
+  MicMeter,
+  CHATGPT_STATUS_ORDER,
+  SpeechCaptureService,
+  STATUS_INDICATORS,
+  registerService,
+  TOAST_STACK,
+} = await import(pathToFileURL(bundlePath).href);
 
 const failures = [];
 function check(name, condition) {
@@ -281,6 +294,30 @@ check("a stale handle's dispose leaves a re-registered slot alone", anyById("met
 reborn.dispose();
 left.dispose();
 right.dispose();
+
+// Composition-root row order: registering the recording LED, ChatGPT account
+// slot, mic meter, and activity LED in main.ts's order keeps the account item
+// to the left of the meter and both LEDs so toggling its visibility never
+// shifts the right-edge cluster.
+const appRecording = bar.register({ id: "recording", name: "Recording indicator", order: 0 });
+const appAccount = bar.registerSlot({
+  id: "chatgpt-account",
+  name: "ChatGPT plan",
+  order: CHATGPT_STATUS_ORDER,
+  activate: () => undefined,
+});
+const appCapture = new SpeechCaptureService();
+const appMeter = new MicMeter(bar, appCapture);
+const appActivity = new ActivityIndicator(bar);
+check(
+  `the account item stands left of the meter and LEDs (got ${everything().join(",")})`,
+  everything().join(",") === "chatgpt-account,mic-meter,recording,activity",
+);
+appActivity.dispose();
+appMeter.dispose();
+appCapture.dispose();
+appAccount.dispose();
+appRecording.dispose();
 
 bar.dispose();
 

@@ -40,7 +40,10 @@ impl GatewayBinding {
                 Ok(false)
             };
         }
-        let snapshot = build_snapshot(base_url, api_key, Some(identity))?;
+        let plan_proof = crate::discovery::default_run_dir().and_then(|run_dir| {
+            crate::discovery::plan_proof_for_boot(&run_dir, identity.pid(), identity.epoch())
+        });
+        let snapshot = build_snapshot(base_url, api_key, Some(identity), plan_proof.as_deref())?;
         cancellation
             .run_if_active(|| {
                 let mut publication = loop {

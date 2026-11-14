@@ -2,15 +2,18 @@
 // window-level postMessage bridge (src/parts/gateway/gateway-config-bridge.ts) and
 // the panel that embeds the iframe (src/parts/gateway/gateway-config-panel.ts).
 // Bundles the TS modules with esbuild and drives them in jsdom. Covers:
-// origin pinning (the iframe is proxied same-origin, so a message from
-// any foreign origin - the gateway's own port included - is ignored and
-// never forwarded), the ready announcement answered with a context
-// message (theme + initial route) pinned to the workshop origin, the
-// API-forward round trip through a stubbed /gateway/api server route
-// (bearer stays server-side by construction - the browser never sees a
-// key), the transport-failure answer (status 0), action notifications
-// landing on the status bar stub, listener teardown on dispose, and the
-// panel's iframe address, sandbox, and title.
+// origin + source pinning (the iframe runs on its dedicated loopback
+// config origin, so messages from the workshop origin, the gateway port,
+// any foreign origin, or a spoofed event.source on the config origin are
+// ignored and never forwarded), the ready announcement answered with a
+// context message (theme + initial route) pinned to the config origin,
+// the API-forward round trip through a stubbed /gateway/api server route
+// (bearer stays server-side by construction), the transport-failure answer
+// (status 0), action notifications landing on the status bar stub,
+// startup-gate sequencing before loading the iframe, non-loopback /
+// same-origin rejection on /gateway/config-origin, frame teardown on
+// panel dispose, listener teardown on bridge dispose, and the panel's
+// iframe address, sandbox, and title.
 // Run: node test/gateway-config-bridge.mjs
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -44,6 +47,7 @@ const { setupGatewayConfigBridge, GatewayConfigPanel } = await import(
 );
 
 const WORKSHOP_ORIGIN = "http://127.0.0.1:7910";
+const CONFIG_ORIGIN = "http://127.0.0.1:7911";
 const GATEWAY_ORIGIN = "http://127.0.0.1:8081";
 
 const dom = new JSDOM("<!doctype html><html><body></body></html>", {
@@ -68,8 +72,15 @@ async function flush(turns = 10) {
 // --- A stubbed workshop server: origin probe + proxy route -------------------
 
 const fetched = [];
+let originProbePayload = { origin: CONFIG_ORIGIN };
 const fetchFn = async (url, init = {}) => {
   fetched.push({ url, init });
+  if (url === "/gateway/config-origin") {
+    return new Response(JSON.stringify(originProbePayload), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  }
   if (url === "/gateway/api/admin/status") {
     return new Response(JSON.stringify({ profile: "default", models: [] }), {
       status: 200,
@@ -85,11 +96,15 @@ const fetchFn = async (url, init = {}) => {
   });
 };
 const proxyCalls = () => fetched.filter((call) => call.url.startsWith("/gateway/api"));
+const originProbeCalls = () => fetched.filter((call) => call.url === "/gateway/config-origin");
 
 const statusLines = [];
 const statusBar = {
   showLocal: (label, severity) => statusLines.push({ label, severity }),
 };
+
+const activeFrameWindow = { id: "active-config-frame" };
+const decoyFrameWindow = { id: "decoy-frame" };
 
 const replies = [];
 const bridge = setupGatewayConfigBridge({
@@ -97,26 +112,34 @@ const bridge = setupGatewayConfigBridge({
   fetchFn,
   win: window,
   reply: (_event, message, targetOrigin) => replies.push({ message, targetOrigin }),
+  configOrigin: CONFIG_ORIGIN,
+  frameSource: activeFrameWindow,
 });
 
-function dispatch(data, origin = WORKSHOP_ORIGIN) {
-  window.dispatchEvent(new window.MessageEvent("message", { data, origin }));
+function dispatch(data, origin = CONFIG_ORIGIN, source = activeFrameWindow) {
+  const event = new window.MessageEvent("message", { data, origin });
+  Object.defineProperty(event, "source", { value: source });
+  window.dispatchEvent(event);
 }
 
-// --- Origin pinning: a foreign origin is ignored ------------------------------
+// --- Origin + source pinning: foreign origins and wrong windows are ignored ---
 
 dispatch({ type: "rv-api", id: "evil", method: "GET", path: "/admin/status", body: null }, "https://evil.example");
-await flush();
-check("a message from a foreign origin is never forwarded", proxyCalls().length === 0);
-check("a message from a foreign origin is never answered", replies.length === 0);
-
-// --- The gateway's own origin is foreign: the iframe is proxied same-origin ----
-
+dispatch({ type: "rv-api", id: "same", method: "GET", path: "/admin/status", body: null }, WORKSHOP_ORIGIN);
 dispatch({ type: "rv-bridge-ready" }, GATEWAY_ORIGIN);
+dispatch({ type: "rv-api", id: "spoofed-src", method: "GET", path: "/admin/status", body: null }, CONFIG_ORIGIN, decoyFrameWindow);
+dispatch({ type: "rv-bridge-ready" }, CONFIG_ORIGIN, null);
 await flush();
-check("a ready announcement from the gateway origin is refused", replies.length === 0);
+check("foreign origins, the workshop origin, and spoofed source windows never forward", proxyCalls().length === 0);
+check("foreign origins, the workshop origin, and spoofed source windows are never answered", replies.length === 0);
 
-// --- The ready announcement is answered with the pinned context ---------------
+// --- Unknown or account message kinds are dropped even from the config frame ---
+
+dispatch({ type: "chatgpt_status" }, CONFIG_ORIGIN, activeFrameWindow);
+await flush();
+check("unknown or account message types are dropped", replies.length === 0);
+
+// --- The ready announcement is answered with the pinned config origin ---------
 
 dispatch({ type: "rv-bridge-ready" });
 await flush();
@@ -128,8 +151,8 @@ check(
     replies[0]?.message.route === "#/local",
 );
 check(
-  "the context reply pins the workshop origin, never *",
-  replies[0]?.targetOrigin === WORKSHOP_ORIGIN,
+  "the context reply pins the dedicated config origin, never * or workshop origin",
+  replies[0]?.targetOrigin === CONFIG_ORIGIN,
 );
 
 // --- The API-forward round trip -----------------------------------------------
@@ -149,7 +172,7 @@ check(
     apiReply.message.contentType === "application/json" &&
     apiReply.message.body.includes('"profile":"default"'),
 );
-check("the api reply pins the workshop origin", apiReply?.targetOrigin === WORKSHOP_ORIGIN);
+check("the api reply pins the config origin", apiReply?.targetOrigin === CONFIG_ORIGIN);
 
 // --- A transport failure answers status 0 --------------------------------------
 
@@ -174,6 +197,87 @@ check(
     statusLines.every((line) => line.severity === "info"),
 );
 
+// --- Panel startup sequencing, isolated origin URL, and dispose detach --------
+
+{
+  let releaseGate;
+  const beforeLoad = new Promise((resolve) => {
+    releaseGate = resolve;
+  });
+  const panel = new GatewayConfigPanel({
+    workshopOrigin: WORKSHOP_ORIGIN,
+    beforeLoad,
+    fetchFn,
+    frameBridge: bridge,
+  });
+  window.document.body.append(panel.element);
+  panel.init({ params: {} });
+  check(
+    "no iframe element exists in the DOM before the startup bind gate settles",
+    panel.element.querySelector("iframe") === null,
+  );
+  check("the iframe waits for the startup bind gate before probing config-origin", originProbeCalls().length === 0);
+
+  releaseGate();
+  await flush();
+
+  const iframe = panel.element.querySelector("iframe");
+  check("the panel mounts the iframe only after startup bind settles", iframe !== null);
+  check("the panel fetches /gateway/config-origin once the gate settles", originProbeCalls().length === 1);
+  check(
+    "the iframe loads the config SPA on its dedicated loopback config origin",
+    iframe?.getAttribute("src") ===
+      `${CONFIG_ORIGIN}/?mode=panel&bridge=${encodeURIComponent(WORKSHOP_ORIGIN)}`,
+  );
+  const sandbox = iframe?.getAttribute("sandbox") ?? "";
+  check(
+    "the iframe sandbox grants scripts and same-origin only, without allow-top-navigation",
+    sandbox === "allow-scripts allow-same-origin" &&
+      !sandbox.includes("allow-top-navigation") &&
+      !sandbox.includes("allow-top-navigation-by-user-activation"),
+  );
+  check("the iframe has an accessible title", iframe?.getAttribute("title") === "Gateway Config");
+
+  const repliesAfterPanelAttach = replies.length;
+  dispatch({ type: "rv-bridge-ready" }, CONFIG_ORIGIN, activeFrameWindow);
+  await flush();
+  check(
+    "the prior non-DOM window is no longer accepted once the live panel attaches",
+    replies.length === repliesAfterPanelAttach,
+  );
+
+  dispatch({ type: "rv-bridge-ready" }, CONFIG_ORIGIN, iframe.contentWindow);
+  await flush();
+  check(
+    "the attached live iframe contentWindow passes source validation and gets a pinned reply",
+    replies.length === repliesAfterPanelAttach + 1 && replies.at(-1)?.targetOrigin === CONFIG_ORIGIN,
+  );
+
+  const liveWindow = iframe.contentWindow;
+  panel.dispose();
+  const repliesBeforeDisposedSend = replies.length;
+  dispatch({ type: "rv-bridge-ready" }, CONFIG_ORIGIN, liveWindow);
+  await flush();
+  check("disposing the panel detaches the frame from the bridge", replies.length === repliesBeforeDisposedSend);
+}
+
+// --- Invalid config origins from the probe never load the iframe --------------
+
+for (const badOrigin of [WORKSHOP_ORIGIN, "https://evil.example", `${CONFIG_ORIGIN}/extra`]) {
+  originProbePayload = { origin: badOrigin };
+  const panel = new GatewayConfigPanel({
+    workshopOrigin: WORKSHOP_ORIGIN,
+    beforeLoad: Promise.resolve(),
+    fetchFn,
+    frameBridge: bridge,
+  });
+  panel.init({ params: {} });
+  await flush();
+  const iframe = panel.element.querySelector("iframe");
+  check(`bad config origin (${badOrigin}) never mounts an iframe or sets src`, iframe === null);
+  panel.dispose();
+}
+
 // --- Dispose detaches the listener ----------------------------------------------
 
 const repliesBefore = replies.length;
@@ -181,28 +285,6 @@ bridge.dispose();
 dispatch({ type: "rv-bridge-ready" });
 await flush();
 check("a disposed bridge answers nothing", replies.length === repliesBefore);
-
-// --- The panel embeds the iframe same-origin through the workshop proxy ---------
-
-{
-  const panel = new GatewayConfigPanel({
-    workshopOrigin: WORKSHOP_ORIGIN,
-  });
-  panel.init({ params: {} });
-  const iframe = panel.element.querySelector("iframe");
-  check("the panel embeds an iframe immediately (no async origin probe)", iframe !== null);
-  check(
-    "the iframe loads the config SPA same-origin via the workshop proxy",
-    iframe?.getAttribute("src") ===
-      `/gateway/config/?mode=panel&bridge=${encodeURIComponent(WORKSHOP_ORIGIN)}`,
-  );
-  check(
-    "the iframe sandbox grants scripts and same-origin only",
-    iframe?.getAttribute("sandbox") === "allow-scripts allow-same-origin",
-  );
-  check("the iframe has an accessible title", iframe?.getAttribute("title") === "Gateway Config");
-  panel.dispose();
-}
 
 if (failures.length > 0) {
   console.error(`gateway-config-bridge: ${failures.length} failure(s)`);

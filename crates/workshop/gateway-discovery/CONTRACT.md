@@ -1,10 +1,11 @@
 # The Gateway discovery contract
 
-The Gateway and Workshop meet through a file plus three HTTP calls. Nothing else is shared. This document is the whole of that meeting point: the file format, the two lock files, the stale rule, the shutdown route, the three calls, and the fixtures that pin them.
+The Gateway and Workshop meet through a file plus three HTTP calls. Nothing else decides attachment. This document is the whole of that meeting point: the file format, the two lock files, the stale rule, the shutdown route, the three calls, and the fixtures that pin them. Workshop also reads `gateway-private.json` in the same directory, only to pair a plan proof with the boot the discovery file names. That read is not an attach decision.
 
 Both sides are written against this text. Workshop's reader is [`workshop-gateway-discovery`](src/lib.rs), and the Gateway's writer lives in the `runvil-gateway` repository, which spells the same protocol from the other side. When the two disagree, this document is right and one of them has a bug.
 
-- Names in the file: `gateway.json`, `gateway.json.lock`, `gateway.instance.lock`, `gateway.log`
+- Names in the run directory: `gateway.json`, `gateway-private.json`, `gateway.json.lock`, `gateway.instance.lock`
+- Log: `gateway.log`
 - Endpoints: `GET /health`, `GET /v1/models`, `POST /shutdown`
 - Address: `127.0.0.1:{port}`, never `localhost`
 - Contract fixtures: [`fixtures/`](fixtures/)
@@ -68,13 +69,35 @@ The schema below is the machine-readable form of the field table. It is written 
 
 `additionalProperties` is `true` on purpose: unknown fields are tolerated. The `api_key` pattern is the "no line break" rule. `epoch` allows `0` even though a zero epoch makes the file stale, because the field is present-and-informational while the boot identity rule decides staleness.
 
+## The private file
+
+`gateway-private.json` sits in the run directory beside `gateway.json`. The Gateway writes it. Workshop reads it and does not write it in a production build. A missing, unreadable, invalid, or unpaired file supplies no plan proof and does not change attachment, staleness, or any of the three HTTP calls.
+
+The two files carry the same `pid` and `epoch`. A reader uses the plan proof only when those agree with the boot it is attaching to. A first read that disagrees is read again, together with the discovery file, and the proof is used only when that second pair agrees with each other and with the boot already in hand. A proof from a different boot is not sent.
+
+```json
+{
+  "pid": 4242,
+  "epoch": 1757000000,
+  "plan_proof": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+  "owner_proof": "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210"
+}
+```
+
+- `pid` (`u32`): the Gateway process id. Must not be `0`, and must equal the discovery file's `pid` before a proof is used.
+- `epoch` (`u64`): the boot instant in unix seconds. Must equal the discovery file's `epoch` before a proof is used.
+- `plan_proof` (string): presented on a plan-model call, in a header, on top of ordinary authentication. Not a bearer. Non-empty printable ASCII with no spaces.
+- `owner_proof` (string): the same character rule, and different from `plan_proof`. Workshop's model calls do not send it.
+
+Unknown fields are tolerated. Neither proof is written to a log or to `Debug` output. The proofs are 64 lowercase hex characters as the Gateway mints them; a reader accepts any proof that passes the character rule.
+
 ## The run directory and the two locks
 
 ### Where things live
 
 - The run directory is `<home>/.runvil/run`, where `<home>` is the user profile directory the OS reports.
 - The state directory is `<home>/.runvil`, the run directory's parent.
-- `gateway.json`, `gateway.json.lock`, and `gateway.instance.lock` all sit in the run directory, beside each other.
+- `gateway.json`, `gateway-private.json`, `gateway.json.lock`, and `gateway.instance.lock` all sit in the run directory, beside each other.
 - `gateway.log` sits in `<home>/.runvil/logs/gateway.log`, beside the run directory rather than in it, because the Gateway starts logging before it loads its configuration, so a Gateway that exits on its configuration still records why.
 
 ### The atomic owner-only write

@@ -1,16 +1,23 @@
 // The workshop side of the config panel's postMessage bridge. The
-// gateway config UI runs in an iframe proxied through the workshop
-// server at /gateway/config/, so the frame shares the workshop's own
-// origin; this window-level listener is its only path to the workshop:
+// gateway config UI runs in a cross-origin iframe served by the
+// workshop server's dedicated loopback config listener (`GET /gateway/config-origin`);
+// this window-level listener is its only path to the workshop:
 // API-forward requests go through the workshop server's key-attaching
 // proxy, action notifications land on the status bar, and the ready
 // announcement is answered with a context message (theme and initial
-// route). Origins are pinned in both directions: a message is handled
-// only when event.origin equals the workshop's own origin, and every
-// reply is posted with that exact origin as its targetOrigin - never "*".
+// route). Both origin and source window are pinned: a message is handled
+// only when event.origin equals the config listener's loopback origin
+// and event.source matches the active config iframe's contentWindow, and
+// every reply is posted with that exact config origin as targetOrigin - never "*".
 
 import { toDisposable, type IDisposable } from "@workshop/platform/lifecycle";
-import { forwardGatewayRequest, type FetchLike } from "../../services/gateway-config-api";
+import {
+  forwardGatewayRequest,
+  parseLoopbackOrigin,
+  type FetchLike,
+  type FrameSource,
+  type GatewayConfigFrameBridge,
+} from "../../services/gateway-config-api";
 
 /** The status surface the panel's action notifications land on. */
 export interface BridgeStatusSink {
@@ -29,10 +36,21 @@ export interface GatewayConfigBridgeOptions {
   /**
    * Reply seam: posts `message` back to the event's source window at
    * `targetOrigin`. Tests substitute a recorder; production posts to
-   * event.source with the pinned workshop origin.
+   * event.source with the pinned config origin.
    */
   readonly reply?: (event: MessageEvent, message: unknown, targetOrigin: string) => void;
+  /** Resolves once trusted startup work (such as capability binding) has settled. */
+  readonly startupReady?: Promise<void>;
+  /** Initial allowed config origin for standalone tests; production registers dynamically via attachFrame. */
+  readonly configOrigin?: string;
+  /** Initial active frame source for standalone tests. */
+  readonly frameSource?: FrameSource;
+  /** Workshop's main origin; defaults to `window.location.origin`. */
+  readonly workshopOrigin?: string;
 }
+
+/** Bridge handle exposing both disposal and active config-frame registration. */
+export interface GatewayConfigBridgeHandle extends IDisposable, GatewayConfigFrameBridge {}
 
 /** Status bar lines for the actions the config UI announces. */
 const ACTION_LABELS: Readonly<Record<string, string>> = {
@@ -44,29 +62,69 @@ const ACTION_LABELS: Readonly<Record<string, string>> = {
 /** The context handed to the iframe once it announces itself. */
 const PANEL_CONTEXT = { type: "rv-context", theme: "dark", route: "#/local" } as const;
 
+function resolveFrameSource(source: FrameSource | null): MessageEventSource | null {
+  if (source === null) {
+    return null;
+  }
+  return typeof source === "function" ? source() : source;
+}
+
 /**
  * Installs the window-level message listener that serves the config
- * panel's iframe. The iframe is proxied same-origin through the
- * workshop server, so messages are accepted from - and replies pinned
- * to - the workshop's own origin. The returned dispose() detaches the
- * listener.
+ * panel's iframe. Messages are accepted only from the registered config
+ * frame window on the dedicated loopback config origin, and replies are
+ * pinned to that exact config origin. The returned dispose() detaches
+ * the listener and drops the active frame registration.
  */
-export function setupGatewayConfigBridge(options: GatewayConfigBridgeOptions): IDisposable {
+export function setupGatewayConfigBridge(options: GatewayConfigBridgeOptions): GatewayConfigBridgeHandle {
   const win = options.win ?? window;
+  const workshopOrigin =
+    options.workshopOrigin ?? (typeof window !== "undefined" ? window.location.origin : "");
+  const startupReady = options.startupReady ?? Promise.resolve();
   const reply =
     options.reply ??
     ((event: MessageEvent, message: unknown, targetOrigin: string): void => {
       (event.source as Window | null)?.postMessage(message, targetOrigin);
     });
-  // The panel iframe is served through the workshop's own proxy, so the
-  // one legitimate sender shares this window's origin; anything else -
-  // the gateway's own port included - is foreign.
-  const origin = window.location.origin;
+
+  let disposed = false;
+  let allowedOrigin: string | null = null;
+  let activeFrameSource: FrameSource | null = null;
+
+  const attachFrame = (origin: string, frameSource: FrameSource | null): void => {
+    const parsed = parseLoopbackOrigin(origin);
+    if (disposed || parsed === null || parsed === workshopOrigin || frameSource === null) {
+      allowedOrigin = null;
+      activeFrameSource = null;
+      return;
+    }
+    allowedOrigin = parsed;
+    activeFrameSource = frameSource;
+  };
+
+  const detachFrame = (frameSource: FrameSource | null): void => {
+    if (frameSource === null || activeFrameSource === frameSource) {
+      allowedOrigin = null;
+      activeFrameSource = null;
+    }
+  };
+
+  if (options.configOrigin !== undefined && options.frameSource !== undefined) {
+    attachFrame(options.configOrigin, options.frameSource);
+  }
 
   const onMessage = (event: MessageEvent): void => {
     void (async () => {
-      if (event.origin !== origin) {
-        return; // Not the config panel; every foreign message is dropped.
+      const expectedOrigin = allowedOrigin;
+      const expectedSource = resolveFrameSource(activeFrameSource);
+      if (
+        disposed ||
+        expectedOrigin === null ||
+        expectedSource === null ||
+        event.origin !== expectedOrigin ||
+        event.source !== expectedSource
+      ) {
+        return; // Not the active config panel; every foreign origin or spoofed window is dropped.
       }
       const data = event.data as Record<string, unknown> | null;
       if (data === null || typeof data !== "object") {
@@ -74,7 +132,7 @@ export function setupGatewayConfigBridge(options: GatewayConfigBridgeOptions): I
       }
       switch (data["type"]) {
         case "rv-bridge-ready": {
-          reply(event, PANEL_CONTEXT, origin);
+          reply(event, PANEL_CONTEXT, expectedOrigin);
           return;
         }
         case "rv-api": {
@@ -89,7 +147,14 @@ export function setupGatewayConfigBridge(options: GatewayConfigBridgeOptions): I
             { id, method, path, body: typeof body === "string" ? body : null },
             options.fetchFn,
           );
-          reply(event, { type: "rv-api-result", id, ...result }, origin);
+          if (
+            disposed ||
+            allowedOrigin !== expectedOrigin ||
+            resolveFrameSource(activeFrameSource) !== expectedSource
+          ) {
+            return; // Panel was disposed or replaced while the request was in flight.
+          }
+          reply(event, { type: "rv-api-result", id, ...result }, expectedOrigin);
           return;
         }
         case "rv-action": {
@@ -107,5 +172,17 @@ export function setupGatewayConfigBridge(options: GatewayConfigBridgeOptions): I
   };
 
   win.addEventListener("message", onMessage);
-  return toDisposable(() => win.removeEventListener("message", onMessage));
+  const listener = toDisposable(() => {
+    disposed = true;
+    allowedOrigin = null;
+    activeFrameSource = null;
+    win.removeEventListener("message", onMessage);
+  });
+
+  return {
+    startupReady,
+    attachFrame,
+    detachFrame,
+    dispose: () => listener.dispose(),
+  };
 }

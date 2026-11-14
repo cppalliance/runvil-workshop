@@ -46,7 +46,7 @@ fn report_gateway_outcome(
     match result {
         Ok(upstream) if upstream.status.is_success() => push.push_idle(),
         Ok(upstream) => push.push_failure(
-            format!("Gateway error: {}", upstream.status),
+            sign_in_failure_label(&upstream.status.to_string(), &upstream.body),
             format!("{route} answered a non-success status"),
             Activity::General,
         ),
@@ -68,6 +68,25 @@ fn relay(result: Result<GatewayResponse, GatewayError>) -> Response {
             .into_response(),
         Err(error) => envelope(StatusCode::BAD_GATEWAY, gateway_message(&error)),
     }
+}
+
+/// The status-bar label for a non-success Gateway response. A ChatGPT
+/// sign-in code in the body is appended so the page can refresh the
+/// account; any other body keeps the status text alone.
+pub(crate) fn sign_in_failure_label(status: &str, body: &[u8]) -> String {
+    let label = format!("Gateway error: {status}");
+    let Ok(value) = serde_json::from_slice::<serde_json::Value>(body) else {
+        return label;
+    };
+    let Some(code) = value
+        .get("error")
+        .and_then(|error| error.get("code"))
+        .and_then(serde_json::Value::as_str)
+        .filter(|code| code.starts_with("chatgpt_"))
+    else {
+        return label;
+    };
+    format!("{label} ({code})")
 }
 
 /// The wire message of a gateway transport failure: the error's own
