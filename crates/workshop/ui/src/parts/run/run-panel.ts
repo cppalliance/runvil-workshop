@@ -11,8 +11,7 @@
 // "Prompt" label is for screen readers only, the empty and error states
 // are text lines with Browse... and Choose Prompt as inline links, a
 // droppable drag marks the panel with a drag-over overlay class, and the
-// typed-path dialogs (Choose Prompt, Choose Input) are Cursor's form
-// modal, Cancel first.
+// typed-path dialog (Choose Prompt) is Cursor's form modal, Cancel first.
 //
 // The panel never reads disk: prompt text arrives through the confined
 // GET /workspace/file and is posted to POST /prompts/contract. Prompts
@@ -83,7 +82,7 @@ export class RunPanel extends WorkshopPart {
   private contract: RunContract | null = null;
   private failure: string | null = null;
   private promptPath: string | null = null;
-  // The open Choose Prompt / input Browse dialog, dismissed with the panel.
+  // The open Choose Prompt dialog, dismissed with the panel.
   private dialog: { dispose(): void } | null = null;
 
   // Holds the toolbar, body, and footer. It is the width container the rows
@@ -328,39 +327,6 @@ export class RunPanel extends WorkshopPart {
     await this.load(path);
   }
 
-  /** The input row's Browse: fills the field, reading nothing. */
-  private browseInput(field: HTMLInputElement): void {
-    if (window.__TAURI_INTERNALS__ !== undefined) {
-      void open({ directory: false, title: "Choose Input" }).then((picked) => {
-        if (typeof picked === "string") {
-          field.value = picked;
-        }
-      });
-      return;
-    }
-    this.dialog?.dispose();
-    this.dialog = showPanelDialog({
-      container: this.element,
-      classPrefix: "ws-run-input",
-      titleId: "run-input-title",
-      title: "Choose Input",
-      message: "Enter the full path of the input file.",
-      skin: "form",
-      field: { id: "run-input-path", label: "Input path" },
-      buttons: [
-        { label: "Cancel", run: () => undefined },
-        {
-          label: "Choose",
-          primary: true,
-          requiresValue: true,
-          run: (value) => {
-            field.value = value;
-          },
-        },
-      ],
-    });
-  }
-
   /** Paints the body's state-dependent content and the Run button. */
   private render(): void {
     this.promptField.value = this.promptPath ?? "";
@@ -398,9 +364,7 @@ export class RunPanel extends WorkshopPart {
       return;
     }
     if (this.contract !== null) {
-      renderContractRows(this.body, this.contract, {
-        browseInput: (field) => this.browseInput(field),
-      });
+      renderContractRows(this.body, this.contract);
     }
   }
 }

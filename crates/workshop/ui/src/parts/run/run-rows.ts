@@ -2,9 +2,9 @@
 // pure DOM building over the narrowed RunContract. Every frontmatter
 // key present in the prompt except `uses`, which has nothing to
 // bind, appears as exactly one row: name, description, and runvil
-// read-only; input a text field plus Browse; output a text field; one
-// control per arg by type with required markers and defaults (the
-// implicit declaration is the single prose box); model roles
+// read-only; output a text field; one row for each top-level property
+// of the `args` schema, its control chosen by the property's type, with
+// the required marker and the default prefilled; model roles
 // read-only; max_tool_iterations numeric with the runtime-default
 // placeholder. No bind-time validation runs here - validation is the
 // parser's alone.
@@ -15,18 +15,15 @@
 // side. A boolean arg is a `.switch` button, as Cursor's settings toggles
 // are.
 
-import type { RunContract, RunContractArg } from "../../services/run-api";
+import type { RunContract, RunContractSchema } from "../../services/run-api";
 
-/** The panel's hooks the rows need. */
-export interface RunRowsOptions {
-  /** Fills the input row's field through the panel's file-pick flow. */
-  readonly browseInput: (field: HTMLInputElement) => void;
-}
+/** The Engine's name for an argument that holds free text. */
+const TEXT_ARG = "text";
 
 /** What a row shows beside its label. */
 interface RowDetails {
   /** The second line under the label; blank or absent draws none. */
-  readonly description?: string | null;
+  readonly description?: string;
   /** Draws the required marker beside the label. */
   readonly required?: boolean;
 }
@@ -51,7 +48,7 @@ function row(label: string, controls: readonly Node[], details: RowDetails = {})
     title.appendChild(requiredMarker());
   }
   text.appendChild(title);
-  if (details.description !== undefined && details.description !== null && details.description.length > 0) {
+  if (details.description !== undefined && details.description.length > 0) {
     const description = document.createElement("div");
     description.className = "ws-run-panel__row-description";
     description.textContent = details.description;
@@ -83,7 +80,16 @@ function textField(value: string, placeholder = ""): HTMLInputElement {
   return field;
 }
 
-/** The required marker on a non-optional arg. */
+/** A multiline box with the shared control skin. */
+function multilineBox(value: string, placeholder = ""): HTMLTextAreaElement {
+  const box = document.createElement("textarea");
+  box.className = "input ws-run-panel__prose";
+  box.value = value;
+  box.placeholder = placeholder;
+  return box;
+}
+
+/** The required marker on an arg the schema's `required` list names. */
 function requiredMarker(): HTMLElement {
   const marker = document.createElement("span");
   marker.className = "ws-run-panel__required";
@@ -96,12 +102,12 @@ function requiredMarker(): HTMLElement {
  * A boolean arg's control: Cursor's switch, a `<button role="switch">` whose
  * `aria-checked` is the value. A click or Space/Enter flips it.
  */
-function booleanSwitch(arg: RunContractArg): HTMLButtonElement {
+function booleanSwitch(name: string, arg: RunContractSchema): HTMLButtonElement {
   const toggle = document.createElement("button");
   toggle.type = "button";
   toggle.className = "switch ws-run-panel__switch";
   toggle.setAttribute("role", "switch");
-  toggle.setAttribute("aria-label", arg.name);
+  toggle.setAttribute("aria-label", name);
   toggle.setAttribute("aria-checked", String(arg.default === true));
   toggle.addEventListener("click", () => {
     toggle.setAttribute("aria-checked", String(toggle.getAttribute("aria-checked") !== "true"));
@@ -109,10 +115,10 @@ function booleanSwitch(arg: RunContractArg): HTMLButtonElement {
   return toggle;
 }
 
-/** One arg's control by its declared type, prefilled from its default. */
-function argControl(arg: RunContractArg): HTMLElement {
+/** The control of the arg `name` by its declared type, prefilled from its default. */
+function argControl(name: string, arg: RunContractSchema): HTMLElement {
   if (arg.type === "boolean") {
-    return booleanSwitch(arg);
+    return booleanSwitch(name, arg);
   }
   if (arg.type === "integer" || arg.type === "number") {
     const field = document.createElement("input");
@@ -126,18 +132,21 @@ function argControl(arg: RunContractArg): HTMLElement {
     }
     return field;
   }
-  return textField(typeof arg.default === "string" ? arg.default : "");
+  if (arg.type === "array" || arg.type === "object") {
+    // A list or an object is typed as JSON text.
+    return multilineBox(arg.default === undefined ? "" : JSON.stringify(arg.default), "JSON");
+  }
+  const value = typeof arg.default === "string" ? arg.default : "";
+  // An `enum` shows its allowed values in the empty control.
+  const placeholder = arg.enum?.join(" | ") ?? "";
+  return name === TEXT_ARG ? multilineBox(value, placeholder) : textField(value, placeholder);
 }
 
 /**
  * Renders every contract section into `container`. The caller clears
  * the container first; rows append in contract order.
  */
-export function renderContractRows(
-  container: HTMLElement,
-  contract: RunContract,
-  options: RunRowsOptions,
-): void {
+export function renderContractRows(container: HTMLElement, contract: RunContract): void {
   const rows = document.createElement("div");
   rows.className = "ws-run-panel__rows";
 
@@ -149,36 +158,19 @@ export function renderContractRows(
     rows.appendChild(row("runvil", [readOnly(String(contract.runvil))]));
   }
 
-  const inputField = textField(contract.input?.path ?? "", contract.input?.description ?? "");
-  const inputBrowse = document.createElement("button");
-  inputBrowse.type = "button";
-  inputBrowse.className = "button button-outline button-sm ws-run-panel__input-browse";
-  inputBrowse.textContent = "Browse...";
-  inputBrowse.addEventListener("click", () => options.browseInput(inputField));
-  rows.appendChild(row("input", [inputField, inputBrowse]));
-
   rows.appendChild(
     row("output", [textField(contract.output?.path ?? "", contract.output?.description ?? "")]),
   );
 
-  if (contract.args.implicit) {
-    // The implicit declaration is the single prose field, a multiline box.
-    const prose = document.createElement("textarea");
-    prose.className = "input ws-run-panel__prose";
-    const proseField = contract.args.fields[0];
-    if (proseField !== undefined && typeof proseField.default === "string") {
-      prose.value = proseField.default;
-    }
+  const required = contract.args.required ?? [];
+  for (const [name, arg] of Object.entries(contract.args.properties ?? {})) {
+    // The description is a visible second line under the label, not a tooltip.
     rows.appendChild(
-      row(proseField?.name ?? "prose", [prose], { description: proseField?.description ?? null }),
+      row(name, [argControl(name, arg)], {
+        description: arg.description,
+        required: required.includes(name),
+      }),
     );
-  } else {
-    for (const arg of contract.args.fields) {
-      // The description is a visible second line under the label, not a tooltip.
-      rows.appendChild(
-        row(arg.name, [argControl(arg)], { description: arg.description, required: !arg.optional }),
-      );
-    }
   }
 
   for (const model of contract.models) {

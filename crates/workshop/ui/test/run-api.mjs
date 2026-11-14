@@ -2,9 +2,11 @@
 // Bundles the module with esbuild, imports it via a data URL, and drives it
 // against a scripted fetch. Covers: a full contract narrows field by field
 // (snake_case wire keys to the client's camelCase) and carries no tools
-// section; the implicit-args shape; narrowing rejects an unknown arg type; a
-// 422 envelope surfaces the server's code and message; a non-JSON answer and
-// a transport failure throw their typed variants.
+// section; the args schema narrows node by node, through properties and
+// items; the default declaration; narrowing rejects an unknown type word and
+// a root that is not an object; a 422 envelope surfaces the server's code and
+// message; a non-JSON answer and a transport failure throw their typed
+// variants.
 // Run: node --test test/run-api.mjs
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -36,16 +38,24 @@ const CONTRACT = {
   description: "Screens papers",
   runvil: 1,
   max_tool_iterations: 12,
-  input: { path: "in/papers.md", description: "the papers" },
   output: { path: "out/verdicts.md", description: "the verdicts" },
   uses: [{ id: "tools/web" }],
   args: {
-    implicit: false,
-    fields: [
-      { name: "topic", type: "string", optional: false, default: null, description: "the topic" },
-      { name: "deep", type: "boolean", optional: true, default: false, description: null },
-      { name: "limit", type: "integer", optional: true, default: 5, description: null },
-    ],
+    type: "object",
+    properties: {
+      deep: { type: "boolean", default: false },
+      focus: { type: "array", items: { type: "string" }, default: ["methods"] },
+      limit: { type: "integer", default: 5 },
+      opts: {
+        type: "object",
+        properties: { depth: { type: "integer", enum: [1, 2] } },
+        additionalProperties: true,
+      },
+      tone: { type: "string", enum: ["formal", "casual"] },
+      topic: { type: "string", description: "the topic" },
+    },
+    required: ["topic"],
+    additionalProperties: false,
   },
   models: [
     { label: "strong", min_context: 32000, thinking: true },
@@ -88,9 +98,8 @@ const json = (body, status = 200) => ({
       contract.maxToolIterations === 12,
   );
   check(
-    "input and output narrow",
-    contract.input?.path === "in/papers.md" &&
-      contract.output?.path === "out/verdicts.md" &&
+    "the output narrows",
+    contract.output?.path === "out/verdicts.md" &&
       contract.output?.description === "the verdicts",
   );
   check(
@@ -98,26 +107,56 @@ const json = (body, status = 200) => ({
     contract.uses.length === 1 && contract.uses[0].id === "tools/web",
   );
   check("a contract without tools narrows with no tools section", !("tools" in contract));
+  const { args } = contract;
   check(
-    "arg fields narrow with defaults and descriptions",
-    contract.args.implicit === false &&
-      contract.args.fields.length === 3 &&
-      contract.args.fields[0].name === "topic" &&
-      contract.args.fields[0].type === "string" &&
-      contract.args.fields[0].optional === false &&
-      contract.args.fields[1].default === false &&
-      contract.args.fields[2].type === "integer" &&
-      contract.args.fields[2].default === 5,
+    "the args root narrows as an object node with its required list",
+    args.type === "object" &&
+      args.additionalProperties === false &&
+      args.required?.join(",") === "topic",
+  );
+  // The Run window draws one row per property, top to bottom, so the
+  // narrowed properties must keep the order the server sends them.
+  check(
+    "the properties keep the order the server sends them",
+    Object.keys(args.properties ?? {}).join(",") === "deep,focus,limit,opts,tone,topic",
+  );
+  check(
+    "a property narrows with its type and default",
+    args.properties.topic.type === "string" &&
+      args.properties.topic.default === undefined &&
+      args.properties.deep.type === "boolean" &&
+      args.properties.deep.default === false &&
+      args.properties.limit.type === "integer" &&
+      args.properties.limit.default === 5,
   );
   // The Run window shows a described arg's text as a second line under its
   // label and draws no line for an undescribed one, so the narrowed
-  // description must survive as the string, or as null when the prompt
+  // description must survive as the string, or as nothing when the prompt
   // gives none.
   check(
-    "an arg's description narrows to its text, or null when the prompt gives none",
-    contract.args.fields[0].description === "the topic" &&
-      contract.args.fields[1].description === null &&
-      contract.args.fields[2].description === null,
+    "an arg's description narrows to its text, or to nothing when the prompt gives none",
+    args.properties.topic.description === "the topic" &&
+      args.properties.deep.description === undefined &&
+      args.properties.limit.description === undefined,
+  );
+  check(
+    "an enum narrows to its allowed values, strings or integers",
+    args.properties.tone.enum?.join(",") === "formal,casual" &&
+      args.properties.opts.properties.depth.enum?.join(",") === "1,2" &&
+      args.properties.opts.properties.depth.enum?.[0] === 1,
+  );
+  check(
+    "an array node narrows its items and keeps its default",
+    args.properties.focus.type === "array" &&
+      args.properties.focus.items?.type === "string" &&
+      JSON.stringify(args.properties.focus.default) === '["methods"]',
+  );
+  check(
+    "a nested object node narrows its own properties",
+    args.properties.opts.type === "object" &&
+      args.properties.opts.additionalProperties === true &&
+      args.properties.opts.required === undefined &&
+      args.properties.opts.properties.depth.type === "integer",
   );
   check(
     "model roles narrow",
@@ -128,7 +167,7 @@ const json = (body, status = 200) => ({
   );
 }
 
-// --- Absent sections narrow to null; implicit args name the prose field ----
+// --- Absent sections narrow to null; the default declaration is one string --
 
 {
   scriptFetch(() =>
@@ -137,14 +176,14 @@ const json = (body, status = 200) => ({
       description: "",
       runvil: null,
       max_tool_iterations: null,
-      input: null,
       output: null,
       uses: [],
       args: {
-        implicit: true,
-        fields: [
-          { name: "prose", type: "string", optional: false, default: null, description: null },
-        ],
+        type: "object",
+        properties: {
+          text: { type: "string", description: "Freeform text for this prompt" },
+        },
+        additionalProperties: false,
       },
       models: [],
     }),
@@ -154,15 +193,14 @@ const json = (body, status = 200) => ({
     "absent sections narrow to null",
     contract.runvil === null &&
       contract.maxToolIterations === null &&
-      contract.input === null &&
       contract.output === null,
   );
   check(
-    "the implicit args declaration names the single prose field",
-    contract.args.implicit === true &&
-      contract.args.fields.length === 1 &&
-      contract.args.fields[0].name === "prose" &&
-      contract.args.fields[0].type === "string",
+    "the default declaration narrows to one optional string named text",
+    Object.keys(contract.args.properties ?? {}).join(",") === "text" &&
+      contract.args.properties.text.type === "string" &&
+      contract.args.properties.text.description === "Freeform text for this prompt" &&
+      contract.args.required === undefined,
   );
 }
 
@@ -211,10 +249,9 @@ const json = (body, status = 200) => ({
     json({
       ...CONTRACT,
       args: {
-        implicit: false,
-        fields: [
-          { name: "when", type: "date", optional: true, default: null, description: null },
-        ],
+        type: "object",
+        properties: { when: { type: "date" } },
+        additionalProperties: false,
       },
     }),
   );
@@ -225,7 +262,44 @@ const json = (body, status = 200) => ({
     caught = error;
   }
   check(
-    "an unknown arg type is a shape failure",
+    "an unknown type word is a shape failure",
+    caught !== null && caught.code === "unexpected_shape",
+  );
+}
+
+{
+  scriptFetch(() =>
+    json({
+      ...CONTRACT,
+      args: {
+        type: "object",
+        properties: { tags: { type: "array", items: { type: "date" } } },
+        additionalProperties: false,
+      },
+    }),
+  );
+  let caught = null;
+  try {
+    await fetchPromptContract("p.md", "text");
+  } catch (error) {
+    caught = error;
+  }
+  check(
+    "an unknown type word under items is a shape failure",
+    caught !== null && caught.code === "unexpected_shape",
+  );
+}
+
+{
+  scriptFetch(() => json({ ...CONTRACT, args: { type: "string" } }));
+  let caught = null;
+  try {
+    await fetchPromptContract("p.md", "text");
+  } catch (error) {
+    caught = error;
+  }
+  check(
+    "a root that is not an object node is a shape failure",
     caught !== null && caught.code === "unexpected_shape",
   );
 }

@@ -6,7 +6,11 @@
 // and scripts fetch for /workspace/tree, /workspace/file, /prompts/contract,
 // and /workspace/grant. Covers: the empty open, and the Run tab title for
 // an empty path; a pre-filled open reaching
-// ready with one row per contract item and no tool row; the shimmer class on the tab title
+// ready with one row per contract item and no tool row; one row for each
+// top-level property of the args schema, in the order the server sends them
+// (the required marker, an enum's placeholder, the multiline box for text, a
+// JSON box for an array or object property), and no argument row for a root
+// with no properties; the shimmer class on the tab title
 // in loading and its absence in ready and error, including after the
 // overflow list inits a second tab for the panel; tree dragstart setting
 // application/x-workshop-path and a tree drop loading the prompt; an OS
@@ -19,7 +23,7 @@
 // visible second line (never a tooltip), a boolean arg as a .switch, the
 // screen-reader-only Prompt label tied to its field, Browse... and Choose
 // Prompt as inline links, the drag-over class a droppable drag sets, Choose
-// Prompt and Choose Input opening the form modal with Cancel first, and the
+// Prompt opening the form modal with Cancel first, and the
 // stylesheet's values (the 4% card, the 12px rows, the stacked layout under
 // 500px, the 35px toolbar, the 22px state lines, the footer), read from the
 // source because jsdom applies no layout.
@@ -44,6 +48,7 @@ const bundle = await esbuild.build({
       export { initZones, openInZone, panelIdFor, zoneOfPanel } from "./src/parts/layout/zones.ts";
       export { createPanelComponent, createPanelTabComponent, PANEL_TAB } from "./src/parts/layout/panel-types.ts";
       export { setupWorkspaceDrops } from "./src/parts/workspace/workspace-drops.ts";
+      export { renderContractRows } from "./src/parts/run/run-rows.ts";
     `,
     resolveDir: path.join(uiDir, ".."),
     loader: "ts",
@@ -122,16 +127,25 @@ function contractFor(name) {
     description: `contract for ${name}`,
     runvil: 1,
     max_tool_iterations: 12,
-    input: { path: "in/papers.md", description: "the papers" },
     output: { path: "out/verdicts.md", description: "the verdicts" },
     uses: [{ id: "tools/web" }],
     args: {
-      implicit: false,
-      fields: [
-        { name: "topic", type: "string", optional: false, default: null, description: "the topic" },
-        { name: "deep", type: "boolean", optional: true, default: false, description: null },
-        { name: "limit", type: "integer", optional: true, default: 5, description: null },
-      ],
+      type: "object",
+      properties: {
+        deep: { type: "boolean", default: false },
+        focus: { type: "array", items: { type: "string" }, default: ["methods", "results"] },
+        limit: { type: "integer", default: 5 },
+        opts: {
+          type: "object",
+          properties: { depth: { type: "integer" } },
+          additionalProperties: false,
+        },
+        text: { type: "string", description: "the paper" },
+        tone: { type: "string", enum: ["formal", "casual"] },
+        topic: { type: "string", description: "the topic" },
+      },
+      required: ["topic"],
+      additionalProperties: false,
     },
     models: [
       { label: "strong", min_context: 32000, thinking: true },
@@ -250,6 +264,7 @@ const {
   createPanelTabComponent,
   PANEL_TAB,
   setupWorkspaceDrops,
+  renderContractRows,
 } = await import(pathToFileURL(bundlePath).href);
 
 const failures = [];
@@ -385,18 +400,22 @@ check(
   "the description renders as a read-only row",
   rowText("description")?.textContent.includes("contract for prompt.md") === true,
 );
-const inputField = rowText("input")?.querySelector("input");
-check(
-  "the input row is a text field prefilled from the contract, with Browse",
-  inputField?.value === "in/papers.md" && !!rowText("input")?.querySelector("button"),
-);
 const outputField = rowText("output")?.querySelector("input");
 check("the output row is a prefilled text field", outputField?.value === "out/verdicts.md");
+check(
+  "the rows are one per contract item, the args in the order the server sends them",
+  rows.map((row) => row.querySelector(".ws-run-panel__row-label")?.textContent).join(",") ===
+    "name,description,runvil,output,deep,focus,limit,opts,text,tone,topic,strong,small,fast,max_tool_iterations",
+);
 const topicRow = rowText("topic");
 check(
   "a required arg is marked required",
   topicRow?.querySelector(".ws-run-panel__required") !== null &&
     topicRow?.querySelector("input") !== null,
+);
+check(
+  "only the args the required list names are marked",
+  filledEl.querySelectorAll(".ws-run-panel__required").length === 1,
 );
 const topicDescription = topicRow?.querySelector(".ws-run-panel__row-description");
 check(
@@ -434,6 +453,32 @@ check(
   limitRow?.querySelector('input[type="number"]')?.value === "5" &&
     limitRow.querySelector('input[type="number"]')?.step === "1",
 );
+const toneField = rowText("tone")?.querySelector('input[type="text"]');
+check(
+  "a string arg with an enum lists the allowed values as its placeholder",
+  toneField?.value === "" && toneField.placeholder === "formal | casual",
+);
+check(
+  "a string arg with no enum has no placeholder",
+  topicRow?.querySelector('input[type="text"]')?.placeholder === "",
+);
+const textRow = rowText("text");
+check(
+  "a string arg named text is the multiline box, with its description",
+  textRow?.querySelector("textarea.ws-run-panel__prose") !== null &&
+    textRow.querySelector("input") === null &&
+    textRow.querySelector(".ws-run-panel__row-description")?.textContent === "the paper",
+);
+const focusBox = rowText("focus")?.querySelector("textarea.ws-run-panel__prose");
+check(
+  "an array arg is a JSON box prefilled with its default as compact JSON",
+  focusBox?.value === '["methods","results"]' && focusBox.placeholder === "JSON",
+);
+const optsBox = rowText("opts")?.querySelector("textarea.ws-run-panel__prose");
+check(
+  "an object arg with no default is an empty JSON box",
+  optsBox?.value === "" && optsBox.placeholder === "JSON",
+);
 check(
   "the ready panel renders no tool row",
   rows.length > 0 && filledEl.querySelector(".ws-run-panel__row--tool") === null,
@@ -460,6 +505,27 @@ check("the Run button is enabled in ready", runButton?.disabled === false);
 runButton.click();
 await flush();
 check("the Run button does nothing when clicked", calls.length === fetchesBeforeRun);
+
+// --- A root with no properties draws no argument row ------------------------
+
+// The rows are drawn straight from a narrowed contract, with no window.
+const noArgsRows = window.document.createElement("div");
+renderContractRows(noArgsRows, {
+  name: "noargs",
+  description: "",
+  runvil: null,
+  maxToolIterations: null,
+  output: null,
+  uses: [],
+  args: { type: "object", properties: {}, additionalProperties: false },
+  models: [],
+});
+check(
+  "a root with no properties draws no argument row",
+  [...noArgsRows.querySelectorAll(".ws-run-panel__row-label")]
+    .map((label) => label.textContent)
+    .join(",") === "name,output,max_tool_iterations",
+);
 
 // --- Tree drag: dragstart sets the MIME type; a drop loads the prompt -------
 
@@ -698,7 +764,7 @@ check(
     !genRows.some((text) => text.includes("contract for slow.md")),
 );
 
-// --- Dialogs: Choose Prompt and Choose Input open the form modal, Cancel first
+// --- Dialog: Choose Prompt opens the form modal, Cancel first ---------------
 
 // A plain browser has no native picker, so Browse takes the typed-path dialog.
 delete window.__TAURI_INTERNALS__;
@@ -738,28 +804,6 @@ chooseButton.click();
 await flush();
 check("Choose closes the dialog and loads the typed prompt", dialogEl.querySelector(".ws-run-choose") === null &&
   [...dialogEl.querySelectorAll(".ws-run-panel__row")].some((row) => row.textContent.includes("typed.md")));
-
-dialogEl.querySelector(".ws-run-panel__input-browse").click();
-await flush();
-const inputDialog = dialogEl.querySelector(".ws-run-input");
-check("the input row's Browse opens Choose Input", inputDialog !== null);
-check(
-  "Choose Input uses the form modal skin with Cancel first",
-  inputDialog?.classList.contains("modal-dialog--form") === true &&
-    dialogButtons(inputDialog).join(",") === "Cancel,Choose",
-);
-const inputPath = inputDialog.querySelector("input");
-inputPath.value = `${ROOT}\\input.md`;
-inputPath.dispatchEvent(new window.Event("input", { bubbles: true }));
-inputDialog.querySelector(".modal-actions button:last-child").click();
-await flush();
-check(
-  "Choose Input fills the input row's field",
-  dialogEl.querySelector(".ws-run-input") === null &&
-    [...dialogEl.querySelectorAll(".ws-run-panel__row")]
-      .find((row) => row.querySelector(".ws-run-panel__row-label")?.textContent === "input")
-      ?.querySelector("input")?.value === `${ROOT}\\input.md`,
-);
 
 brokenEl.querySelector(".ws-run-panel__choose").click();
 await flush();

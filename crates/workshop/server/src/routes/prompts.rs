@@ -5,7 +5,9 @@
 //! posted markdown into the contract the Run window renders, or a `422`
 //! envelope naming the parse failure kind and line. The parser's own
 //! types are `Deserialize`-only, so the wire DTO is hand-written
-//! `Serialize` structs built from [`Frontmatter`] accessors.
+//! `Serialize` structs built from [`Frontmatter`] accessors. Its `args`
+//! field is the JSON Schema that
+//! [`ArgsSchema::as_json`](runvil::prompt::ArgsSchema::as_json) gives.
 
 use axum::Json;
 use axum::http::StatusCode;
@@ -16,7 +18,7 @@ use serde::{Deserialize, Serialize};
 use runvil::Prompt;
 use runvil::model::ModelRole;
 use runvil::packs::PackRef;
-use runvil::prompt::{ArgDecl, ArgsDecl, FileDecl, Frontmatter, RoleRequirements};
+use runvil::prompt::{FileDecl, Frontmatter, RoleRequirements};
 
 use crate::error::AppError;
 
@@ -48,19 +50,18 @@ struct ContractResponse {
     runvil: Option<u32>,
     /// The declared tool-loop cap; `null` for the runtime default.
     max_tool_iterations: Option<u32>,
-    /// The declared input file; `null` when absent.
-    input: Option<FileDto>,
     /// The declared output file; `null` when absent.
     output: Option<FileDto>,
     /// The declared Packs, in declaration order.
     uses: Vec<PackDto>,
-    /// The typed args declaration.
-    args: ArgsDto,
+    /// The `args` declaration as JSON Schema. The root is an object node,
+    /// and its `properties` are the prompt's arguments by name.
+    args: serde_json::Value,
     /// The declared model roles, sorted by label.
     models: Vec<ModelDto>,
 }
 
-/// A declared input or output file.
+/// The declared output file.
 #[derive(Debug, Serialize)]
 struct FileDto {
     /// The store-internal path.
@@ -89,60 +90,6 @@ impl From<&PackRef> for PackDto {
     fn from(entry: &PackRef) -> Self {
         Self {
             id: entry.id().to_string(),
-        }
-    }
-}
-
-/// The typed args declaration.
-#[derive(Debug, Serialize)]
-struct ArgsDto {
-    /// True when the declaration is the implicit default (no `args:` key).
-    implicit: bool,
-    /// The declared fields, sorted by name.
-    fields: Vec<ArgDto>,
-}
-
-impl From<&ArgsDecl> for ArgsDto {
-    fn from(decl: &ArgsDecl) -> Self {
-        Self {
-            implicit: decl.is_default(),
-            fields: decl
-                .iter()
-                .map(|(name, arg)| ArgDto::new(name, arg))
-                .collect(),
-        }
-    }
-}
-
-/// One declared arg.
-#[derive(Debug, Serialize)]
-struct ArgDto {
-    /// The arg name.
-    name: String,
-    /// The declared type (`string`, `boolean`, `integer`, `number`).
-    #[serde(rename = "type")]
-    kind: String,
-    /// Whether a call may omit the field.
-    optional: bool,
-    /// The declared default; `null` when absent.
-    default: Option<serde_json::Value>,
-    /// The human-readable description; `null` when absent.
-    description: Option<String>,
-}
-
-impl ArgDto {
-    /// Builds the DTO for the arg declared under `name`.
-    fn new(name: &str, decl: &ArgDecl) -> Self {
-        Self {
-            name: name.to_owned(),
-            kind: decl.kind().to_string(),
-            optional: decl.is_optional(),
-            // A declared default is validated against the declared type
-            // at parse, so it is always a JSON-representable scalar.
-            default: decl
-                .default()
-                .and_then(|value| serde_json::to_value(value).ok()),
-            description: decl.description().map(str::to_owned),
         }
     }
 }
@@ -178,10 +125,9 @@ impl From<&Frontmatter> for ContractResponse {
             max_tool_iterations: frontmatter
                 .max_tool_iterations()
                 .map(std::num::NonZeroU32::get),
-            input: frontmatter.input().map(FileDto::from),
             output: frontmatter.output().map(FileDto::from),
             uses: frontmatter.uses().iter().map(PackDto::from).collect(),
-            args: ArgsDto::from(frontmatter.args()),
+            args: frontmatter.args().as_json().clone(),
             models: ModelRole::ALL
                 .into_iter()
                 .filter_map(|role| {

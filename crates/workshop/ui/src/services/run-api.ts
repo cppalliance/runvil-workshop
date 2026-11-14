@@ -11,7 +11,7 @@
 import { CatalogError, ErrorCatalog } from "./error-catalog";
 import { errorCode, errorMessage, isRecord, readJson, request } from "./json-request";
 
-/** A declared input or output file. */
+/** The declared output file. */
 export interface RunContractFile {
   readonly path: string;
   readonly description: string;
@@ -22,24 +22,35 @@ export interface RunContractPack {
   readonly id: string;
 }
 
-/** The declared arg types the wire format allows. */
-export type RunContractArgType = "string" | "boolean" | "integer" | "number";
+/** The words a schema node's `type` may hold. */
+export type RunContractSchemaType =
+  | "string"
+  | "boolean"
+  | "integer"
+  | "number"
+  | "array"
+  | "object";
 
-/** One declared arg. */
-export interface RunContractArg {
-  readonly name: string;
-  readonly type: RunContractArgType;
-  readonly optional: boolean;
-  /** The declared default; null when absent. */
-  readonly default: string | number | boolean | null;
-  /** The human-readable description; null when absent. */
-  readonly description: string | null;
-}
-
-/** The typed args declaration; implicit names the single prose field. */
-export interface RunContractArgs {
-  readonly implicit: boolean;
-  readonly fields: readonly RunContractArg[];
+/**
+ * One node of the `args` declaration, a subset of JSON Schema. The root
+ * is an object node whose properties are the prompt's arguments.
+ */
+export interface RunContractSchema {
+  readonly type: RunContractSchemaType;
+  /** An object node's fields by name, in the order the server sends them. */
+  readonly properties?: Readonly<Record<string, RunContractSchema>>;
+  /** The names of the fields an object node requires. */
+  readonly required?: readonly string[];
+  /** Whether an object node takes fields it does not declare. */
+  readonly additionalProperties?: boolean;
+  /** The node of each item of an array node. */
+  readonly items?: RunContractSchema;
+  /** The values a string or integer node allows. */
+  readonly enum?: readonly (string | number)[];
+  /** The human-readable description. */
+  readonly description?: string;
+  /** The JSON value a field takes when the caller leaves it out. */
+  readonly default?: unknown;
 }
 
 /** The requirements a prompt declares for one model role. */
@@ -60,10 +71,10 @@ export interface RunContract {
   readonly runvil: number | null;
   /** The declared tool-loop cap; null for the runtime default. */
   readonly maxToolIterations: number | null;
-  readonly input: RunContractFile | null;
   readonly output: RunContractFile | null;
   readonly uses: readonly RunContractPack[];
-  readonly args: RunContractArgs;
+  /** The `args` declaration: an object node. */
+  readonly args: RunContractSchema;
   readonly models: readonly RunContractModel[];
 }
 
@@ -89,58 +100,99 @@ function parsePack(value: unknown): RunContractPack | null {
   return { id };
 }
 
-const ARG_TYPES: readonly string[] = ["string", "boolean", "integer", "number"];
+function parseSchemaType(value: unknown): RunContractSchemaType | null {
+  switch (value) {
+    case "string":
+    case "boolean":
+    case "integer":
+    case "number":
+    case "array":
+    case "object":
+      return value;
+    default:
+      return null;
+  }
+}
 
-function parseArg(value: unknown): RunContractArg | null {
+function parseProperties(value: unknown): Record<string, RunContractSchema> | null {
   if (!isRecord(value)) {
     return null;
   }
-  const { name, type, optional } = value;
-  if (typeof name !== "string" || typeof type !== "string" || !ARG_TYPES.includes(type)) {
+  const nodes: [string, RunContractSchema][] = [];
+  for (const [name, field] of Object.entries(value)) {
+    const node = parseSchema(field);
+    if (node === null) {
+      return null;
+    }
+    nodes.push([name, node]);
+  }
+  return Object.fromEntries(nodes);
+}
+
+function parseRequired(value: unknown): string[] | null {
+  if (!Array.isArray(value)) {
     return null;
   }
-  if (typeof optional !== "boolean") {
+  const names: string[] = [];
+  for (const name of value) {
+    if (typeof name !== "string") {
+      return null;
+    }
+    names.push(name);
+  }
+  return names;
+}
+
+function parseEnum(value: unknown): (string | number)[] | null {
+  if (!Array.isArray(value)) {
     return null;
   }
-  const defaultValue = value.default;
+  const choices: (string | number)[] = [];
+  for (const choice of value) {
+    if (typeof choice !== "string" && typeof choice !== "number") {
+      return null;
+    }
+    choices.push(choice);
+  }
+  return choices;
+}
+
+/** Narrows one schema node and, through `properties` and `items`, every node under it. */
+function parseSchema(value: unknown): RunContractSchema | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+  const type = parseSchemaType(value.type);
+  const properties = value.properties === undefined ? undefined : parseProperties(value.properties);
+  const required = value.required === undefined ? undefined : parseRequired(value.required);
+  const items = value.items === undefined ? undefined : parseSchema(value.items);
+  const choices = value.enum === undefined ? undefined : parseEnum(value.enum);
   if (
-    defaultValue !== null &&
-    typeof defaultValue !== "string" &&
-    typeof defaultValue !== "number" &&
-    typeof defaultValue !== "boolean"
+    type === null ||
+    properties === null ||
+    required === null ||
+    items === null ||
+    choices === null
   ) {
     return null;
   }
-  const description = value.description;
-  if (description !== null && typeof description !== "string") {
+  const { additionalProperties, description } = value;
+  if (additionalProperties !== undefined && typeof additionalProperties !== "boolean") {
+    return null;
+  }
+  if (description !== undefined && typeof description !== "string") {
     return null;
   }
   return {
-    name,
-    type: type as RunContractArgType,
-    optional,
-    default: defaultValue,
-    description: description ?? null,
+    type,
+    properties,
+    required,
+    additionalProperties,
+    items,
+    enum: choices,
+    description,
+    default: value.default,
   };
-}
-
-function parseArgs(value: unknown): RunContractArgs | null {
-  if (!isRecord(value)) {
-    return null;
-  }
-  const { implicit, fields } = value;
-  if (typeof implicit !== "boolean" || !Array.isArray(fields)) {
-    return null;
-  }
-  const parsed: RunContractArg[] = [];
-  for (const field of fields) {
-    const arg = parseArg(field);
-    if (arg === null) {
-      return null;
-    }
-    parsed.push(arg);
-  }
-  return { implicit, fields: parsed };
 }
 
 function parseModel(value: unknown): RunContractModel | null {
@@ -178,11 +230,7 @@ function parseContract(body: unknown): RunContract | null {
   if (max_tool_iterations !== null && typeof max_tool_iterations !== "number") {
     return null;
   }
-  const input = body.input === null ? null : parseFile(body.input);
   const output = body.output === null ? null : parseFile(body.output);
-  if (body.input !== null && input === null) {
-    return null;
-  }
   if (body.output !== null && output === null) {
     return null;
   }
@@ -197,8 +245,9 @@ function parseContract(body: unknown): RunContract | null {
     }
     parsedPacks.push(parsed);
   }
-  const args = parseArgs(body.args);
-  if (args === null) {
+  // The root of the declaration is an object node.
+  const args = parseSchema(body.args);
+  if (args === null || args.type !== "object") {
     return null;
   }
   const parsedModels: RunContractModel[] = [];
@@ -214,7 +263,6 @@ function parseContract(body: unknown): RunContract | null {
     description,
     runvil: runvil ?? null,
     maxToolIterations: max_tool_iterations ?? null,
-    input,
     output,
     uses: parsedPacks,
     args,

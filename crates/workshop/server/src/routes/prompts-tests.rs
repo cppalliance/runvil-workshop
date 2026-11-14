@@ -39,9 +39,6 @@ name: full
 description: does everything
 runvil: 0
 max_tool_iterations: 5
-input:
-  path: paper.md
-  description: the paper
 output:
   path: out.md
   description: the result
@@ -50,13 +47,16 @@ uses:
   - fs
   - acme/poop
 args:
-  topic:
-    type: string
-    description: the topic
-  count:
-    type: integer
-    optional: true
-    default: 3
+  type: object
+  properties:
+    topic:
+      type: string
+      description: the topic
+    count:
+      type: integer
+      default: 3
+  required:
+    - topic
 models:
   strong:
     min_context: 200000
@@ -79,10 +79,6 @@ async fn a_full_frontmatter_prompt_answers_every_contract_section() {
     assert_eq!(json["runvil"], 0);
     assert_eq!(json["max_tool_iterations"], 5);
     assert_eq!(
-        json["input"],
-        serde_json::json!({ "path": "paper.md", "description": "the paper" })
-    );
-    assert_eq!(
         json["output"],
         serde_json::json!({ "path": "out.md", "description": "the result" })
     );
@@ -96,14 +92,19 @@ async fn a_full_frontmatter_prompt_answers_every_contract_section() {
             { "id": "poop" },
         ])
     );
+    // The declaration is sent as JSON Schema: every object node writes
+    // `additionalProperties`, and `required` lists the fields a caller
+    // must send.
     assert_eq!(
         json["args"],
         serde_json::json!({
-            "implicit": false,
-            "fields": [
-                { "name": "count", "type": "integer", "optional": true, "default": 3, "description": null },
-                { "name": "topic", "type": "string", "optional": false, "default": null, "description": "the topic" },
-            ],
+            "type": "object",
+            "properties": {
+                "count": { "type": "integer", "default": 3 },
+                "topic": { "type": "string", "description": "the topic" },
+            },
+            "required": ["topic"],
+            "additionalProperties": false,
         })
     );
     assert_eq!(
@@ -147,7 +148,7 @@ fn an_internal_parse_failure_names_no_prompt_line() {
 }
 
 #[tokio::test]
-async fn a_prompt_without_args_yields_the_implicit_prose_field() {
+async fn a_prompt_without_args_yields_the_default_declaration() {
     let text = "---\nname: plain\ndescription: no args\n---\n\n## S\n\np\n";
     let body = serde_json::json!({ "name": "plain", "text": text });
     let (status, json) = post_contract(body).await;
@@ -155,10 +156,11 @@ async fn a_prompt_without_args_yields_the_implicit_prose_field() {
     assert_eq!(
         json["args"],
         serde_json::json!({
-            "implicit": true,
-            "fields": [
-                { "name": "prose", "type": "string", "optional": true, "default": null, "description": "Freeform input for this prompt" },
-            ],
+            "type": "object",
+            "properties": {
+                "text": { "type": "string", "description": "Freeform text for this prompt" },
+            },
+            "additionalProperties": false,
         })
     );
     assert_eq!(
@@ -195,7 +197,6 @@ async fn the_dto_serializes_absent_declarations_as_nulls() {
     let (status, json) = post_contract(body).await;
     assert_eq!(status, StatusCode::OK);
     // Absent declarations serialize as explicit nulls, not missing keys.
-    assert!(json["input"].is_null());
     assert!(json["output"].is_null());
     assert!(json["max_tool_iterations"].is_null());
     assert!(json["runvil"].is_null());
