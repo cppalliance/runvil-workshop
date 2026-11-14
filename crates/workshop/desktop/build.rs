@@ -33,7 +33,16 @@ const GATEWAY_SIDECAR_VARIABLE: &str = "RUNVIL_GATEWAY_SIDECAR";
 fn main() -> Result<(), Box<dyn Error>> {
     install_gateway_sidecar()?;
     tauri_build::try_build(tauri_build::Attributes::new().app_manifest(
-        tauri_build::AppManifest::new().commands(&["desktop_update_supported", "quit"]),
+        tauri_build::AppManifest::new().commands(&[
+            "desktop_update_supported",
+            "quit",
+            "chatgpt_bind_capability",
+            "chatgpt_status",
+            "chatgpt_sign_in",
+            "chatgpt_sign_out",
+            "chatgpt_reset",
+            "chatgpt_enable",
+        ]),
     ))?;
     Ok(())
 }

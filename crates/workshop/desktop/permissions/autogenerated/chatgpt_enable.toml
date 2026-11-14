@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-chatgpt-enable"
+description = "Enables the chatgpt_enable command without any pre-configured scope."
+commands.allow = ["chatgpt_enable"]
+
+[[permission]]
+identifier = "deny-chatgpt-enable"
+description = "Denies the chatgpt_enable command without any pre-configured scope."
+commands.deny = ["chatgpt_enable"]

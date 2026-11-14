@@ -135,3 +135,19 @@ async fn a_gateway_known_down_short_circuits_the_catalog_with_bad_gateway() {
         "the short-circuit message is user-visible"
     );
 }
+
+#[test]
+fn a_chatgpt_sign_in_code_is_named_in_the_failure_label() {
+    let body = br#"{"error":{"code":"chatgpt_sign_in_required","message":"sign in"}}"#;
+    assert_eq!(
+        sign_in_failure_label("403 Forbidden", body),
+        "Gateway error: 403 Forbidden (chatgpt_sign_in_required)"
+    );
+    assert_eq!(
+        sign_in_failure_label(
+            "500 Internal Server Error",
+            br#"{"error":{"code":"upstream_unavailable"}}"#
+        ),
+        "Gateway error: 500 Internal Server Error"
+    );
+}

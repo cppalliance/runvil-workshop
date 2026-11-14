@@ -4,9 +4,9 @@
 //! The desktop app (`workshop`) depends on this crate and never on
 //! `workshop-server`, so server internals do not resolve in the desktop app at
 //! all. The surface is the configuration types, the in-process server
-//! lifecycle, the Gateway publication seam, and the listing of a Plugin
-//! directory; the `test-fixtures` feature forwards the server's
-//! integration-test seams.
+//! lifecycle, the Gateway publication and ChatGPT account seams, and the
+//! listing of a Plugin directory; the `test-fixtures` feature forwards the
+//! server's integration-test seams.
 //!
 //! ## Invariants
 //!
@@ -18,8 +18,10 @@
 //!   item, and the desktop app's sole view of the server is this crate.
 
 pub use workshop_server::{
-    AgentsConfig, Config, GatewayConfig, GatewayPublicationError, GatewayUpdater, PluginListing,
-    ServerConfig, ServerHandle, SpawnError, Termination, discovery, list_plugin_dir, spawn,
+    AgentsConfig, ChatgptAccount, ChatgptAccountError, ChatgptAccountOp, ChatgptHttpFailure,
+    ChatgptJsonFailure, ChatgptReadTarget, ChatgptSidecarFailure, Config, GatewayConfig,
+    GatewayPublicationError, GatewayUpdater, PluginListing, ServerConfig, ServerHandle, SpawnError,
+    Termination, discovery, list_plugin_dir, spawn,
 };
 
 /// The server's integration-test seams, forwarded to the desktop app's tests.

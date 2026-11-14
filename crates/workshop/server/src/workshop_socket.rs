@@ -61,7 +61,7 @@ use workshop_support::recv_or_pending;
 
 use crate::websocket::{SocketState, cross_site_refusal, send_error, send_frame};
 
-use self::menu::{select_model, start_switch};
+use self::menu::{refresh_models, select_model, start_switch};
 
 /// How long a profile switch waits for a relaunched sidecar gateway to
 /// publish a replacement generation serving the selection before the
@@ -374,10 +374,14 @@ async fn handle_frame(state: &WorkshopSocketState, text: &str, socket: &mut WebS
         start_switch(state, id.as_ref(), &frame, socket).await;
         return;
     }
+    if kind == Some("refresh_models") {
+        refresh_models(state, id.as_ref(), socket).await;
+        return;
+    }
     send_error(
         socket,
         id.as_ref(),
-        "unknown frame type; expected \"select_model\" or \"switch_profile\"",
+        "unknown frame type; expected \"select_model\", \"switch_profile\", or \"refresh_models\"",
     )
     .await;
 }

@@ -54,6 +54,18 @@ pub(crate) async fn guard(request: Request, next: Next) -> Response {
     next.run(request).await
 }
 
+/// Guard for the separate config listener: allows only `GET`/`HEAD` from
+/// a loopback `Host` (refusing DNS rebinding and state-changing methods).
+pub(crate) async fn config_guard(request: Request, next: Next) -> Response {
+    if !matches!(*request.method(), Method::GET | Method::HEAD) {
+        return axum::http::StatusCode::METHOD_NOT_ALLOWED.into_response();
+    }
+    if !host_is_loopback(&request) {
+        return AppError::CrossSite.into_response();
+    }
+    next.run(request).await
+}
+
 /// Whether the request's authority is loopback, closing DNS rebinding: a
 /// page on a rebound hostname reaches this server with same-origin
 /// Sec-Fetch metadata and a freely chosen content type, but its `Host`

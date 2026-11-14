@@ -11,6 +11,8 @@ import "./agent-toolbar.css";
 
 import type { Event } from "@workshop/platform/event";
 import { Disposable } from "@workshop/platform/lifecycle";
+import { CHATGPT_ACCOUNT } from "../../services/chatgpt-account";
+import { getServiceOrNull } from "@workshop/platform/service-registry";
 import type { ModelService } from "../../services/model-service";
 import { ModeChip, type UnifiedMode } from "./mode-chip";
 import { ModelPickerTrigger } from "../chrome/model-picker-trigger";
@@ -37,9 +39,9 @@ export class AgentToolbar extends Disposable {
     this.element.setAttribute("aria-label", "Agent controls");
 
     this.modeChip = this._register(new ModeChip());
-    this.modelPicker = this._register(new ModelPickerTrigger(modelService));
+    const account = getServiceOrNull(CHATGPT_ACCOUNT);
+    this.modelPicker = this._register(new ModelPickerTrigger(modelService, account ?? undefined));
     const tokenRing = this._register(new TokenRing());
-
     this.element.append(this.modeChip.element, this.modelPicker.element, tokenRing.element);
   }
 

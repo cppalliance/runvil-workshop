@@ -3,7 +3,7 @@
 //! subsystem owns a `register` helper here so the composition reads as a
 //! single list of subsystem registrations in registration order.
 
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use workshop_gateway::{GatewayBinding, GatewayHandles, GatewayHealth, ResolvedGateway};
 use workshop_menu::MenuHandles;
@@ -66,6 +66,7 @@ pub(super) fn compose(
     Ok(AppState {
         backoff,
         registry,
+        config_origin: Arc::new(OnceLock::new()),
         _registrations: registrations,
     })
 }

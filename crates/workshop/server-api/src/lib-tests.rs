@@ -38,6 +38,17 @@ fn the_desktop_app_facing_surface_names_every_re_export() {
         short_name::<GatewayPublicationError>(),
         "GatewayPublicationError"
     );
+    // The Gateway ChatGPT account seam.
+    assert_eq!(short_name::<ChatgptAccount>(), "ChatgptAccount");
+    assert_eq!(short_name::<ChatgptAccountError>(), "ChatgptAccountError");
+    assert_eq!(short_name::<ChatgptAccountOp>(), "ChatgptAccountOp");
+    assert_eq!(short_name::<ChatgptHttpFailure>(), "ChatgptHttpFailure");
+    assert_eq!(short_name::<ChatgptJsonFailure>(), "ChatgptJsonFailure");
+    assert_eq!(short_name::<ChatgptReadTarget>(), "ChatgptReadTarget");
+    assert_eq!(
+        short_name::<ChatgptSidecarFailure>(),
+        "ChatgptSidecarFailure"
+    );
     // The listing of a Plugin directory.
     list_signature(list_plugin_dir);
     assert_eq!(short_name::<PluginListing>(), "PluginListing");

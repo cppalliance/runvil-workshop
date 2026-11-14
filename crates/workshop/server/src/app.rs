@@ -16,7 +16,7 @@ pub(crate) mod test_helpers;
 mod tests;
 
 use std::fmt;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use axum::Router;
 
@@ -46,6 +46,7 @@ use crate::routes;
 pub struct AppState {
     backoff: ReconnectBackoff,
     registry: Registry,
+    config_origin: Arc<OnceLock<String>>,
     // Keeps the subsystems' self-registrations alive; dropping the last
     // state clone deregisters them.
     _registrations: Registrations,
@@ -217,6 +218,22 @@ impl AppState {
         self.required::<AgentSessions>()
     }
 
+    /// Returns the separate config listener's loopback origin once bound.
+    pub(crate) fn config_origin(&self) -> Option<&str> {
+        self.config_origin.get().map(String::as_str)
+    }
+
+    /// Publishes the separate config listener's bound loopback origin.
+    pub(crate) fn set_config_origin(&self, origin: String) {
+        let _ = self.config_origin.set(origin);
+    }
+
+    /// Returns the main-origin `Content-Security-Policy` header value, binding
+    /// `frame-src` exclusively to the separate config origin once bound.
+    pub(crate) fn main_csp(&self) -> axum::http::HeaderValue {
+        crate::csp::main_policy_for(self.config_origin())
+    }
+
     /// Reopens the workspace file that was open when the server last
     /// ran, and returns whether one was reopened. Boot awaits this after
     /// binding the listener and before it serves, so the first
@@ -358,6 +375,7 @@ pub enum StateError {
 /// none on the WebSocket upgrades.
 pub fn router(state: AppState) -> Router {
     let registry = state.registry().clone();
+    let csp_state = state.clone();
     let mut api = Router::new()
         .merge(routes::realtime::routes(state.clone()))
         .merge(routes::gateway_config::routes(state))
@@ -376,5 +394,15 @@ pub fn router(state: AppState) -> Router {
         // is stamped with the CSP, error envelopes included, so the desktop app's
         // External-origin webview runs under the policy no matter which
         // route answered.
-        .layer(axum::middleware::from_fn(crate::csp::header))
+        .layer(axum::middleware::from_fn_with_state(
+            csp_state,
+            crate::csp::header,
+        ))
+}
+
+/// Returns the router for the dedicated config listener: serves only the
+/// proxied Gateway config documents, guarded to loopback `Host` + `GET`/`HEAD`
+/// and framed exclusively by `parent_origin`.
+pub(crate) fn config_router(state: AppState, parent_origin: &str) -> Router {
+    routes::gateway_config::config_router(state, parent_origin)
 }

@@ -175,6 +175,11 @@ export class WorkshopSocket extends Disposable {
     return this.sendFrame({ type: "switch_profile", name } satisfies SwitchProfileFrame);
   }
 
+  /** Asks the server to re-read the Gateway catalog and push it to every window. */
+  refreshModels(): boolean {
+    return this.sendFrame({ type: "refresh_models" });
+  }
+
   /** Sends one JSON frame; false when the socket is down or the send threw. */
   private sendFrame(frame: Record<string, unknown>): boolean {
     const socket = this.socket;

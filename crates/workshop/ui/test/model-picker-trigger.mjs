@@ -2,8 +2,8 @@
 // button showing the selected model's id and a 9px chevron, with the tooltip
 // "Switch Model (Ctrl+/)". Clicking (or open(), which Ctrl+/ calls) opens a
 // DropdownMenu of the ModelService catalog on the composer's menu surface with
-// a check-only selection, 230px wide and at most 320px tall, reading "No models
-// found" when the catalog is empty; picking one sends the select command
+// a check-only selection, 230px wide and at most 320px tall, reading "Sign in
+// with ChatGPT" when the catalog is empty; picking one sends the select command
 // through the service and leaves the label for the server's confirming
 // snapshot. The trigger re-renders when the service's selection changes (a
 // catalog change leaves the label alone); dispose()
@@ -29,6 +29,7 @@ const bundle = await esbuild.build({
     contents: `
       export * as lifecycle from "@workshop/platform/lifecycle";
       export { ModelService } from "./src/services/model-service.ts";
+      export { ChatgptAccount, PLAN_TAG } from "./src/services/chatgpt-account.ts";
       export { ModelPickerTrigger } from "./src/parts/chrome/model-picker-trigger.ts";
     `,
     resolveDir: path.join(testDir, ".."),
@@ -60,7 +61,7 @@ globalThis.CustomEvent = dom.window.CustomEvent;
 
 const bundlePath = path.join(os.tmpdir(), "runvil-model-picker-trigger-test.mjs");
 await writeFile(bundlePath, bundle.outputFiles[0].text);
-const { ModelPickerTrigger, ModelService, lifecycle } = await import(
+const { ChatgptAccount, ModelPickerTrigger, ModelService, PLAN_TAG, lifecycle } = await import(
   pathToFileURL(bundlePath).href
 );
 
@@ -183,7 +184,7 @@ await assertNoLeaks(lifecycle, async () => {
     const items = menuItems();
     check(
       "an empty catalog lists a single no-models row",
-      items.length === 1 && items[0]?.textContent === "No models found",
+      items.length === 1 && items[0]?.textContent === "Sign in with ChatGPT",
     );
     items[0]?.click();
     check(
@@ -241,6 +242,122 @@ await assertNoLeaks(lifecycle, async () => {
       labelOf(trigger) === "gamma" && trigger.element.title === "Switch Model (Ctrl+/)",
     );
     trigger.dispose();
+    service.dispose();
+    trigger.element.remove();
+  }
+
+  // --- Plan models -----------------------------------------------------------------
+
+  {
+    const picked = [];
+    const service = new ModelService((id) => {
+      picked.push(id);
+      return true;
+    });
+    service.setModels([{ id: "gpt-6.1-sol" }, { id: "alpha" }, { id: "o4-mini" }]);
+    service.applySelected("alpha");
+    const view = {
+      state: "signed_in",
+      email: "a@example.com",
+      planGranted: true,
+      detail: "Signed in",
+      planModels: ["gpt-6.1-sol", "o4-mini"],
+    };
+    const api = {
+      status: async () => view,
+      signIn: async () => view,
+      signOut: async () => view,
+      reset: async () => view,
+      enable: async () => ({ endpoint: "chatgpt-plan", added: [], renamed: [], skipped: [] }),
+    };
+    const account = new ChatgptAccount(
+      api,
+      () => true,
+      (id) => service.setCurrent(id),
+      () => service.models,
+      () => service.current,
+    );
+    await account.refresh();
+    const trigger = new ModelPickerTrigger(service, account);
+    document.body.appendChild(trigger.element);
+    trigger.element.click();
+
+    const menu = menuEl();
+    check("mixed menu puts non-plan row first without a heading", menu.children.length === 2 && menu.children[0].classList.contains("menu-item"));
+    check("mixed menu non-plan row shows the API-key model", menu.children[0].querySelector(".menu-item__label")?.textContent === "alpha");
+    const group = menu.children[1];
+    check(
+      "mixed menu wraps plan models in one labeled group",
+      group?.classList.contains("menu-group") &&
+        group.getAttribute("role") === "group" &&
+        group.getAttribute("aria-label") === PLAN_TAG,
+    );
+    check(
+      "mixed menu shows one ChatGPT plan heading and no per-row tags",
+      menu.querySelectorAll(".menu-heading").length === 1 &&
+        group?.querySelector(".menu-heading")?.textContent === PLAN_TAG &&
+        menu.querySelectorAll(".menu-item__tag").length === 0,
+    );
+    const planLabels = [...group.querySelectorAll('[role="menuitem"] .menu-item__label')].map((el) => el.textContent);
+    check("mixed menu lists plan models in catalog order under the heading", planLabels.join(",") === "gpt-6.1-sol,o4-mini");
+    group.querySelectorAll('[role="menuitem"]')[1].click();
+    check("clicking a grouped plan model selects it and closes the menu", picked.join(",") === "o4-mini" && menuEl() === null);
+
+    trigger.dispose();
+    account.dispose();
+    service.dispose();
+    trigger.element.remove();
+  }
+
+  {
+    const service = new ModelService(() => true);
+    service.setModels([{ id: "gpt-6.1-sol" }, { id: "o4-mini" }]);
+    service.applySelected("gpt-6.1-sol");
+    const view = {
+      state: "signed_in",
+      email: "a@example.com",
+      planGranted: true,
+      detail: "Signed in",
+      planModels: ["gpt-6.1-sol", "o4-mini"],
+    };
+    const api = {
+      status: async () => view,
+      signIn: async () => view,
+      signOut: async () => view,
+      reset: async () => view,
+      enable: async () => ({ endpoint: "chatgpt-plan", added: [], renamed: [], skipped: [] }),
+    };
+    const account = new ChatgptAccount(
+      api,
+      () => true,
+      (id) => service.setCurrent(id),
+      () => service.models,
+      () => service.current,
+    );
+    await account.refresh();
+    const trigger = new ModelPickerTrigger(service, account);
+    document.body.appendChild(trigger.element);
+    trigger.element.click();
+
+    const menu = menuEl();
+    const group = menu.firstElementChild;
+    check(
+      "all-plan menu starts directly with the ChatGPT plan group",
+      menu.children.length === 1 &&
+        group?.classList.contains("menu-group") &&
+        group.getAttribute("role") === "group" &&
+        group.getAttribute("aria-label") === PLAN_TAG &&
+        group.firstElementChild?.classList.contains("menu-heading") &&
+        group.firstElementChild?.textContent === PLAN_TAG,
+    );
+    const planLabels = [...group.querySelectorAll('[role="menuitem"] .menu-item__label')].map((el) => el.textContent);
+    check(
+      "all-plan menu renders plan rows with no tags",
+      planLabels.join(",") === "gpt-6.1-sol,o4-mini" && menu.querySelectorAll(".menu-item__tag").length === 0,
+    );
+
+    trigger.dispose();
+    account.dispose();
     service.dispose();
     trigger.element.remove();
   }

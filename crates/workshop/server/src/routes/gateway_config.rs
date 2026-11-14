@@ -23,31 +23,40 @@ use crate::error::AppError;
 use workshop_gateway::ForwardedResponse;
 use workshop_support::{DEFAULT_DEADLINE, with_deadline};
 
-/// The gateway-config panel routes. The origin probe is local and
-/// instant, so it has the default deadline. The forward route and the two
-/// config-asset routes are added after the layer and have none: a
-/// forwarded cache download or config apply legitimately runs for
-/// minutes, and for every proxied request the gateway client already
-/// bounds the header phase.
+/// The main-origin gateway-config API routes: origin discovery (`gateway/origin`,
+/// `gateway/config-origin`) and the narrow `/gateway/api/{*path}` proxy.
+/// Config documents themselves live exclusively on [`config_router`] (a
+/// separate loopback origin) and are never served from the main origin.
 pub(crate) fn routes(state: AppState) -> Router {
     with_deadline(
-        Router::new().route("/gateway/origin", get(gateway_origin)),
+        Router::new()
+            .route("/gateway/origin", get(gateway_origin))
+            .route("/gateway/config-origin", get(gateway_config_origin)),
         DEFAULT_DEADLINE,
     )
     .route("/gateway/api/{*path}", any(gateway_forward))
-    // The config SPA assets, proxied same-origin so the panel iframe
-    // loads from the workshop's own origin instead of the gateway's
-    // port. A cross-origin iframe makes Chromium spawn renderer
-    // processes that flash a console window on some Windows configs.
-    .route("/gateway/config/", get(gateway_config_index))
-    .route("/gateway/config/{*path}", get(gateway_config_assets))
     .with_state(state)
 }
 
+/// The dedicated config-origin router: serves only the proxied Gateway
+/// config SPA index (`GET /`) and its sub-assets (`GET /{*path}`).
+pub(crate) fn config_router(state: AppState, parent_origin: &str) -> Router {
+    let policy = crate::csp::config_policy(parent_origin);
+    Router::new()
+        .route("/", get(gateway_config_index))
+        .route("/{*path}", get(gateway_config_assets))
+        .with_state(state)
+        .layer(axum::middleware::from_fn(crate::cross_site::config_guard))
+        .layer(axum::middleware::from_fn(move |request, next| {
+            crate::csp::stamp_config_policy(policy.clone(), request, next)
+        }))
+}
+
 /// Whether the proxy forwards `method` and `path`. The rule: any method
-/// on a path under `/admin/` forwards, with one exception - `GET
-/// /admin/progress` is refused because the workshop owns progress
-/// display, so the panel must never subscribe - plus two admitted routes
+/// on a path under `/admin/` forwards, with two exceptions: every
+/// `/admin/chatgpt/` path is refused, and `GET /admin/progress` is
+/// refused because the workshop owns progress display, so the panel
+/// must never subscribe. Plus two admitted routes
 /// outside `/admin/`: `GET /v1/cache` and `DELETE /v1/cache/<digest>`
 /// for a well-formed 64-hex digest. Everything else is refused: chat
 /// completions, the model list, `/health`, `/shutdown`, the config UI
@@ -59,6 +68,9 @@ pub(crate) fn routes(state: AppState) -> Router {
 /// serve is the gateway's 404 or 405 to answer.
 fn forward_allowed(method: &Method, path: &str) -> bool {
     if has_normalizing_segment(path) {
+        return false;
+    }
+    if path == "/admin/chatgpt" || path.starts_with("/admin/chatgpt/") {
         return false;
     }
     if path.starts_with("/admin/") {
@@ -100,11 +112,25 @@ fn relay(forwarded: ForwardedResponse, cache_control: Option<&'static str>) -> R
         .unwrap_or_else(|_| StatusCode::BAD_GATEWAY.into_response())
 }
 
-/// Answers the gateway's base URL, so the workshop UI can point the
-/// config panel's iframe at `<origin>/config/?mode=panel`.
+/// Answers the gateway's base URL.
 async fn gateway_origin(State(state): State<AppState>) -> Response {
     let gateway = state.gateway_snapshot();
     let body = serde_json::json!({ "origin": gateway.base_url() });
+    (
+        StatusCode::OK,
+        [(header::CONTENT_TYPE, "application/json")],
+        body.to_string(),
+    )
+        .into_response()
+}
+
+/// Answers the dedicated config listener's loopback origin so the docked
+/// config panel and its parent postMessage bridge can pin it.
+async fn gateway_config_origin(State(state): State<AppState>) -> Response {
+    let Some(origin) = state.config_origin() else {
+        return StatusCode::SERVICE_UNAVAILABLE.into_response();
+    };
+    let body = serde_json::json!({ "origin": origin });
     (
         StatusCode::OK,
         [(header::CONTENT_TYPE, "application/json")],
