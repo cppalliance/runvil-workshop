@@ -124,10 +124,11 @@ fn register_gateway(
     if let Some(identity) = gateway.identity() {
         workshop_gateway::report_version(identity.version(), push);
     }
-    let gateway_binding = GatewayBinding::new_with_identity(
+    let gateway_binding = GatewayBinding::new_with_plan_proof(
         gateway.base_url(),
         gateway.api_key(),
         gateway.identity().cloned(),
+        gateway.plan_proof(),
     )
     .map_err(StateError::Gateway)?;
     let backoff = ReconnectBackoff::new();

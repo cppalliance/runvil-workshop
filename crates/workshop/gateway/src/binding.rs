@@ -68,6 +68,13 @@ impl GatewaySnapshot {
     pub fn generation(&self) -> u64 {
         self.generation
     }
+
+    /// The plan proof this generation sends on the model list, when one
+    /// was paired with the boot.
+    #[must_use]
+    pub fn plan_proof(&self) -> Option<&str> {
+        self.client.plan_proof()
+    }
 }
 
 /// Shared atomic gateway snapshot and replacement notification.
@@ -125,8 +132,22 @@ impl GatewayBinding {
         api_key: &str,
         identity: Option<crate::discovery::ValidatedConnection>,
     ) -> Result<Self, GatewayError> {
+        Self::new_with_plan_proof(base_url, api_key, identity, None)
+    }
+
+    /// Builds generation zero, and when `plan_proof` is set the model list
+    /// carries it. Absent leaves every request as it is today.
+    ///
+    /// # Errors
+    /// Returns [`GatewayError::Build`] if the HTTP client cannot be built.
+    pub fn new_with_plan_proof(
+        base_url: &str,
+        api_key: &str,
+        identity: Option<crate::discovery::ValidatedConnection>,
+        plan_proof: Option<&str>,
+    ) -> Result<Self, GatewayError> {
         Ok(Self::from_snapshot(build_snapshot(
-            base_url, api_key, identity,
+            base_url, api_key, identity, plan_proof,
         )?))
     }
 
@@ -191,7 +212,7 @@ impl GatewayBinding {
         api_key: &str,
         identity: Option<crate::discovery::ValidatedConnection>,
     ) -> Result<(), GatewayPublicationError> {
-        let snapshot = build_snapshot(base_url, api_key, identity)?;
+        let snapshot = build_snapshot(base_url, api_key, identity, None)?;
         self.publish_snapshot(snapshot)
     }
 
@@ -319,9 +340,14 @@ fn build_snapshot(
     base_url: &str,
     api_key: &str,
     identity: Option<crate::discovery::ValidatedConnection>,
+    plan_proof: Option<&str>,
 ) -> Result<GatewaySnapshot, GatewayError> {
+    let mut client = GatewayClient::new(base_url, api_key)?;
+    if let Some(proof) = plan_proof {
+        client = client.with_plan_proof(proof);
+    }
     Ok(GatewaySnapshot {
-        client: GatewayClient::new(base_url, api_key)?,
+        client,
         generation: 0,
         identity,
     })

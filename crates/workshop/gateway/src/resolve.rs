@@ -25,6 +25,9 @@ pub struct ResolvedGateway {
     base_url: String,
     api_key: String,
     identity: Option<ValidatedConnection>,
+    /// Plan proof paired with `identity`, or `None` when this resolution
+    /// has no boot to pair or the private file did not name that boot.
+    plan_proof: Option<String>,
     source: GatewaySource,
     stale: Option<StaleReason>,
 }
@@ -35,6 +38,7 @@ impl fmt::Debug for ResolvedGateway {
         f.debug_struct("ResolvedGateway")
             .field("base_url", &self.base_url)
             .field("api_key", &"<redacted>")
+            .field("plan_proof", &"<redacted>")
             .field("identity", &self.identity)
             .field("source", &self.source)
             .field("stale", &self.stale)
@@ -62,6 +66,7 @@ impl ResolvedGateway {
             base_url: config.base_url.clone(),
             api_key: config.api_key.clone(),
             identity: None,
+            plan_proof: None,
             source: GatewaySource::Config,
             stale: None,
         }
@@ -76,6 +81,7 @@ impl ResolvedGateway {
             base_url: format!("http://127.0.0.1:{}", identity.port()),
             api_key: identity.api_key().to_owned(),
             identity: Some(identity),
+            plan_proof: None,
             source: GatewaySource::GatewayDiscoveryFile,
             stale: None,
         }
@@ -110,6 +116,12 @@ impl ResolvedGateway {
     #[must_use]
     pub fn identity(&self) -> Option<&ValidatedConnection> {
         self.identity.as_ref()
+    }
+
+    /// The plan proof paired with the winning boot, when one was.
+    #[must_use]
+    pub fn plan_proof(&self) -> Option<&str> {
+        self.plan_proof.as_deref()
     }
 
     /// Which source won the resolution.
@@ -208,10 +220,16 @@ fn resolve_with(
         match probe(run_dir) {
             Ok(Resolution::Attach(file)) => match validate_resolved(file) {
                 Ok(identity) => {
+                    let plan_proof = crate::discovery::plan_proof_for_boot(
+                        run_dir,
+                        identity.pid(),
+                        identity.epoch(),
+                    );
                     return Ok(ResolvedGateway {
                         base_url: format!("http://127.0.0.1:{}", identity.port()),
                         api_key: identity.api_key().to_owned(),
                         identity: Some(identity),
+                        plan_proof,
                         source: GatewaySource::GatewayDiscoveryFile,
                         stale: None,
                     });
@@ -239,6 +257,7 @@ fn resolve_with(
             base_url: config.base_url.clone(),
             api_key: config.api_key.clone(),
             identity: None,
+            plan_proof: None,
             source: GatewaySource::Config,
             stale,
         });

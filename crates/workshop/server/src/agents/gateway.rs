@@ -17,6 +17,9 @@ pub(super) struct UsableGateway {
     pub(super) endpoint: GatewayEndpoint,
     /// The bearer paired with the base URL.
     pub(super) key: SecretString,
+    /// The plan proof paired with this generation, when the private file
+    /// named its boot. Not a bearer.
+    pub(super) plan_proof: Option<SecretString>,
 }
 
 impl UsableGateway {
@@ -29,6 +32,9 @@ impl UsableGateway {
             generation: snapshot.generation(),
             endpoint: GatewayEndpoint::new(&api_root).ok()?,
             key: SecretString::new(snapshot.api_key()).ok()?,
+            plan_proof: snapshot
+                .plan_proof()
+                .and_then(|proof| SecretString::new(proof).ok()),
         })
     }
 }

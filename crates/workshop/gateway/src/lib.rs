@@ -15,7 +15,10 @@
 //! - No axum type appears in this crate's public API: the domain code
 //!   speaks `reqwest` statuses and raw bodies, and the server maps them
 //!   to HTTP responses.
-//! - A bearer key is never written to logs or `Debug` output.
+//! - A bearer key is never written to logs or `Debug` output. A plan proof
+//!   is redacted the same way: `GatewayClient` sends it only on
+//!   `GET /v1/models`, and `GatewaySnapshot` carries it so
+//!   `WorkshopBroker` can send it on model rounds as well.
 //! - Workshop reaches model providers only through the gateway, so no
 //!   vendor credential passes through this crate or reaches the page or
 //!   Lua.
