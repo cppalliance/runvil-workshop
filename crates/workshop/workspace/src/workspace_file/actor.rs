@@ -3,7 +3,6 @@
 //! so the file mirrors memory without locks.
 
 use std::path::{Path, PathBuf};
-use std::time::SystemTime;
 
 use tokio::sync::{mpsc, oneshot};
 
@@ -13,6 +12,7 @@ use super::{
     SUPPORTED_VERSION, WindowState, WorkspaceContents, WorkspaceFileError, io_failure,
 };
 use crate::blocking::blocking;
+use crate::rfc3339::now_rfc3339;
 
 /// A reply slot for a command that answers with success or failure.
 type Ack = oneshot::Sender<Result<(), WorkspaceFileError>>;
@@ -326,11 +326,6 @@ async fn put_window_state(
 /// and a bool always serializes; the Result is a trait artifact.
 fn window_json(state: &WindowState) -> String {
     serde_json::to_string(state).unwrap_or_default()
-}
-
-/// The current time as RFC 3339 in UTC, whole seconds.
-pub(crate) fn now_rfc3339() -> String {
-    humantime::format_rfc3339_seconds(SystemTime::now()).to_string()
 }
 
 /// Removes the `-wal` sidecar beside `path` when it holds no frames.

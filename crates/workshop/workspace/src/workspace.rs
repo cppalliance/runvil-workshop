@@ -25,7 +25,8 @@ use serde::Serialize;
 use tokio::sync::watch;
 
 use crate::error::WorkspaceError;
-use crate::workspace_file::{WindowState, now_rfc3339};
+use crate::rfc3339::now_rfc3339;
+use crate::workspace_file::WindowState;
 
 mod backing;
 mod confine;

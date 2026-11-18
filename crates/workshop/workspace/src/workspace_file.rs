@@ -23,7 +23,6 @@ mod actor;
 mod siblings;
 pub(crate) mod ui_state_kv;
 
-pub(crate) use actor::now_rfc3339;
 use actor::{COMMAND_QUEUE_DEPTH, Command, SCHEMA_V1};
 use siblings::{already_taken, copy_siblings_or_clean_up, plan_siblings};
 pub(crate) use ui_state_kv::{UI_STATE_KEYS, empty_ui_state};

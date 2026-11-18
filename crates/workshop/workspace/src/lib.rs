@@ -31,6 +31,7 @@ mod blocking;
 mod error;
 mod handlers;
 mod handles;
+mod rfc3339;
 #[cfg(test)]
 mod test_support;
 mod workspace;

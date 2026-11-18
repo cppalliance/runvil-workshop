@@ -110,7 +110,6 @@ arc-swap = "1"
 # into the binary in release builds. interpolate-folder-path resolves the
 # $OUT_DIR prefix in the `folder` attribute.
 rust-embed = { version = "8", features = ["interpolate-folder-path"] }
-humantime = "2"
 tempfile = "3"
 # Exact pin: turso is pre-1.0 and backs user-visible workspace files, so
 # upgrades are deliberate, reviewed changes rather than resolver drift.

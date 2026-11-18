@@ -14,13 +14,7 @@ version = 2
 unmaintained = "workspace"
 yanked = "deny"
 # Reviewed advisories consciously accepted go here, each with a rationale.
-ignore = [
-    # humantime is marked unmaintained; the advisory reports no vulnerability
-    # and no safe upgrade. workshop-workspace uses one function of it,
-    # `format_rfc3339_seconds`, to stamp a time. The entry goes when the
-    # crate is replaced.
-    { id = "RUSTSEC-2026-0542", reason = "humantime is unmaintained with no vulnerability reported and no safe upgrade; remove this entry when the crate is replaced" },
-]
+ignore = []
 
 [licenses]
 version = 2

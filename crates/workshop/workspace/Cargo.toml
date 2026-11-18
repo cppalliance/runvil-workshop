@@ -17,7 +17,6 @@ test-fixtures = []
 [dependencies]
 axum.workspace = true
 dunce.workspace = true
-humantime.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
