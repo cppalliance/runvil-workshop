@@ -12,12 +12,16 @@
 //! servers value is the mcp Pack's configuration, so one it refuses
 //! refuses a prompt requiring `mcp` as it parses. The Host's finder
 //! refuses an unknown agent as `NotFound` and an unreadable one as `Io`,
-//! each with the launch refusal's own text. A configured Plugin directory
+//! each with the launch refusal's own text, and it reads an agent that
+//! another names under `prompts:`, which that agent then runs with
+//! `execute`. A configured Plugin directory
 //! loads each library Plugin in it and reports each file that is none,
-//! and a directory that does not exist loads nothing. A prompt reads a
-//! file of its run through the std library's `Read` tool and through the
-//! bashkit library's `Shell` tool, and a Host with no Plugin directory
-//! refuses a prompt that requires `std` or `bash`.
+//! and a directory that does not exist loads nothing. A prompt reads and
+//! changes the files of its run through the std library's `Read`,
+//! `Write`, `StrReplace`, and `Delete` tools and through the bashkit
+//! library's `Shell` tool, and the Host reads each change back after the
+//! run. A Host with no Plugin directory refuses a prompt that requires
+//! `std` or `bash`.
 
 use std::env::consts::{DLL_EXTENSION, DLL_PREFIX, DLL_SUFFIX};
 use std::path::PathBuf;
@@ -85,24 +89,35 @@ async fn run_prompt(packs: Packs, source: String) -> Result<Result<String, Error
     run_prompt_over(packs, source, VfsRef::default()).await
 }
 
-/// Runs the prompt `source` as one conversation, which has a user, on a
-/// Host over `packs` and the filesystem `vfs`, then reads the
-/// conversation's state and how it ended: the result of its one run, or
-/// the message of the run-failed report when the Host refused the prompt
-/// as it parsed it and no run began.
+/// Runs the prompt `source` as one conversation over the filesystem
+/// `vfs`, on a Host over `packs` whose finder gives `source` under every
+/// name; see [`run_agent_on`].
 pub(super) async fn run_prompt_over(
     packs: Packs,
     source: String,
     vfs: VfsRef,
 ) -> Result<Result<String, Error>, String> {
-    let recorder = Arc::new(MemoryRecorder::new());
-    let conversation = Conversations::new().open("browses");
-    let mut errors = conversation.subscribe_errors();
-    let host = Arc::new(Host {
+    let host = Host {
         packs,
         prompts: Arc::new(move |_: &str| -> Result<String, Error> { Ok(source.clone()) }),
         timer: Arc::new(TokioTimer),
-    });
+    };
+    run_agent_on(host, "browses", vfs).await
+}
+
+/// Runs the agent `name` of `host` as one conversation, which has a user,
+/// over the filesystem `vfs`, then reads the conversation's state and how
+/// it ended: the result of its one run, or the message of the run-failed
+/// report when the Host refused the prompt as it parsed it and no run
+/// began.
+async fn run_agent_on(
+    host: Host,
+    name: &str,
+    vfs: VfsRef,
+) -> Result<Result<String, Error>, String> {
+    let recorder = Arc::new(MemoryRecorder::new());
+    let conversation = Conversations::new().open(name);
+    let mut errors = conversation.subscribe_errors();
     let setup = RunSetup {
         vfs,
         has_user: true,
@@ -113,7 +128,7 @@ pub(super) async fn run_prompt_over(
     };
     tokio::time::timeout(
         Duration::from_secs(10),
-        conversation.run(host, "browses", setup),
+        conversation.run(Arc::new(host), name, setup),
     )
     .await
     .expect("the run ends in time");
@@ -223,6 +238,32 @@ fn the_finder_refuses_an_unknown_agent_as_not_found_and_an_unreadable_one_as_io(
         assert_eq!(error.message, refusal.to_string(), "{name}");
         assert_eq!(error.prose, code.prose(), "{name}");
     }
+}
+
+#[tokio::test]
+async fn an_agent_executes_an_agent_of_the_folder_that_its_prompts_list_names() {
+    let dir = tempfile::TempDir::new().expect("tempdir");
+    // A `prompts:` entry is the name the finder knows the agent under,
+    // which is the name discovery lists: the file's stem.
+    let outer = "---\nname: outer\ndescription: runs inner\nrunvil: 0\n\
+        prompts:\n  - inner\n---\n\n## Only\n\n```lua\n\
+        return 'outer got ' .. execute('inner', {})\n```\n";
+    let inner = "---\nname: inner\ndescription: answers\nrunvil: 0\n---\n\n\
+        ## Only\n\n```lua\nreturn 'inner ran'\n```\n";
+    std::fs::write(dir.path().join("outer.md"), outer).expect("write fixture");
+    std::fs::write(dir.path().join("inner.md"), inner).expect("write fixture");
+    let (packs, _) = host_packs(&Registry::new(), None, None);
+    let host = Host {
+        packs,
+        prompts: Arc::new(agent_finder(dir.path().to_path_buf())),
+        timer: Arc::new(TokioTimer),
+    };
+
+    assert_eq!(
+        run_agent_on(host, "outer", VfsRef::default()).await,
+        Ok(Ok("outer got inner ran".to_owned())),
+        "the Host's finder reads the listed agent, and `execute` runs it in the same run"
+    );
 }
 
 #[tokio::test]
@@ -414,33 +455,44 @@ fn only_a_plugin_directory_with_a_shipped_library_gives_the_host_its_pack() {
     }
 }
 
-/// A prompt that declares `std` and returns what `std/read` answers for
-/// `/notes.md`, then what `std/write` answers.
-const READS_NOTES: &str = "---\nname: reads\ndescription: reads a file\nrunvil: 0\n\
-    uses:\n  - std\n---\n\n## Only\n\n```lua\n\
+/// A prompt that declares `std` and returns what four of its tools
+/// answer, in this order: `std/read` for `/notes.md`, `std/write` for a
+/// file under a directory that is absent, `std/replace` for a text of
+/// `/notes.md`, and `std/rm` for `/old.md`.
+const READS_AND_CHANGES: &str = "---\nname: changes\ndescription: reads and changes files\n\
+    runvil: 0\nuses:\n  - std\n---\n\n## Only\n\n```lua\n\
     local read = tools.call('std/read', { path = '/notes.md' })\n\
-    local write = tools.call('std/write', { path = '/out.md', contents = 'x' })\n\
-    return read .. '|' .. write\n```\n";
+    local write = tools.call('std/write', { path = '/out/new.md', contents = 'x' })\n\
+    local replace = tools.call('std/replace', {\n\
+      path = '/notes.md', old_string = 'world', new_string = 'there',\n\
+    })\n\
+    local delete = tools.call('std/rm', { path = '/old.md' })\n\
+    return read .. '|' .. write .. '|' .. replace .. '|' .. delete\n```\n";
 
 #[tokio::test]
-async fn a_prompt_reads_a_file_of_its_run_through_the_std_library_plugin() {
-    let (dir, _library) = plugin_dir("reads-notes");
+async fn a_prompt_reads_and_changes_files_of_its_run_through_the_std_library_plugin() {
+    let (dir, _library) = plugin_dir("reads-and-changes");
     let (host, report) = host_packs(&Registry::new(), None, Some(dir.path()));
     let report = report.expect("the configured directory is read");
     assert!(report.failures().is_empty(), "{:?}", report.failures());
 
     let vfs = VfsRef::default();
-    vfs.acquire(Origin::new("seed"))
-        .expect("a fresh memory filesystem acquires")
-        .write("/notes.md", b"hello\nworld\n")
+    let seed = vfs
+        .acquire(Origin::new("seed"))
+        .expect("a fresh memory filesystem acquires");
+    seed.write("/notes.md", b"hello\nworld\n")
         .expect("the file is seeded");
+    seed.write("/old.md", b"old\n").expect("the file is seeded");
 
-    let result = run_prompt_over(host, READS_NOTES.to_owned(), vfs).await;
+    let result = run_prompt_over(host, READS_AND_CHANGES.to_owned(), vfs.clone()).await;
     let Ok(Ok(text)) = result else {
         panic!("the run ends with its text: {result:?}");
     };
-    // Each numbered line holds a `|`, and the stub's text holds none.
-    let (read, write) = text.rsplit_once('|').expect("the prompt joins two answers");
+    // Each numbered line holds a `|`, and the three trusted texts hold
+    // none, so the answers split from the right.
+    let mut answers = text.rsplitn(4, '|');
+    let mut next = || answers.next().expect("the prompt joins four answers");
+    let (delete, replace, write, read) = (next(), next(), next(), next());
     assert!(
         read.contains("     1|hello\n     2|world\n"),
         "Read answers the file's numbered lines: {read}"
@@ -450,11 +502,27 @@ async fn a_prompt_reads_a_file_of_its_run_through_the_std_library_plugin() {
         "file text reaches the script marked as untrusted: {read}"
     );
     assert_eq!(
-        write,
-        "The Write tool is not implemented in this build. The implementation is missing and \
-         nothing in this session will change that. Calling Write again is safe, but it will \
-         return this same result every time, whatever the arguments. Carry on without it.",
-        "Write is still a stub, and its text is trusted, so it comes back as it is"
+        (write, replace, delete),
+        ("Wrote 1 byte.", "Made 1 replacement.", "Deleted the file."),
+        "each tool that changes files says what it did, as trusted text"
+    );
+
+    let check = vfs
+        .acquire(Origin::new("check"))
+        .expect("the filesystem acquires");
+    assert_eq!(
+        check.read_string("/out/new.md").expect("the file is read"),
+        "x",
+        "Write made the file and the directory on the way to it"
+    );
+    assert_eq!(
+        check.read_string("/notes.md").expect("the file is read"),
+        "hello\nthere\n",
+        "StrReplace changed the one text"
+    );
+    assert!(
+        !check.exists("/old.md").expect("the filesystem answers"),
+        "Delete removed the file"
     );
 }
 
@@ -478,10 +546,13 @@ async fn without_a_plugin_directory_a_prompt_requiring_a_shipped_pack_is_refused
 }
 
 /// A prompt that declares `bash` and returns what `bash/shell` answers
-/// for a command that reads `/notes.md` and then writes a file.
+/// for a command that reads `/notes.md`, writes a file under a directory
+/// it makes, and edits `/notes.md` in place.
 const RUNS_A_COMMAND: &str = "---\nname: shells\ndescription: runs a command\nrunvil: 0\n\
     uses:\n  - bash\n---\n\n## Only\n\n```lua\n\
-    return tools.call('bash/shell', { command = 'cat /notes.md; echo x > /out.md' })\n```\n";
+    return tools.call('bash/shell', {\n\
+      command = 'cat /notes.md; mkdir /out; echo x > /out/new.md; sed -i s/world/there/ /notes.md',\n\
+    })\n```\n";
 
 #[tokio::test]
 async fn a_prompt_runs_a_command_over_its_runs_files_through_the_bashkit_library_plugin() {
@@ -511,20 +582,23 @@ async fn a_prompt_runs_a_command_over_its_runs_files_through_the_bashkit_library
         "a command's output reaches the script marked as untrusted: {text}"
     );
     assert!(
-        text.contains("Exit code: 1\n") && text.contains("```\nhello\nworld\n"),
-        "the shell reads the file through the run's filesystem, and the write fails the \
-         command: {text}"
+        text.contains("Exit code: 0\n\nCommand output:\n\n```\nhello\nworld\n```"),
+        "the shell reads the file through the run's filesystem, and each change succeeds, \
+         so the command prints the file alone: {text}"
     );
-    assert!(
-        text.contains("/out.md: the shell cannot change files in this build"),
-        "the shell says why the write failed: {text}"
-    );
-    let written = vfs
+    let check = vfs
         .acquire(Origin::new("check"))
-        .expect("the filesystem acquires")
-        .exists("/out.md")
-        .expect("the filesystem answers");
-    assert!(!written, "the shell changes no file of the run");
+        .expect("the filesystem acquires");
+    assert_eq!(
+        check.read_string("/out/new.md").expect("the file is read"),
+        "x\n",
+        "the shell made the directory and the file in the run's filesystem"
+    );
+    assert_eq!(
+        check.read_string("/notes.md").expect("the file is read"),
+        "hello\nthere\n",
+        "the shell edited the seeded file in place"
+    );
 }
 
 #[test]

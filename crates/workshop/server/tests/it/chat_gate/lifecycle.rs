@@ -1,27 +1,14 @@
 //! Run lifecycle gates: the dropdown's pick serving each next round, and
 //! delayed startup convergence on the server broker's catalog wait.
 
-use workshop_run_log::{RecordFilter, RecordKind, RunId, RunLog};
+use workshop_run_log::{RecordFilter, RecordKind};
 
 use super::*;
 
 /// The model each answered round of `run` names in the run log, in
 /// round order, read once the run is recorded whole.
 async fn answered_models(server: &GateServer, run: RunId) -> Vec<String> {
-    let log_file = server.dir.path().join("harness").join("runs.db");
-    let log = tokio::time::timeout(Duration::from_secs(10), async {
-        loop {
-            if let Ok(log) = RunLog::open(&log_file).await
-                && let Ok(row) = log.run(run).await
-                && row.result.is_some()
-            {
-                return log;
-            }
-            tokio::time::sleep(Duration::from_millis(10)).await;
-        }
-    })
-    .await
-    .expect("the run is recorded and closed within the deadline");
+    let log = closed_run_log(server, run).await;
     let answers = RecordFilter {
         kind: Some(RecordKind::Answer),
         last: None,

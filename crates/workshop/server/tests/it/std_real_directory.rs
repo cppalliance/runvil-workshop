@@ -1,12 +1,16 @@
 //! The `std` file tools over a real directory, mounted with
 //! `RealBackend::rooted`: the acceptance flow a coding agent follows. List
 //! the directory, find a word with Grep, read a window of the file, and read
-//! the next window from the offset the first window's trailer names.
+//! the next window from the offset the first window's trailer names. Then
+//! the tools that change files: Write makes a file under a directory that
+//! is absent, StrReplace edits it, and Delete removes it, and the real
+//! directory holds each change.
 //!
 //! The tools come from the std Plugin's dynamic library, loaded from a
 //! Plugin directory as the server loads it, so each call crosses the C
-//! contract and each read goes through the loader's file functions to the
-//! real backend.
+//! contract and each file request goes through the loader's file functions.
+//! No Harness runs here, so the test answers each request itself, with one
+//! operation on the real backend.
 
 use std::future::Future;
 use std::pin::pin;
@@ -16,9 +20,9 @@ use std::task::{Context, Poll, Waker};
 
 use runvil::effect::{ToolCallOrigin, ToolCaller};
 use runvil::harness::{PluginReport, insert_plugin_dir};
-use runvil::plugin::{Pack, PackRegistry, ToolContext};
-use runvil::vfs::{Access, Origin, RealBackend, VfsRef};
-use runvil::{OutputTrust, ToolId, ToolOutput};
+use runvil::plugin::{Pack, PackRegistry, ToolContext, ToolFiles};
+use runvil::vfs::{Access, Origin, RealBackend, VfsError, VfsOp, VfsOutcome, VfsRef};
+use runvil::{BoxFuture, OutputTrust, ToolId, ToolOutput};
 use serde_json::{Value, json};
 
 use crate::common::plugin_dir;
@@ -109,7 +113,20 @@ fn block_on<F: Future>(future: F) -> F::Output {
     }
 }
 
-/// Calls the tool `segment` of `pack` with `args` over `access`.
+/// The files of a call that no Harness drives: each request is performed
+/// on the access at the first poll of its future, which is ready then.
+/// Under the Harness a request is an effect, and a later poll of the call
+/// receives its answer.
+struct AnsweredAtOnce<'a>(&'a Access);
+
+impl ToolFiles for AnsweredAtOnce<'_> {
+    fn request(&self, op: VfsOp) -> BoxFuture<'_, Result<VfsOutcome, VfsError>> {
+        Box::pin(async move { self.0.perform(&op) })
+    }
+}
+
+/// Calls the tool `segment` of `pack` with `args`, with each file request
+/// of the call answered over `access`.
 #[expect(
     clippy::expect_used,
     reason = "test helpers fail by panicking with the invariant named"
@@ -117,7 +134,8 @@ fn block_on<F: Future>(future: F) -> F::Output {
 fn call(pack: &dyn Pack, access: &Access, segment: &str, args: Value) -> ToolOutput {
     let tool = ToolId::parse(&format!("std/{segment}")).expect("a two-segment tool id parses");
     let origin = ToolCallOrigin::new("Test", ToolCaller::Script);
-    let context = ToolContext::new(&tool, access, &origin);
+    let files = AnsweredAtOnce(access);
+    let context = ToolContext::new(&tool, &origin, &files);
     block_on(pack.call(context, args)).expect("the call succeeds")
 }
 
@@ -173,5 +191,66 @@ fn list_find_read_a_window_and_read_the_next_one_by_the_trailer_offset() {
     assert!(
         second.text().contains(&format!("  {NEEDLE_LINE}|{NEEDLE}")),
         "the second window holds the line Grep found"
+    );
+}
+
+/// The file the change flow makes, under a directory the seeded one lacks.
+const NOTE: &str = "/notes/todo.md";
+
+#[test]
+fn write_makes_a_file_str_replace_edits_it_and_delete_removes_it() {
+    let directory = seeded_directory();
+    let backend = RealBackend::rooted(directory.path()).expect("the directory mounts");
+    let vfs = VfsRef::builder().mount("/", backend).build();
+    let access = vfs
+        .acquire(Origin::new("std real directory"))
+        .expect("the run acquires the filesystem");
+    let (pack, _report) = std_pack();
+    let note = directory.path().join("notes").join("todo.md");
+    let on_disk = || std::fs::read_to_string(&note).expect("the real file is read");
+
+    let written = call(
+        &*pack,
+        &access,
+        "write",
+        json!({ "path": NOTE, "contents": "alpha\nbeta\n" }),
+    );
+    assert_eq!(written.trust(), OutputTrust::Trusted);
+    assert_eq!(written.text(), "Wrote 11 bytes.");
+    assert_eq!(
+        on_disk(),
+        "alpha\nbeta\n",
+        "Write makes the file and the directory on the way to it"
+    );
+
+    let edited = call(
+        &*pack,
+        &access,
+        "replace",
+        json!({ "path": NOTE, "old_string": "beta", "new_string": "BETA" }),
+    );
+    assert_eq!(edited.trust(), OutputTrust::Trusted);
+    assert_eq!(edited.text(), "Made 1 replacement.");
+    assert_eq!(
+        on_disk(),
+        "alpha\nBETA\n",
+        "StrReplace changes the one text"
+    );
+
+    let read = call(&*pack, &access, "read", json!({ "path": NOTE }));
+    assert_eq!(read.trust(), OutputTrust::Untrusted);
+    assert_eq!(read.text(), "     1|alpha\n     2|BETA\n");
+
+    let deleted = call(&*pack, &access, "rm", json!({ "path": NOTE }));
+    assert_eq!(deleted.trust(), OutputTrust::Trusted);
+    assert_eq!(deleted.text(), "Deleted the file.");
+    assert!(!note.exists(), "Delete removes the file");
+    assert!(
+        directory.path().join("notes").is_dir(),
+        "the directory Write made stays"
+    );
+    assert!(
+        directory.path().join(FILE).is_file(),
+        "the seeded file is left alone"
     );
 }

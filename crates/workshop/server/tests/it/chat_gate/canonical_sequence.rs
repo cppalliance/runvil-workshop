@@ -129,8 +129,9 @@ async fn gate_history_accumulates_across_three_turns_byte_exact() {
     socket.close().await;
 }
 
-/// GATE 13 - file tools. The chat offers the extra Packs, so its rounds
-/// advertise the `std` file tools the model reads the language guide with.
+/// GATE 13 - file tools. The chat offers the `std` Pack, so its rounds
+/// advertise the file tools: the three the model reads files with, and
+/// the three it changes files with.
 #[tokio::test]
 async fn gate_a_conversation_round_advertises_the_file_tools() {
     let server = spawn_chat_server(&["test-model"]).await;
@@ -149,7 +150,7 @@ async fn gate_a_conversation_round_advertises_the_file_tools() {
             .iter()
             .filter_map(|tool| tool["function"]["name"].as_str())
             .collect();
-        for wire in ["Read", "ListDir", "Grep"] {
+        for wire in ["Read", "ListDir", "Grep", "Write", "StrReplace", "Delete"] {
             assert!(
                 names.contains(&wire),
                 "the conversation round advertises {wire}, got {names:?}"

@@ -24,7 +24,11 @@
 //! sends each round to the dropdown's current pick. Each run's filesystem
 //! is an in-memory root, with a read-only mount beside it for each of two
 //! demos whose switch is on: the language guide, and the machine's C
-//! drive (`language_guide`). Both switches are committed as off. The run's
+//! drive (`language_guide`). Both switches are committed as off. The
+//! filesystem has no policy of its own, so the default one, `AllowAll`,
+//! admits every operation: the file tools and the shell change the files
+//! of the in-memory root, which end with the run, and a read-only mount
+//! refuses each change. The run's
 //! setup carries the Host state ([`bindings`]): the menu's pick and the
 //! workspace's granted roots, read once the menu's catalog holds a
 //! chat-capable model. Status-bar reporting stays in the server

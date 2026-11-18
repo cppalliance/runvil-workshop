@@ -92,29 +92,7 @@ async fn spawn_compacting_server() -> GateServer {
             .route("/v1/models", typed_catalog(&["test-model"])),
     )
     .await;
-    let dir = tempfile::TempDir::new().expect("tempdir");
-    let config = Config {
-        agents: AgentsConfig {
-            path: dir.path().join("missing-agents"),
-            plugins: Some(plugin_dir()),
-            ..AgentsConfig::default()
-        },
-        ..test_config(&gateway_url, dir.path())
-    };
-    let (state, ws_base) = spawn_router(&config).await;
-    state
-        .catalog()
-        .publish(vec![json!({ "id": "test-model", "object": "model" })]);
-    state
-        .menu()
-        .set_selected("test-model")
-        .expect("the selected model is in the retained catalog");
-    GateServer {
-        ws_base,
-        state,
-        captured,
-        dir,
-    }
+    spawn_over_gateway(&gateway_url, captured, &["test-model"], Some("test-model")).await
 }
 
 /// Collects frames until the `agent_message` event holding `reply`

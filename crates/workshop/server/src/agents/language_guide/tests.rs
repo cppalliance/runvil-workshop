@@ -1,12 +1,14 @@
 //! Mapping a local directory into a run's filesystem: a directory mapped
 //! under `/_runvil` reads through the mapping, is reached by listing down
 //! from the root, refuses writes, leaves the in-memory root writable, and
-//! is visible to a prompt that runs over the filesystem. Two directories
-//! mapped one after the other are both visible, as the guide and the C
-//! drive are with both switches on. Every test uses a local directory it
-//! makes, so none depends on the language guide's files or on a path on
-//! any one machine, but for the one that maps a drive's root, which runs
-//! on Windows alone.
+//! is visible to a prompt that runs over the filesystem. The file tools
+//! and the shell of such a prompt change nothing under the mapping, and
+//! the shell still writes a file of the in-memory root beside it. Two
+//! directories mapped one after the other are both visible, as the guide
+//! and the C drive are with both switches on. Every test uses a local
+//! directory it makes, so none depends on the language guide's files or
+//! on a path on any one machine, but for the one that maps a drive's
+//! root, which runs on Windows alone.
 
 use std::error::Error;
 use std::path::Path;
@@ -240,6 +242,123 @@ async fn a_prompt_sees_the_directory_mapped_under_the_runvil_mount() -> Outcome 
         final_text.contains("     1|# Hello from a local page"),
         "the prompt reads the mapped page: {final_text}"
     );
+    Ok(())
+}
+
+/// A prompt that asks the three `std` tools that change files to change
+/// the mapped directory, and returns each refusal on a line of its own.
+const CHANGING_PROMPT: &str = r"---
+name: changes-the-mapping
+description: tries to change a mapped directory
+runvil: 0
+uses:
+  - std
+---
+
+## Only
+
+```lua
+local function refused(tool, arguments)
+  local ok, answer = pcall(tools.call, tool, arguments)
+  return ok and 'changed' or answer.message
+end
+return table.concat({
+  refused('std/write', { path = '/_runvil/test/new.md', contents = 'new' }),
+  refused('std/replace', {
+    path = '/_runvil/test/hello.md', old_string = 'Hello', new_string = 'Goodbye',
+  }),
+  refused('std/rm', { path = '/_runvil/test/hello.md' }),
+}, '\n')
+```
+";
+
+#[tokio::test]
+async fn the_file_tools_change_nothing_under_the_mapping() -> Outcome {
+    let directory = local_directory()?;
+    let (plugins, _library) = plugin_dir("changes-the-mapping");
+    let (host, _) = host_packs(&Registry::new(), None, Some(plugins.path()));
+
+    let result = run_prompt_over(
+        host,
+        CHANGING_PROMPT.to_owned(),
+        filesystem_with(directory.path()),
+    )
+    .await;
+
+    let Ok(Ok(final_text)) = result else {
+        return Err(format!("the prompt did not complete: {result:?}").into());
+    };
+    let refusals: Vec<&str> = final_text.lines().collect();
+    assert_eq!(refusals.len(), 3, "one line for each tool: {final_text}");
+    for (refusal, path) in refusals.iter().zip([
+        "/_runvil/test/new.md",
+        "/_runvil/test/hello.md",
+        "/_runvil/test/hello.md",
+    ]) {
+        assert!(
+            refusal.ends_with(&format!("{path} is served read-only and cannot change")),
+            "the tool answers with the mapping's refusal: {refusal}"
+        );
+    }
+    let page = directory.path().join(PAGE);
+    let text =
+        std::fs::read_to_string(&page).map_err(|e| format!("read {}: {e}", page.display()))?;
+    assert_eq!(text, TEXT, "the page is as it was");
+    assert!(!directory.path().join("new.md").exists());
+    Ok(())
+}
+
+/// A prompt that asks the shell to make a file in the mapped directory,
+/// to remove its page, and to make a file in the in-memory root, and
+/// returns what the shell answers.
+const CHANGING_SHELL_PROMPT: &str = r#"---
+name: shells-into-the-mapping
+description: tries to change a mapped directory with the shell
+runvil: 0
+uses: [bash]
+---
+
+## Only
+
+```lua
+return tools.call('bash/shell', {
+  command = 'echo new > /_runvil/test/new.md; echo "write $?"; '
+    .. 'rm /_runvil/test/hello.md; echo "remove $?"; '
+    .. 'echo kept > /scratch.txt; cat /scratch.txt',
+})
+```
+"#;
+
+#[tokio::test]
+async fn the_shell_changes_nothing_under_the_mapping_and_writes_beside_it() -> Outcome {
+    let directory = local_directory()?;
+    let vfs = filesystem_with(directory.path());
+    let (plugins, _library) = plugin_dir_of("shells-into-the-mapping", BASHKIT_LIBRARY);
+    let (host, _) = host_packs(&Registry::new(), None, Some(plugins.path()));
+
+    let result = run_prompt_over(host, CHANGING_SHELL_PROMPT.to_owned(), vfs.clone()).await;
+
+    let Ok(Ok(final_text)) = result else {
+        return Err(format!("the prompt did not complete: {result:?}").into());
+    };
+    assert!(
+        final_text.contains("```\nwrite 1\nremove 1\nkept\n"),
+        "the write and the removal under the mapping both fail, and the shell writes and \
+         reads a file of the in-memory root: {final_text}"
+    );
+    for path in ["/_runvil/test/new.md", "/_runvil/test/hello.md"] {
+        assert!(
+            final_text.contains(&format!("{path} is served read-only and cannot change\n")),
+            "the shell prints the mapping's refusal of {path}: {final_text}"
+        );
+    }
+    let page = directory.path().join(PAGE);
+    let text =
+        std::fs::read_to_string(&page).map_err(|e| format!("read {}: {e}", page.display()))?;
+    assert_eq!(text, TEXT, "the page is as it was");
+    assert!(!directory.path().join("new.md").exists());
+    let access = vfs.acquire(Origin::new("check"))?;
+    assert_eq!(access.read_string("/scratch.txt")?, "kept\n");
     Ok(())
 }
 

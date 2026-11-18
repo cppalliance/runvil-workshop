@@ -121,6 +121,11 @@ impl From<&Frontmatter> for ContractResponse {
 
 /// Parses the posted prompt text and answers the contract DTO, or a
 /// `422` envelope when the text is not a valid prompt.
+///
+/// The route has the posted text alone, so its finder gives that text
+/// under every name. The parser reads each prompt that a `prompts:` list
+/// names from it, so a prompt that lists others parses, and a listed
+/// prompt that is missing or malformed is not reported here.
 async fn contract(Json(body): Json<ContractRequest>) -> Response {
     match Prompt::parse(&|_: &str| Ok(body.text.clone()), &body.name) {
         Ok(prompt) => (

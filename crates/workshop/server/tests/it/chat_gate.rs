@@ -27,6 +27,7 @@ use axum::routing::{get, post};
 use futures_util::StreamExt as _;
 use serde_json::json;
 
+use workshop_run_log::{RunId, RunLog};
 use workshop_server::fixtures::{gateway_updater, replace_gateway};
 use workshop_server::{AgentsConfig, AppState, Config};
 
@@ -125,6 +126,18 @@ async fn spawn_chat_server_with_selection(models: &[&str], selected: Option<&str
             .route("/v1/models", typed_catalog(GATE_MODELS)),
     )
     .await;
+    spawn_over_gateway(&gateway_url, captured, models, selected).await
+}
+
+/// Spawns the gate server over the gateway at `gateway_url`, whose mock
+/// fills `captured`, with `models` in the retained catalog and `selected`
+/// picked in the menu.
+async fn spawn_over_gateway(
+    gateway_url: &str,
+    captured: CapturedRequests,
+    models: &[&str],
+    selected: Option<&str>,
+) -> GateServer {
     let dir = tempfile::TempDir::new().expect("tempdir");
     let config = Config {
         agents: AgentsConfig {
@@ -132,7 +145,7 @@ async fn spawn_chat_server_with_selection(models: &[&str], selected: Option<&str
             plugins: Some(plugin_dir()),
             ..AgentsConfig::default()
         },
-        ..test_config(&gateway_url, dir.path())
+        ..test_config(gateway_url, dir.path())
     };
     let (state, ws_base) = spawn_router(&config).await;
     state.catalog().publish(
@@ -153,6 +166,25 @@ async fn spawn_chat_server_with_selection(models: &[&str], selected: Option<&str
         captured,
         dir,
     }
+}
+
+/// The run log of `server`, opened once `run` is recorded whole: its row
+/// holds how it ended.
+async fn closed_run_log(server: &GateServer, run: RunId) -> RunLog {
+    let log_file = server.dir.path().join("harness").join("runs.db");
+    tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            if let Ok(log) = RunLog::open(&log_file).await
+                && let Ok(row) = log.run(run).await
+                && row.result.is_some()
+            {
+                return log;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("the run is recorded and closed within the deadline")
 }
 
 /// Connects to `/agents/ws`, asserting the connect-time list is exactly
@@ -221,6 +253,7 @@ fn pair(role: &str, content: &str) -> (String, String) {
 
 mod canonical_sequence;
 mod compaction;
+mod files;
 mod lifecycle;
 mod overload;
 mod protocol;

@@ -164,6 +164,22 @@ async fn a_prompt_without_args_yields_the_default_declaration() {
 }
 
 #[tokio::test]
+async fn a_prompt_that_lists_prompts_answers_its_own_contract() {
+    let text = "---\nname: lists\ndescription: runs another prompt\n\
+        prompts:\n  - review.md\n  - summarize.md\n---\n\n## S\n\n\
+        ```lua\nreturn execute('review.md', {})\n```\n";
+    let body = serde_json::json!({ "name": "lists.md", "text": text });
+    let (status, json) = post_contract(body).await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "the listed prompts are not at hand, and the parse still succeeds: {json}"
+    );
+    assert_eq!(json["name"], "lists");
+    assert_eq!(json["description"], "runs another prompt");
+}
+
+#[tokio::test]
 async fn a_lua_error_answers_parse_lua() {
     let text = "---\nname: badlua\ndescription: bad lua\n---\n\n## S\n\n```lua\nreturn (\n```\n";
     let body = serde_json::json!({ "name": "badlua", "text": text });

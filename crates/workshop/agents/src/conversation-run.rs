@@ -114,7 +114,7 @@ impl Conversation {
 /// The agent `name` parsed on `host` on the blocking pool, since finding
 /// it reads the agents folder, or the message of why it did not parse: the
 /// parse failure's located message, or the blocking task's failure.
-async fn parse(host: &Arc<Host>, name: &str) -> Result<Prompt, String> {
+async fn parse(host: &Arc<Host>, name: &str) -> Result<Arc<Prompt>, String> {
     let host = Arc::clone(host);
     let name = name.to_owned();
     match tokio::task::spawn_blocking(move || host.parse(&name)).await {
