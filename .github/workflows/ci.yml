@@ -278,6 +278,10 @@ jobs:
   # dylint-link binaries need glibc 2.38 or later, and 22.04 ships 2.35.
   dylint:
     runs-on: ubuntu-24.04
+    env:
+      # The Tauri system packages, named once for the two steps that hand
+      # them to apt-get.
+      TAURI_APT_PACKAGES: libwebkit2gtk-4.1-dev libssl-dev librsvg2-dev
     steps:
       - uses: actions/checkout@v4
 
@@ -290,13 +294,175 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
 
-      # A mirror that does not answer makes apt-get wait for a long time, so
-      # the step fails after 20 minutes. It normally takes under one.
-      - name: Install Tauri system packages
-        timeout-minutes: 20
+      # On this image apt can get the archives of the Tauri packages at
+      # about 60 kB/s, which is 20 minutes for 70 MB. It stays on that
+      # mirror, because its timeout fires only when no data arrives for 15
+      # seconds: https://github.com/actions/runner-images/issues/14823
+      # So this step and the three after it keep the archives in an Actions
+      # cache, and apt downloads only the ones the cache lacks. This step
+      # asks apt which archives it would download, and the cache key is a
+      # hash of their names, sizes, and hashes. The key leaves the addresses
+      # out, because the mirror differs from runner to runner. A mirror that
+      # does not answer makes apt-get wait for a long time, so the step
+      # fails after 10 minutes.
+      - name: List the archives of the Tauri system packages
+        id: apt-list
+        timeout-minutes: 10
+        shell: bash
         run: |
+          set -euo pipefail
+          read -r -a packages <<< "$TAURI_APT_PACKAGES"
+          list="$RUNNER_TEMP/dylint-apt-archives.txt"
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev libssl-dev librsvg2-dev
+          # --print-uris prints one line for each archive apt would download:
+          # 'address' name size KIND:hash. ForceHash makes the hash the
+          # SHA-256 of the package index, where apt prints the MD5 sum by
+          # default. An archive whose line has no SHA-256 or SHA-512 is
+          # listed with `-` and is never cached.
+          name_form='^[A-Za-z0-9][A-Za-z0-9+._~%-]*\.deb$'
+          hash_form='^(SHA256:[0-9a-f]{64}|SHA512:[0-9a-f]{128})$'
+          : > "$list.unsorted"
+          unread=0
+          if uris="$(sudo apt-get install --print-uris -qq -y --no-install-recommends \
+            -o Acquire::ForceHash=sha256 "${packages[@]}")"; then
+            while read -r address name size hash _; do
+              if [[ "$name" =~ $name_form && "$size" =~ ^[0-9]+$ ]]; then
+                [[ "$hash" =~ $hash_form ]] || hash=-
+                printf '%s %s %s\n' "$name" "$size" "$hash" >> "$list.unsorted"
+              elif [ -n "$address" ]; then
+                unread=$((unread + 1))
+              fi
+            done <<< "$uris"
+          else
+            echo "::warning::apt-get could not list the archives of the Tauri packages, so this run uses no cache of them."
+          fi
+          # One order on every runner, so one list gives one key.
+          LC_ALL=C sort -u "$list.unsorted" > "$list" || : > "$list"
+          if [ "$unread" -ne 0 ]; then
+            echo "::warning::$unread lines of apt-get --print-uris do not have the form 'address' name size hash, so their archives are not cached."
+          fi
+          echo "apt would download $(wc -l < "$list") archives, and $(grep -c -v ' -$' "$list" || true) of them have a hash this job checks."
+          digest="$(sha256sum < "$list")" || digest=unlisted
+          {
+            echo "list=$list"
+            echo "dir=$RUNNER_TEMP/dylint-apt-archives"
+            echo "hash=${digest%% *}"
+          } >> "$GITHUB_OUTPUT"
+
+      # A run that finds no cache of its own list restores the newest cache
+      # of another list, and the next step takes from it the archives that
+      # are in both lists. A restore that fails, or that takes more than 10
+      # minutes, is a run with no cache.
+      - name: Restore the archives of the Tauri system packages
+        id: apt-cache
+        continue-on-error: true
+        timeout-minutes: 10
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ steps.apt-list.outputs.dir }}
+          key: dylint-apt-archives-${{ steps.apt-list.outputs.hash }}
+          restore-keys: dylint-apt-archives-
+
+      # apt takes an archive that is already in its directory when the size
+      # is right, and it checks no hash of it. So a restored file goes into
+      # that directory only when it has the hash that apt listed, and apt
+      # downloads every other archive itself. After the download the cache
+      # directory gets the listed archives and nothing else, each checked
+      # the same way, and that comes before the install in case the install
+      # removes them. A run with no cache downloads every archive, which
+      # takes about 20 minutes from a slow mirror, so the step fails after
+      # 30. With every archive in the cache it downloads nothing.
+      - name: Install Tauri system packages
+        id: apt-install
+        timeout-minutes: 30
+        shell: bash
+        env:
+          APT_LIST: ${{ steps.apt-list.outputs.list }}
+          APT_CACHE: ${{ steps.apt-list.outputs.dir }}
+        run: |
+          set -euo pipefail
+          read -r -a packages <<< "$TAURI_APT_PACKAGES"
+          list="${APT_LIST:-}"
+          cache="${APT_CACHE:-}"
+          # The cache directory is removed below, so it must be this job's.
+          case "$cache" in "$RUNNER_TEMP"/?*) ;; *) cache= ;; esac
+          archives=/var/cache/apt/archives/
+          eval "$(apt-config shell archives Dir::Cache::Archives/d || true)"
+          archives="${archives%/}"
+          [ -d "$archives" ] || archives=/var/cache/apt/archives
+
+          # Succeeds when the file $2 has the hash $1, which is SHA256:hex
+          # or SHA512:hex. A hash of any other kind is not checked, so the
+          # file fails.
+          has_hash() {
+            local actual
+            case "$1" in
+              SHA256:*) actual="$(sha256sum < "$2")" || return 1 ;;
+              SHA512:*) actual="$(sha512sum < "$2")" || return 1 ;;
+              *) return 1 ;;
+            esac
+            [ "${1%%:*}:${actual%% *}" = "$1" ]
+          }
+
+          staged=0
+          refused=0
+          if [ -n "$cache" ] && [ -d "$cache" ] && [ -f "$list" ]; then
+            while read -r name _ expected <&3; do
+              case "$expected" in SHA256:* | SHA512:*) ;; *) continue ;; esac
+              [ -f "$cache/$name" ] || continue
+              if ! has_hash "$expected" "$cache/$name"; then
+                refused=$((refused + 1))
+                echo "The restored $name does not have the hash $expected."
+              elif sudo cp -- "$cache/$name" "$archives/$name"; then
+                staged=$((staged + 1))
+              fi
+            done 3< "$list"
+          fi
+          echo "$staged archives come from the cache."
+          if [ "$refused" -ne 0 ]; then
+            echo "::warning::$refused restored archives do not have the hash that apt lists, so apt downloads them again. This job saves only archives that have that hash, so the restored cache is damaged or something else saved it. Delete that cache."
+          fi
+
+          sudo apt-get install --download-only -y --no-install-recommends "${packages[@]}"
+
+          kept=0
+          wanted=0
+          if [ -n "$cache" ] && [ -f "$list" ] && rm -rf -- "$cache" && mkdir -p -- "$cache"; then
+            while read -r name _ expected <&3; do
+              case "$expected" in SHA256:* | SHA512:*) ;; *) continue ;; esac
+              wanted=$((wanted + 1))
+              if [ -f "$archives/$name" ] && sudo cat -- "$archives/$name" > "$cache/$name" && has_hash "$expected" "$cache/$name"; then
+                kept=$((kept + 1))
+              else
+                rm -f -- "$cache/$name" || true
+              fi
+            done 3< "$list"
+          fi
+          complete=false
+          if [ "$wanted" -gt 0 ] && [ "$kept" -eq "$wanted" ]; then
+            complete=true
+          elif [ "$wanted" -gt 0 ]; then
+            echo "::warning::The cache directory holds $kept of the $wanted archives to cache, so this run saves no cache."
+          fi
+          echo "The cache directory holds $kept of the $wanted archives to cache."
+          echo "cache-complete=$complete" >> "$GITHUB_OUTPUT"
+
+          sudo apt-get install -y --no-install-recommends "${packages[@]}"
+
+      # A step of its own, before the lint, so that a run whose lint fails
+      # still saves the archives. A cache is never replaced, so a run that
+      # restored the cache of its own list saves nothing. A run whose cache
+      # directory lacks an archive of the list saves nothing either, because
+      # a later run would restore that cache and never fill it. A save that
+      # fails leaves the job as it is.
+      - name: Save the archives of the Tauri system packages
+        if: steps.apt-cache.outputs.cache-hit != 'true' && steps.apt-install.outputs.cache-complete == 'true'
+        continue-on-error: true
+        timeout-minutes: 10
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ steps.apt-list.outputs.dir }}
+          key: dylint-apt-archives-${{ steps.apt-list.outputs.hash }}
 
       - uses: actions/setup-node@v4
         with:
