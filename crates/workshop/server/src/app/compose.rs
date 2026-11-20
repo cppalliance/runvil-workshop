@@ -9,7 +9,7 @@ use workshop_gateway::{GatewayBinding, GatewayHandles, GatewayHealth, ResolvedGa
 use workshop_menu::MenuHandles;
 use workshop_menu::catalog::CatalogBus;
 use workshop_menu::menu::MenuBus;
-use workshop_registry::{Push, Registry, WorkspaceRoots};
+use workshop_registry::{Push, Registry};
 use workshop_status::StatusBus;
 use workshop_support::{Config, ReconnectBackoff};
 use workshop_user_state::UserStateStore;
@@ -60,7 +60,6 @@ pub(super) fn compose(
     registry.require::<GatewayHandles>()?;
     registry.require::<AgentSessions>()?;
     registry.require::<Workspace>()?;
-    registry.require::<dyn WorkspaceRoots>()?;
     registry.require::<UserStateStore>()?;
     push.push_idle();
     Ok(AppState {
@@ -148,8 +147,8 @@ fn register_gateway(
     Ok(backoff)
 }
 
-/// The workspace subsystem: its file handle plus the routes, state,
-/// roots, and shutdown task it self-registers.
+/// The workspace subsystem: its file handle plus the routes, state, and
+/// shutdown task it self-registers.
 fn register_workspace(
     registry: &Registry,
     registrations: &mut Registrations,
@@ -164,7 +163,6 @@ fn register_workspace(
         let regs = workshop_workspace::register(registry, &workspace);
         registrations.hold(regs.routes);
         registrations.hold(regs.state);
-        registrations.hold(regs.roots);
         // The shutdown lever that closes the workspace file inside the
         // graceful stop, so a quit leaves one complete file and no
         // sidecar.

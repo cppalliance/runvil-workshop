@@ -22,7 +22,6 @@ use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, PoisonError, RwLock};
 
 use serde::Serialize;
-use tokio::sync::watch;
 
 use crate::error::WorkspaceError;
 use crate::rfc3339::now_rfc3339;
@@ -197,8 +196,6 @@ pub struct Workspace {
     /// Where the last-used file is remembered between runs; `None` when
     /// built without a state directory (see [`Workspace::with_state_dir`]).
     pointer: Option<pointer::LastWorkspacePointer>,
-    /// The grant-set generation behind [`Workspace::subscribe_roots`].
-    roots_generation: watch::Sender<u64>,
     #[cfg(feature = "test-fixtures")]
     stall: Arc<stall::WriteStall>,
 }
@@ -213,7 +210,6 @@ impl Default for Workspace {
             switches: Arc::default(),
             closed: Arc::default(),
             pointer: None,
-            roots_generation: watch::Sender::default(),
             #[cfg(feature = "test-fixtures")]
             stall: Arc::new(stall::WriteStall::new()),
         }
@@ -282,8 +278,6 @@ impl Workspace {
                 added_at: (self.now)(),
             })
             .clone();
-        drop(grants);
-        self.bump_roots();
         Ok((root, meta))
     }
 
@@ -336,7 +330,6 @@ impl Workspace {
         if !removed {
             return Err(WorkspaceError::NotGranted);
         }
-        self.bump_roots();
         Ok(())
     }
 
@@ -350,22 +343,6 @@ impl Workspace {
             .keys()
             .cloned()
             .collect()
-    }
-
-    /// A watch on the grant-set generation, which every grant, revoke,
-    /// and workspace switch bumps, so a subscriber re-reads
-    /// [`Workspace::granted_roots`] when it changes.
-    #[must_use]
-    pub(crate) fn subscribe_roots(&self) -> watch::Receiver<u64> {
-        self.roots_generation.subscribe()
-    }
-
-    /// Bumps the grant-set generation, waking every roots subscriber.
-    /// Called after the grants lock is released, so a woken subscriber
-    /// reads the new set.
-    fn bump_roots(&self) {
-        self.roots_generation
-            .send_modify(|generation| *generation = generation.wrapping_add(1));
     }
 
     /// Reads a confined UTF-8 text file with its size and conflict

@@ -343,8 +343,6 @@ impl Workspace {
                 },
             );
         }
-        drop(map);
-        self.bump_roots();
     }
 
     /// Closes the backing file and leaves the workspace ephemeral: the
@@ -447,7 +445,6 @@ impl Workspace {
                 path: path.to_path_buf(),
                 ui_state,
             });
-        self.bump_roots();
         self.remember(path).await;
         if let Some(previous) = previous {
             previous.file.close().await;

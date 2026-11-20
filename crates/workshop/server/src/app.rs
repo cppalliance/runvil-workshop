@@ -53,7 +53,7 @@ pub struct AppState {
 
 /// The registration guards keeping every subsystem's self-registrations
 /// alive: the push channels, the producer sinks, the state handles, the
-/// route registrars, the background tasks, and the workspace roots view.
+/// route registrars, and the background tasks.
 #[derive(Clone)]
 struct Registrations {
     guards: Vec<Arc<Registration>>,

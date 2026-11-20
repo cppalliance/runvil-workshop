@@ -1,8 +1,7 @@
 //! Grant order and time in memory: save-as writes the grants in the
 //! order they were made, each with its own time, whether the workspace
 //! was file-backed or ephemeral, and positions loaded from a file
-//! survive a save-as unchanged. Every grant, revoke, and switch
-//! signals a roots change.
+//! survive a save-as unchanged.
 
 use super::*;
 
@@ -185,51 +184,4 @@ async fn replace_all_preserves_stored_positions_through_save_as() {
         authored,
         "b before a with the stored positions and times intact"
     );
-}
-
-#[tokio::test]
-async fn grants_revokes_and_switches_each_signal_a_roots_change() {
-    let files = tempfile::TempDir::new().expect("tempdir");
-    let current = files.path().join("current.rvwork");
-    let other = files.path().join("other.rvwork");
-    let writer = Workspace::new();
-    writer
-        .save_as(&other)
-        .await
-        .expect("the other file creates");
-    writer.close_backing().await;
-    let dir = tempfile::TempDir::new().expect("tempdir");
-    let workspace = Workspace::new();
-    let mut roots = workspace.subscribe_roots();
-    let mut signalled = |what: &str| {
-        assert!(
-            roots.has_changed().expect("the workspace holds the sender"),
-            "{what} signals a roots change"
-        );
-        roots.mark_unchanged();
-    };
-
-    workspace
-        .grant_and_persist(dir.path())
-        .await
-        .expect("the grant lands");
-    signalled("a grant");
-    workspace
-        .revoke_and_persist(dir.path())
-        .await
-        .expect("the revoke lands");
-    signalled("a revoke");
-    workspace.save_as(&current).await.expect("save as creates");
-    signalled("a save as");
-    workspace
-        .open_file(&other)
-        .await
-        .expect("the other file opens");
-    signalled("an open of another file");
-    workspace
-        .open_file(&other)
-        .await
-        .expect("the current file reloads");
-    signalled("a reload of the current file");
-    workspace.close_backing().await;
 }

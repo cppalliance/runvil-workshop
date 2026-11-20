@@ -1,6 +1,6 @@
 //! The sealed subsystem traits: one per contribution kind in the
 //! decomposition's inventory (routes, background tasks, push channels
-//! and sinks, shared views).
+//! and sinks).
 //!
 //! All are sealed behind a private supertrait, so only this crate can
 //! implement them. A registrant plugs its subsystem in through an
@@ -8,11 +8,10 @@
 //! downstream.
 
 use std::fmt;
-use std::path::PathBuf;
 use std::pin::Pin;
 
 use axum::Router;
-use tokio::sync::{broadcast, watch};
+use tokio::sync::broadcast;
 
 use workshop_protocol::StatusBarUpdate;
 
@@ -242,68 +241,6 @@ where
 impl<P> fmt::Debug for CatalogSinkAdapter<P> {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.debug_struct("CatalogSinkAdapter").finish()
-    }
-}
-
-/// The workspace subsystem's granted-root view: the narrow state handle
-/// the server's agent-session bindings read through the registry.
-/// Registered by `workshop-workspace`'s `handles.rs`.
-pub trait WorkspaceRoots: Sealed + Send + Sync {
-    /// The granted workspace roots in stable sorted order.
-    fn granted_roots(&self) -> Vec<PathBuf>;
-    /// A watch on the grant-set generation: it changes on every grant,
-    /// revoke, and workspace switch, so a consumer re-reads
-    /// [`WorkspaceRoots::granted_roots`] when it wakes.
-    fn subscribe(&self) -> watch::Receiver<u64>;
-}
-
-/// A [`WorkspaceRoots`] backed by two closures over the workspace's grant
-/// set, one reading the roots and one subscribing to its generation: the
-/// registration adapter for the workspace subsystem. The registry's
-/// traits are sealed, so the registrant plugs its state in through this
-/// adapter rather than implementing the trait itself.
-pub struct WorkspaceRootsAdapter<F, S> {
-    roots: F,
-    subscribe: S,
-}
-
-impl<F, S> WorkspaceRootsAdapter<F, S>
-where
-    F: Fn() -> Vec<PathBuf> + Send + Sync,
-    S: Fn() -> watch::Receiver<u64> + Send + Sync,
-{
-    /// Builds the adapter from the workspace's granted-roots closure and
-    /// its grant-set generation subscribe closure.
-    #[must_use]
-    pub fn new(roots: F, subscribe: S) -> Self {
-        Self { roots, subscribe }
-    }
-}
-
-impl<F, S> Sealed for WorkspaceRootsAdapter<F, S>
-where
-    F: Fn() -> Vec<PathBuf> + Send + Sync,
-    S: Fn() -> watch::Receiver<u64> + Send + Sync,
-{
-}
-
-impl<F, S> WorkspaceRoots for WorkspaceRootsAdapter<F, S>
-where
-    F: Fn() -> Vec<PathBuf> + Send + Sync,
-    S: Fn() -> watch::Receiver<u64> + Send + Sync,
-{
-    fn granted_roots(&self) -> Vec<PathBuf> {
-        (self.roots)()
-    }
-
-    fn subscribe(&self) -> watch::Receiver<u64> {
-        (self.subscribe)()
-    }
-}
-
-impl<F, S> fmt::Debug for WorkspaceRootsAdapter<F, S> {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.debug_struct("WorkspaceRootsAdapter").finish()
     }
 }
 

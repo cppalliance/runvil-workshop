@@ -7,10 +7,8 @@
 //! announce itself.
 //!
 //! The runtime links the subsystem-named seams carry: the gateway
-//! drives the menu through [`MenuPush`], publishing a model catalog
-//! forces a menu reconcile through [`Push::push_models_catalog`], and
-//! agent sessions read the workspace's granted roots through
-//! [`WorkspaceRoots`].
+//! drives the menu through [`MenuPush`], and publishing a model catalog
+//! forces a menu reconcile through [`Push::push_models_catalog`].
 //!
 //! ## Invariants
 //!
@@ -21,8 +19,8 @@
 //!   only this crate implements them: registrants plug in through the
 //!   adapters provided here, never by implementing a trait downstream.
 //! - Subsystem names live in the sealed traits ([`MenuSink`],
-//!   [`CatalogSink`], [`StatusChannel`], [`StatusSink`],
-//!   [`WorkspaceRoots`]) and in the [`MenuPush`] struct behind
+//!   [`CatalogSink`], [`StatusChannel`], [`StatusSink`]) and in the
+//!   [`MenuPush`] struct behind
 //!   [`Push::menu`], the facade's one per-subsystem accessor; the
 //!   collections stay keyed by type, never by a per-subsystem field. A
 //!   new subsystem adds its trait and adapter here, a compose helper in
@@ -46,5 +44,5 @@ pub use registry::{MissingContribution, Registration, Registry};
 pub use traits::{
     BackgroundTask, BackgroundTaskAdapter, CatalogSink, CatalogSinkAdapter, MenuSink,
     MenuSinkAdapter, RouteRegistrar, RouteRegistrarAdapter, ShutdownHandle, StatusChannel,
-    StatusChannelAdapter, StatusSink, StatusSinkAdapter, WorkspaceRoots, WorkspaceRootsAdapter,
+    StatusChannelAdapter, StatusSink, StatusSinkAdapter,
 };

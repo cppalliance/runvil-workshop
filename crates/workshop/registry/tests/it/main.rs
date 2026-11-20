@@ -4,7 +4,7 @@
 
 use std::sync::{Arc, Mutex, PoisonError};
 
-use tokio::sync::{broadcast, watch};
+use tokio::sync::broadcast;
 
 use workshop_protocol::{Activity, Severity, StatusBarUpdate};
 use workshop_registry::{Registry, StatusChannel, StatusChannelAdapter};
@@ -128,59 +128,6 @@ fn registry_clones_share_the_same_collections() {
         clone.state::<dyn StatusChannel>().is_some(),
         "a registration through one handle is visible through every clone"
     );
-}
-
-#[test]
-fn the_workspace_roots_handle_serves_the_registrants_grants() {
-    use std::path::PathBuf;
-
-    use workshop_registry::{WorkspaceRoots, WorkspaceRootsAdapter};
-
-    let registry = Registry::new();
-    assert!(
-        registry.state::<dyn WorkspaceRoots>().is_none(),
-        "an unregistered roots handle is a graceful no-op"
-    );
-    let registration = registry.register_state::<dyn WorkspaceRoots>(Arc::new(
-        WorkspaceRootsAdapter::new(|| vec![PathBuf::from("/granted")], || watch::channel(0).1),
-    ));
-    let roots = registry
-        .state::<dyn WorkspaceRoots>()
-        .expect("the registered roots handle is served");
-    assert_eq!(roots.granted_roots(), vec![PathBuf::from("/granted")]);
-    drop(registration);
-    assert!(
-        registry.state::<dyn WorkspaceRoots>().is_none(),
-        "the key empties when the guard drops"
-    );
-}
-
-#[test]
-fn the_workspace_roots_handle_serves_the_registrants_change_signal() {
-    use std::path::PathBuf;
-
-    use workshop_registry::{WorkspaceRoots, WorkspaceRootsAdapter};
-
-    let registry = Registry::new();
-    let generation = watch::Sender::new(0_u64);
-    let _registration = registry.register_state::<dyn WorkspaceRoots>(Arc::new(
-        WorkspaceRootsAdapter::new(Vec::<PathBuf>::new, {
-            let generation = generation.clone();
-            move || generation.subscribe()
-        }),
-    ));
-    let mut receiver = registry
-        .state::<dyn WorkspaceRoots>()
-        .expect("the registered roots handle is served")
-        .subscribe();
-    generation.send_modify(|value| *value += 1);
-    assert!(
-        receiver
-            .has_changed()
-            .expect("the registrant's sender is alive"),
-        "a bump through the registrant's sender reaches the subscriber"
-    );
-    assert_eq!(*receiver.borrow_and_update(), 1);
 }
 
 #[test]

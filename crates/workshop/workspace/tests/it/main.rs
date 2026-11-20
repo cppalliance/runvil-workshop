@@ -1,5 +1,5 @@
 //! Integration tests for `workshop-workspace`: the registration
-//! contract - routes and the granted-roots handle served through the
+//! contract - routes and the workspace's state handle served through the
 //! registry's contribution collections - and the save timeout on the
 //! workspace routes.
 
@@ -11,7 +11,7 @@ use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use axum::response::Response;
 use tower::ServiceExt as _;
-use workshop_registry::{Registry, WorkspaceRoots};
+use workshop_registry::Registry;
 use workshop_workspace::{Workspace, register};
 
 #[tokio::test]
@@ -38,8 +38,7 @@ async fn the_registered_routes_serve_the_workspace_api() {
         .expect("the router is infallible");
     assert_eq!(response.status(), StatusCode::OK);
 
-    // A grant over HTTP becomes visible through the registered roots
-    // handle immediately.
+    // A grant over HTTP is in the roots listing of the next request.
     let body = serde_json::json!({ "path": dir.path() }).to_string();
     let request = Request::builder()
         .method("POST")
@@ -48,18 +47,37 @@ async fn the_registered_routes_serve_the_workspace_api() {
         .body(Body::from(body))
         .expect("static request parts are valid");
     let response = router
+        .clone()
         .oneshot(request)
         .await
         .expect("the router is infallible");
     assert_eq!(response.status(), StatusCode::OK);
-    let roots = registry
-        .state::<dyn WorkspaceRoots>()
-        .expect("the roots handle is registered")
-        .granted_roots();
+    let request = Request::builder()
+        .uri("/workspace/tree")
+        .body(Body::empty())
+        .expect("static request parts are valid");
+    let response = router
+        .oneshot(request)
+        .await
+        .expect("the router is infallible");
+    assert_eq!(response.status(), StatusCode::OK);
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("the body is in memory already");
+    let listing: serde_json::Value = serde_json::from_slice(&bytes).expect("the body is JSON");
+    let roots = listing["entries"]
+        .as_array()
+        .expect("the listing holds its entries");
     assert_eq!(roots.len(), 1, "the grant reached the shared state");
+    let granted = roots[0]["path"].as_str().expect("an entry names its path");
+    let name = dir
+        .path()
+        .file_name()
+        .and_then(|name| name.to_str())
+        .expect("a named tempdir");
     assert!(
-        roots[0].ends_with(dir.path().file_name().expect("a named tempdir")),
-        "the granted root is the dropped directory: {roots:?}"
+        granted.ends_with(name),
+        "the granted root is the dropped directory: {granted}"
     );
 }
 
@@ -109,9 +127,7 @@ async fn dropping_the_guards_deregisters_every_contribution() {
     let guards = register(&registry, &workspace);
     assert!(!registry.routes().is_empty());
     assert!(registry.state::<Workspace>().is_some());
-    assert!(registry.state::<dyn WorkspaceRoots>().is_some());
     drop(guards);
     assert!(registry.routes().is_empty());
     assert!(registry.state::<Workspace>().is_none());
-    assert!(registry.state::<dyn WorkspaceRoots>().is_none());
 }
