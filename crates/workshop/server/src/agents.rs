@@ -355,8 +355,8 @@ pub struct AgentSessions {
 
 /// The shared state behind the cloneable handle.
 struct Inner {
-    /// The subsystem registry: the gateway and menu handles, the
-    /// workspace roots, and the push facade are read through it.
+    /// The subsystem registry: the gateway and menu handles and the push
+    /// facade are read through it.
     registry: Registry,
     /// Reset on completed replies: an agent reply is useful gateway work.
     backoff: ReconnectBackoff,
@@ -478,10 +478,9 @@ impl AgentSessions {
     }
 
     /// Runs `conversation`'s one run of its agent. The setup's selected
-    /// model and workspace roots are read once the menu's catalog holds a
-    /// chat-capable model, so a pick made while the catalog was empty is
-    /// the one the run binds; a close during that wait ends the run before
-    /// it begins.
+    /// model is read once the menu's catalog holds a chat-capable model,
+    /// so a pick made while the catalog was empty is the one the run
+    /// binds; a close during that wait ends the run before it begins.
     async fn drive(self, conversation: Conversation) {
         tokio::select! {
             () = conversation.closing() => {}

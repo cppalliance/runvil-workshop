@@ -28,7 +28,7 @@ uses:
 tools.offer('web')
 while true do
     messages:user(tasks.receive())
-    models.loop(models.get('test-model'))
+    models.loop()
 end
 ```
 ";

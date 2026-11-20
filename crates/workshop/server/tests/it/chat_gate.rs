@@ -101,8 +101,8 @@ async fn spawn_chat_server(models: &[&str]) -> GateServer {
 }
 
 /// Spawns the gate server with an explicit menu selection. `None` keeps
-/// the catalog available to the launched agent while its live `ui()`
-/// snapshot has no selected binding.
+/// the catalog available to the launched agent while the menu has no
+/// selected model.
 async fn spawn_chat_server_with_selection(models: &[&str], selected: Option<&str>) -> GateServer {
     let captured = CapturedRequests::default();
     let mock = Arc::clone(&captured);

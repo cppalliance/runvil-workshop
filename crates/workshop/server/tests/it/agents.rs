@@ -48,7 +48,7 @@ while true do
         return
     end
     messages:user(text)
-    models.loop(models.get('test-model'))
+    models.loop()
 end
 ```
 ";
@@ -85,8 +85,9 @@ fn record_request(requests: &Mutex<Vec<serde_json::Value>>, body: &str) {
 
 /// Binds the workshop router against an echoing SSE mock gateway, with
 /// one discovered agent (`echo`) and the retained catalog already
-/// holding `test-model`. Returns the server's base `ws://` URL, the
-/// tempdir keeping the state alive, and the shared state handle.
+/// holding `test-model`, which the menu selects. Returns the server's
+/// base `ws://` URL, the tempdir keeping the state alive, and the shared
+/// state handle.
 async fn spawn_agent_server() -> (String, tempfile::TempDir, AppState) {
     let base_url = spawn_gateway(with_typed_catalog(
         Router::new().route("/v1/chat/completions", post(echo_completions)),
@@ -115,6 +116,13 @@ async fn spawn_agent_server_for_gateway(base_url: String) -> (String, tempfile::
     state
         .catalog()
         .publish(vec![json!({ "id": "test-model", "object": "model" })]);
+    // The Gateway's catalog lists `model-a` first, so a run with no
+    // selection would bind that model. The menu selects `test-model`, the
+    // one model the test prompts run on.
+    state
+        .menu()
+        .set_selected("test-model")
+        .expect("the selected model is in the retained catalog");
     (base, dir, state)
 }
 
@@ -220,5 +228,4 @@ pub(crate) fn delta_text(turn: &Turn) -> String {
 mod lifecycle;
 mod refusals;
 mod replacement;
-mod revoke;
 mod turns;
