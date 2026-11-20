@@ -22,14 +22,15 @@ Workshop loads every library Plugin in its Plugin directory when it starts. The 
 
 `[agents] plugins` in `workshop.toml` names another directory instead.
 
-Each installer puts two libraries there, each from a repository of its own, pinned by commit in the root `Cargo.toml`:
+Each installer puts three libraries there, each from a repository of its own, pinned by commit in the root `Cargo.toml`:
 
 - The std Plugin, which holds the file tools: `plugin_std.dll`, `libplugin_std.dylib`, or `libplugin_std.so`, from [cppalliance/runvil-plugin-std](https://github.com/cppalliance/runvil-plugin-std).
 - The bashkit Plugin, which holds the shell: `plugin_bashkit.dll`, `libplugin_bashkit.dylib`, or `libplugin_bashkit.so`, from [cppalliance/runvil-plugin-bashkit](https://github.com/cppalliance/runvil-plugin-bashkit).
+- The web Plugin, which holds the web tools: `plugin_web.dll`, `libplugin_web.dylib`, or `libplugin_web.so`, from [cppalliance/runvil-plugin-web](https://github.com/cppalliance/runvil-plugin-web).
 
-A Workshop with no Plugin directory, or one whose std library does not load, refuses an agent that requires `std` and says that `runvil/std` is not installed. It does the same for `bash` and the bashkit library.
+A Workshop with no Plugin directory, or one whose std library does not load, refuses an agent that requires `std` and says that `runvil/std` is not installed. It does the same for `bash` and the bashkit library, and for `web` and the web library.
 
-`runvil-workshop --plugins` prints each library Plugin the installation loads, as its name and its version, and exits. The web and mcp Plugins are compiled into Workshop, so the list leaves them out. A library that does not load goes to stderr with the reason. Workshop keeps no log, so this is the way to see why an agent has no file tools or no shell.
+`runvil-workshop --plugins` prints each library Plugin the installation loads, as its name and its version, and exits. The mcp Plugin is compiled into Workshop, so the list leaves it out. A library that does not load goes to stderr with the reason. Workshop keeps no log, so this is the way to see why an agent has no file tools, no shell, or no web tools.
 
 ## Updates
 

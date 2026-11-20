@@ -9,7 +9,7 @@
 //! The rules:
 //!
 //! 1. An entry of the root `[workspace.dependencies]` that comes from the
-//!    repository names one of the four public crates, by its `package`
+//!    repository names one of the three public crates, by its `package`
 //!    field when it has one and by its key otherwise.
 //! 2. Each such entry pins a `rev`; a `branch` or a `tag` does not count.
 //! 3. The entries name one `rev` between them, because two commits are two
@@ -25,15 +25,11 @@ use std::path::Path;
 /// The repository that holds the Engine and the Harness.
 const HARNESS_REPOSITORY: &str = "https://github.com/cppalliance/runvil-harness";
 
-/// The four crates of that repository a crate here may depend on: the
+/// The three crates of that repository a crate here may depend on: the
 /// Harness facade, which is the one crate a Host depends on, the standard
-/// Gateway client, and the two Rust Plugins Workshop links in.
-const HARNESS_PUBLIC: [&str; 4] = [
-    "runvil",
-    "harness-gateway-client",
-    "plugin-web",
-    "plugin-mcp",
-];
+/// Gateway client, and the mcp Plugin, the one Rust Plugin Workshop links
+/// in.
+const HARNESS_PUBLIC: [&str; 3] = ["runvil", "harness-gateway-client", "plugin-mcp"];
 
 /// Runs the four rules over the root manifest's `[workspace.dependencies]`
 /// and every workspace member's manifest. A root manifest that cannot be
@@ -149,7 +145,7 @@ fn from_harness(entry: &toml::Value) -> bool {
         })
 }
 
-/// [`HARNESS_PUBLIC`] as a violation lists it: `a, b, c, and d`.
+/// [`HARNESS_PUBLIC`] as a violation lists it: `a, b, and c`.
 fn public_crates() -> String {
     let [rest @ .., last] = HARNESS_PUBLIC;
     format!("{}, and {last}", rest.join(", "))

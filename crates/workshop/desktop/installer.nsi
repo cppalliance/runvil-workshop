@@ -58,11 +58,13 @@ ${StrLoc}
 !define UNINSTALLERHEADERIMAGE "{{uninstaller_header_image}}"
 !define MAINBINARYNAME "{{main_binary_name}}"
 !define MAINBINARYSRCPATH "{{main_binary_path}}"
-; The libraries of the std Plugin and the bashkit Plugin. Cargo writes
-; each to `deps` beside the main executable whenever it builds Workshop,
-; so its path is the main executable's with the file name replaced.
+; The libraries of the std Plugin, the bashkit Plugin, and the web Plugin.
+; Cargo writes each to `deps` beside the main executable whenever it
+; builds Workshop, so its path is the main executable's with the file
+; name replaced.
 !searchreplace STDPLUGINSRCPATH "${MAINBINARYSRCPATH}" "${MAINBINARYNAME}.exe" "deps\plugin_std.dll"
 !searchreplace BASHKITPLUGINSRCPATH "${MAINBINARYSRCPATH}" "${MAINBINARYNAME}.exe" "deps\plugin_bashkit.dll"
+!searchreplace WEBPLUGINSRCPATH "${MAINBINARYSRCPATH}" "${MAINBINARYNAME}.exe" "deps\plugin_web.dll"
 ; A main executable under another name would leave the path unchanged, and
 ; the setup would install the executable as each Plugin.
 !if "${STDPLUGINSRCPATH}" == "${MAINBINARYSRCPATH}"
@@ -744,12 +746,13 @@ Section "Runvil Workshop" SecWorkshop
  ; Copy main executable
  File "${MAINBINARYSRCPATH}"
 
- ; Copy the libraries of the std Plugin and the bashkit Plugin into the
- ; Plugin directory, `plugins` beside the main executable, where Workshop
- ; loads library Plugins from
+ ; Copy the libraries of the std Plugin, the bashkit Plugin, and the web
+ ; Plugin into the Plugin directory, `plugins` beside the main executable,
+ ; where Workshop loads library Plugins from
  CreateDirectory "$INSTDIR\plugins"
  File "/oname=plugins\plugin_std.dll" "${STDPLUGINSRCPATH}"
  File "/oname=plugins\plugin_bashkit.dll" "${BASHKITPLUGINSRCPATH}"
+ File "/oname=plugins\plugin_web.dll" "${WEBPLUGINSRCPATH}"
 
  ; Copy resources
  {{#each resources_dirs}}
@@ -903,8 +906,9 @@ Section "-Finalize"
  !insertmacro DeleteComponentPayloadIfDeclined ${SecWorkshop} $INSTDIR\${MAINBINARYNAME}.exe
  !insertmacro DeleteComponentPayloadIfDeclined ${SecWorkshop} $INSTDIR\plugins\plugin_std.dll
  !insertmacro DeleteComponentPayloadIfDeclined ${SecWorkshop} $INSTDIR\plugins\plugin_bashkit.dll
+ !insertmacro DeleteComponentPayloadIfDeclined ${SecWorkshop} $INSTDIR\plugins\plugin_web.dll
  ; Without /r, RMDir removes the Plugin directory only when it is empty,
- ; which it is only after the lines above deleted the two libraries in it.
+ ; which it is only after the lines above deleted the three libraries in it.
  RMDir "$INSTDIR\plugins"
  ClearErrors
 
@@ -988,6 +992,7 @@ Section "un.Workshop"
  ; library the installer did not put there is left in it
  Delete "$INSTDIR\plugins\plugin_std.dll"
  Delete "$INSTDIR\plugins\plugin_bashkit.dll"
+ Delete "$INSTDIR\plugins\plugin_web.dll"
  RMDir "$INSTDIR\plugins"
 
  ; Delete resources

@@ -7,26 +7,21 @@ repository.workspace = true
 publish = false
 
 [dependencies]
-# `SearchProvider`, which the agent sessions' Gateway search implements,
-# is an `async_trait` trait.
-async-trait.workspace = true
 axum.workspace = true
 futures-util.workspace = true
 # The one crate a Host depends on: each conversation's launch builds the
 # per-run Harness that runs it, the agent socket frames a run's events as
 # transcript entries and the status reporter derives status from them,
 # the prompt parser sits behind the `/prompts/contract` route, and the
-# agent sessions provide the server's runtime under the Plugin
-# contract's tokio runtime service name.
+# agent sessions fill the resources that every tool call of a library
+# Plugin is lent.
 runvil.workspace = true
-# The Gateway web search client the agent sessions' search provider
-# sends each search through.
+# The standard Gateway client: the broker that each run's model rounds
+# and model lists go through, and the Gateway's entry in the resources
+# the agent sessions offer the library Plugins.
 harness-gateway-client.workspace = true
-# The web Pack every agent run's Host installs: `runvil/web`, with the
-# search-provider and runtime services it reads.
-plugin-web.workspace = true
 # The MCP client Pack, installed once over every server of the
-# configured `mcp.json`.
+# configured `mcp.json`, on the server's runtime.
 plugin-mcp.workspace = true
 # The std Plugin's dynamic library, which holds the file-tool Pack
 # `runvil/std`. Nothing here links it in or calls it: the dependency makes
@@ -37,6 +32,9 @@ workshop-plugin-std.workspace = true
 # The bashkit Plugin's dynamic library, which holds the shell Pack
 # `runvil/bash`. Like std's, it is here only so that Cargo builds it.
 workshop-plugin-bashkit.workspace = true
+# The web Plugin's dynamic library, which holds the web Pack
+# `runvil/web`. Like std's, it is here only so that Cargo builds it.
+workshop-plugin-web.workspace = true
 reqwest.workspace = true
 rust-embed.workspace = true
 serde.workspace = true

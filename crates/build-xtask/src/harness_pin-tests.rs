@@ -36,21 +36,20 @@ fn the_workspace_takes_only_the_public_crates_from_runvil_harness() {
 }
 
 #[test]
-fn the_four_public_crates_at_one_rev_pass() {
+fn the_three_public_crates_at_one_rev_pass() {
     let root = workspace(&format!(
         "[workspace.dependencies]\n\
          base64 = \"0.22\"\n\
          workshop-protocol = {{ path = \"crates/workshop/protocol\" }}\n\
          runvil = {{ version = \"0.3.0\", {GIT}, rev = \"{REV}\" }}\n\
          harness-gateway-client = {{ {GIT}, rev = \"{REV}\" }}\n\
-         plugin-web = {{ {GIT}, rev = \"{REV}\" }}\n\
          plugin-mcp = {{ {GIT}, rev = \"{REV}\" }}\n"
     ));
     write_crate(
         root.path(),
         "workshop/server",
         "workshop-server",
-        "[dependencies]\nrunvil.workspace = true\nplugin-web = { workspace = true }\n\
+        "[dependencies]\nrunvil.workspace = true\nplugin-mcp = { workspace = true }\n\
          [dev-dependencies]\nworkshop-protocol.workspace = true\n",
     );
     let violations = harness_pin_violations(root.path());
@@ -58,7 +57,7 @@ fn the_four_public_crates_at_one_rev_pass() {
 }
 
 #[test]
-fn a_fifth_crate_from_the_repository_is_reported() {
+fn a_fourth_crate_from_the_repository_is_reported() {
     let root = workspace(&format!(
         "[workspace.dependencies]\n\
          runvil = {{ {GIT}, rev = \"{REV}\" }}\n\
@@ -69,8 +68,7 @@ fn a_fifth_crate_from_the_repository_is_reported() {
         violations,
         [
             "[workspace.dependencies] harness-runner: harness-runner comes from runvil-harness; \
-             crates here may take only runvil, harness-gateway-client, plugin-web, and \
-             plugin-mcp from it"
+             crates here may take only runvil, harness-gateway-client, and plugin-mcp from it"
         ]
     );
 }
@@ -98,7 +96,7 @@ fn an_entry_with_a_branch_and_no_rev_is_reported() {
         let root = workspace(&format!(
             "[workspace.dependencies]\n\
              runvil = {{ {GIT}, {pin} }}\n\
-             plugin-web = {{ {GIT}, rev = \"{REV}\" }}\n"
+             plugin-mcp = {{ {GIT}, rev = \"{REV}\" }}\n"
         ));
         let violations = harness_pin_violations(root.path());
         assert_eq!(
@@ -118,7 +116,6 @@ fn two_different_revs_are_reported_once() {
         "[workspace.dependencies]\n\
          runvil = {{ {GIT}, rev = \"{REV}\" }}\n\
          harness-gateway-client = {{ {GIT}, rev = \"{REV}\" }}\n\
-         plugin-web = {{ {GIT}, rev = \"{OTHER_REV}\" }}\n\
          plugin-mcp = {{ {GIT}, rev = \"{OTHER_REV}\" }}\n"
     ));
     let violations = harness_pin_violations(root.path());
@@ -143,7 +140,7 @@ fn a_member_naming_the_repository_directly_is_reported() {
         "workshop-server",
         &format!(
             "[dependencies]\nrunvil = {{ {GIT}, rev = \"{REV}\" }}\n\
-             [dev-dependencies]\nplugin-web.workspace = true\n"
+             [dev-dependencies]\nharness-gateway-client.workspace = true\n"
         ),
     );
     write_crate(

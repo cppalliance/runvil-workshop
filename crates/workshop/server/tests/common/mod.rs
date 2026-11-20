@@ -36,20 +36,21 @@ use workshop_server::{
 pub(crate) const RECV_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// The name of each library Plugin Workshop ships, as Cargo names its
-/// library: the std Plugin's and the bashkit Plugin's.
-const PLUGIN_LIBRARIES: [&str; 2] = ["plugin_std", "plugin_bashkit"];
+/// library: the std Plugin's, the bashkit Plugin's, and the web Plugin's.
+const PLUGIN_LIBRARIES: [&str; 3] = ["plugin_std", "plugin_bashkit", "plugin_web"];
 
 /// A Plugin directory that holds the library of each Plugin Workshop
-/// ships and nothing else, for a server whose agents declare `std` or
-/// `bash`, as the built-in chat agent does.
+/// ships and nothing else, for a server whose agents declare `std`,
+/// `bash`, or `web`, as the built-in chat agent does.
 ///
 /// Cargo builds each library beside this test executable, because the
-/// server depends on `workshop-plugin-std` and `workshop-plugin-bashkit`.
-/// That directory holds other libraries too, so the Plugin directory is
-/// one beside it, with a hard link to each library. Every test of a build
-/// shares it: a server may keep a library loaded until its test's process
-/// exits, and Windows cannot remove a loaded library, so a copy for each
-/// test would be left behind in the temporary directory.
+/// server depends on `workshop-plugin-std`, `workshop-plugin-bashkit`,
+/// and `workshop-plugin-web`. That directory holds other libraries too,
+/// so the Plugin directory is one beside it, with a hard link to each
+/// library. Every test of a build shares it: a server may keep a library
+/// loaded until its test's process exits, and Windows cannot remove a
+/// loaded library, so a copy for each test would be left behind in the
+/// temporary directory.
 pub(crate) fn plugin_dir() -> PathBuf {
     /// The directory, made once for each test process.
     static DIRECTORY: OnceLock<PathBuf> = OnceLock::new();

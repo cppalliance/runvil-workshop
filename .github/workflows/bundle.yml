@@ -26,6 +26,7 @@ on:
       - crates/workshop/desktop/icons/**
       - crates/workshop/plugin-std/**
       - crates/workshop/plugin-bashkit/**
+      - crates/workshop/plugin-web/**
       - crates/workshop/package.json
       - crates/workshop/package-lock.json
       - crates/workshop/gateway-discovery/src/**

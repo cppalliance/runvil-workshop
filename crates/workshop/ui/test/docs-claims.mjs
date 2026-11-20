@@ -114,6 +114,7 @@ test("rulebooks use Engine, Harness, Host, and Plugin as the root AGENTS.md defi
 const PLUGIN_DOC_DIRS = [
   "crates/workshop/plugin-std",
   "crates/workshop/plugin-bashkit",
+  "crates/workshop/plugin-web",
 ];
 
 test("the root AGENTS.md and the Pack-facing crates' comments never describe Pack activation", async () => {

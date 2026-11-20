@@ -3,11 +3,11 @@
 //! inside Workshop's bundle; macOS and Linux install it beside Workshop,
 //! so their bundles do not hold it. The Gateway is its own product in
 //! `cppalliance/runvil-gateway`, so nothing here compiles it. Every build
-//! and every bundle holds the libraries of the std Plugin and the bashkit
-//! Plugin in Workshop's Plugin directory: `plugins` beside Workshop in a
-//! build and on Windows, and inside Workshop's bundle on macOS and Linux
-//! (`plugin`). The installers are built from the bundle in
-//! `cppalliance/runvil`.
+//! and every bundle holds the libraries of the std Plugin, the bashkit
+//! Plugin, and the web Plugin in Workshop's Plugin directory: `plugins`
+//! beside Workshop in a build and on Windows, and inside Workshop's
+//! bundle on macOS and Linux (`plugin`). The installers are built from
+//! the bundle in `cppalliance/runvil`.
 
 use std::ffi::OsString;
 use std::fmt;

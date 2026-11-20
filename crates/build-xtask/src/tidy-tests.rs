@@ -263,7 +263,11 @@ fn tier_table_grants_each_tier_only_lower_tiers() {
         allowed_dependencies("workshop-server"),
         Some(packages(&[VOCABULARY, SERVICES, FEATURES, PLUGINS]))
     );
-    for plugin in ["workshop-plugin-std", "workshop-plugin-bashkit"] {
+    for plugin in [
+        "workshop-plugin-std",
+        "workshop-plugin-bashkit",
+        "workshop-plugin-web",
+    ] {
         assert_eq!(
             allowed_dependencies(plugin),
             Some(Vec::new()),

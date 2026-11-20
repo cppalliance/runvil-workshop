@@ -6,34 +6,36 @@
 //! the two share only [`crate::websocket`].
 //!
 //! The server builds one [`Host`] at startup: its `Packs`, installed from
-//! the linked web and mcp Plugins, mcp over the servers of the configured
-//! `mcp.json`, the library Plugins in the configured Plugin directory,
-//! the std Plugin with the file-tool Pack and the bashkit Plugin with the
-//! shell Pack among them, and the built-ins subagents and user; a finder
-//! that reads
-//! each agent from the agents folder through `load_agent`; and the tokio
-//! timer. Each launch opens a conversation in `workshop-agents` and builds
+//! the linked mcp Plugin, over the servers of the configured `mcp.json`,
+//! the library Plugins in the configured Plugin directory, the std Plugin
+//! with the file-tool Pack, the bashkit Plugin with the shell Pack, and
+//! the web Plugin with the web Pack among them, and the built-ins
+//! subagents and user; a finder that reads each agent from the agents
+//! folder through `load_agent`; and the tokio timer. Every tool call of a
+//! library Plugin is lent the server's [`resources`]: the Gateway the
+//! registry holds as the call starts, which is where the web Pack sends a
+//! search. Each launch opens a conversation in `workshop-agents` and builds
 //! that conversation's one run its own [`RunSetup`]: the conversation's
 //! recorder tee on a handle of the run log's [`TursoRecorder`] that names
 //! the launched agent, a per-run broker over the server's inference broker
 //! ([`broker`]), and a user, the conversation's operator, so the run holds
 //! `runvil/user`; the operator's messages reach the run's main chain
 //! through the conversation. The run makes its own instance of each Pack
-//! it holds and drops them when it ends. The run reaches the gateway only
-//! through its per-run broker, which follows the live gateway binding and
-//! sends each round to the dropdown's current pick. Each run's filesystem
-//! is an in-memory root, with a read-only mount beside it for each of two
-//! demos whose switch is on: the language guide, and the machine's C
-//! drive (`language_guide`). Both switches are committed as off. The
-//! filesystem has no policy of its own, so the default one, `AllowAll`,
-//! admits every operation: the file tools and the shell change the files
-//! of the in-memory root, which end with the run, and a read-only mount
-//! refuses each change. The run's
-//! setup carries the Host state ([`bindings`]): the menu's pick and the
-//! workspace's granted roots, read once the menu's catalog holds a
-//! chat-capable model. Status-bar reporting stays in the server
-//! (`status`): a per-conversation reporter derives it from the
-//! conversation's events, deltas, and failure reports.
+//! it holds and drops them when it ends. The run's model rounds reach the
+//! gateway only through its per-run broker, which follows the live gateway
+//! binding and sends each round to the dropdown's current pick. Each
+//! run's filesystem is an in-memory root, with a read-only mount beside it
+//! for each of two demos whose switch is on: the language guide, and the
+//! machine's C drive (`language_guide`). Both switches are committed as
+//! off. The filesystem has no policy of its own, so the default one,
+//! `AllowAll`, admits every operation: the file tools and the shell change
+//! the files of the in-memory root, which end with the run, and a
+//! read-only mount refuses each change. The run's setup carries the Host
+//! state ([`bindings`]): the menu's pick and the workspace's granted
+//! roots, read once the menu's catalog holds a chat-capable model.
+//! Status-bar reporting stays in the server (`status`): a
+//! per-conversation reporter derives it from the conversation's events,
+//! deltas, and failure reports.
 //!
 //! **Registry carve-out.** Conversations survive socket disconnect and
 //! sockets attach and detach (`socket`), so the launcher keeps the
@@ -46,7 +48,6 @@ mod broker;
 mod gateway;
 mod language_guide;
 mod relay;
-mod search;
 mod socket;
 mod socket_frames;
 mod state;
@@ -58,23 +59,23 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use plugin_web::SEARCH_PROVIDER;
-use runvil::harness::{Packs, PluginReport, RunId, insert_plugin_dir};
-use runvil::plugin::{HostServices, PackRegistry, ServiceKey};
+use harness_gateway_client::{GatewayEndpoint, SecretString, provide_gateway_resources};
+use runvil::harness::{HostResources, Packs, PluginReport, RunId, insert_plugin_dir};
+use runvil::plugin::PackRegistry;
 use runvil::{Error, ErrorCode, ErrorFact, Host, RunSetup};
-use serde_json::{Map, Value};
+use serde_json::Value;
 use workshop_agents::{
     Conversation, ConversationId, Conversations, LaunchError, TokioTimer, discover_agents,
     load_agent,
 };
+use workshop_gateway::GatewayHandles;
 use workshop_registry::Registry;
 use workshop_run_log::TursoRecorder;
 use workshop_support::{Config, ReconnectBackoff};
 
 use bindings::with_host_state;
 use broker::{RunBroker, WorkshopBroker};
-use gateway::usable_gateway;
-use search::GatewaySearchProvider;
+use gateway::{UsableGateway, usable_gateway};
 use socket::Receivers;
 pub(crate) use state::{SessionsState, register};
 
@@ -82,21 +83,18 @@ pub(crate) use state::{SessionsState, register};
 /// the `runs.db` every conversation's run is recorded in.
 const HARNESS_STATE_DIR: &str = "harness";
 
-/// The key the server provides its runtime under: the Plugin contract's
-/// tokio runtime service, as the handle it supplies.
-const RUNTIME: ServiceKey<tokio::runtime::Handle> = ServiceKey::new(runvil::plugin::TOKIO_RUNTIME);
-
-/// The server's installed Packs over its Host-wide [`services`], and what
-/// its Plugin directory loaded. `mcp` is the `[agents] mcp` setting: the
-/// mcp Pack is installed over the servers of the file it names. `plugins`
-/// is the `[agents] plugins` setting: the directory whose library Plugins
+/// The server's installed Packs, and what its Plugin directory loaded.
+/// `registry` holds the Gateway that each tool call of a library Plugin
+/// is lent ([`resources`]). `mcp` is the `[agents] mcp` setting: the mcp
+/// Pack is installed over the servers of the file it names. `plugins` is
+/// the `[agents] plugins` setting: the directory whose library Plugins
 /// are loaded.
 fn host_packs(
     registry: &Registry,
     mcp: Option<&Path>,
     plugins: Option<&Path>,
 ) -> (Packs, Option<PluginReport>) {
-    with_plugins(&services(registry), read_mcp_servers(mcp), plugins)
+    with_plugins(&resources(registry), read_mcp_servers(mcp), plugins)
 }
 
 /// The `mcpServers` object of the `mcp.json`-format file at `setting`,
@@ -156,31 +154,32 @@ fn read_mcp_servers(setting: Option<&Path>) -> Value {
 
 /// The Packs of the server's Host, and what its Plugin directory loaded.
 ///
-/// The linked Plugins, web and mcp, install first with the Host-wide
-/// `services`, mcp with the `servers` object as its configuration. Then
-/// every library Plugin in the directory `plugins` loads, when the server
-/// is given one. The std Plugin, whose Pack holds the file tools, and the
-/// bashkit Plugin, whose Pack holds the shell, are two of those
-/// libraries, so a Host whose Plugin directory lacks one has no `std` or
-/// no `bash` Pack and refuses a prompt that requires it. A `tracing`
-/// warning says so at startup. The registry also holds the built-ins
-/// `subagents` and `user`, and each run makes its own instances of the
-/// Packs it holds. The report lists each library Plugin that loaded and
-/// each failure.
+/// The linked mcp Plugin installs first, over the `servers` object, with
+/// the handle of the runtime this is called on. It is installed only on a
+/// runtime: called outside one, as a synchronous test calls it, the Host
+/// is built without the mcp Pack and refuses a prompt that requires
+/// `mcp`. Then every library Plugin in the directory `plugins` loads,
+/// when the server is given one, and every tool call of its Packs is lent
+/// `resources`. The std Plugin, whose Pack holds the file tools, the
+/// bashkit Plugin, whose Pack holds the shell, and the web Plugin, whose
+/// Pack holds the web tools, are three of those libraries, so a Host
+/// whose Plugin directory lacks one has no `std`, no `bash`, or no `web`
+/// Pack and refuses a prompt that requires it. A `tracing` warning says
+/// so at startup. The registry also holds the built-ins `subagents` and
+/// `user`, and each run makes its own instances of the Packs it holds.
+/// The report lists each library Plugin that loaded and each failure.
 fn with_plugins(
-    services: &HostServices,
+    resources: &HostResources,
     servers: Value,
     plugins: Option<&Path>,
 ) -> (Packs, Option<PluginReport>) {
     let mut packs = PackRegistry::new();
-    if let Err(error) = plugin_web::install(&mut packs, Value::Null, services) {
-        tracing::warn!(%error, "the web Plugin inserted no Pack");
-    }
-    let mcp = Map::from_iter([("mcp".to_owned(), servers)]);
-    if let Err(error) = plugin_mcp::install(&mut packs, Value::Object(mcp), services) {
+    if let Ok(runtime) = tokio::runtime::Handle::try_current()
+        && let Err(error) = plugin_mcp::install(&mut packs, servers, runtime)
+    {
         tracing::warn!(%error, "the mcp Plugin inserted no Pack");
     }
-    let report = plugins.and_then(|directory| load_plugin_dir(&mut packs, directory));
+    let report = plugins.and_then(|directory| load_plugin_dir(&mut packs, directory, resources));
     for pack in SHIPPED_PACKS {
         if !holds(&packs, pack) {
             tracing::warn!(
@@ -194,8 +193,9 @@ fn with_plugins(
 }
 
 /// The Packs that only a library Plugin Workshop ships inserts: the file
-/// tools, from the std Plugin, and the shell, from the bashkit Plugin.
-const SHIPPED_PACKS: [&str; 2] = ["runvil/std", "runvil/bash"];
+/// tools, from the std Plugin, the shell, from the bashkit Plugin, and the
+/// web tools, from the web Plugin.
+const SHIPPED_PACKS: [&str; 3] = ["runvil/std", "runvil/bash", "runvil/web"];
 
 /// Whether `packs` holds the Pack named `pack`, a vendor and a Pack id.
 fn holds(packs: &PackRegistry, pack: &str) -> bool {
@@ -224,7 +224,9 @@ pub struct PluginListing {
 /// not exist.
 pub fn list_plugin_dir(directory: &Path) -> io::Result<PluginListing> {
     let mut packs = PackRegistry::new();
-    let report = insert_plugin_dir(&mut packs, directory)?;
+    // A listing only loads and unloads the Plugins, so it offers them
+    // empty resources.
+    let report = insert_plugin_dir(&mut packs, directory, &HostResources::new())?;
     let loaded = report
         .plugins()
         .iter()
@@ -246,13 +248,18 @@ pub fn list_plugin_dir(directory: &Path) -> io::Result<PluginListing> {
 }
 
 /// Loads every library Plugin in `directory` and returns the report of
-/// what loaded, or `None` when the directory cannot be read. A directory
-/// that does not exist is a state, not a failure: a build that has not
-/// placed its Plugins has none. Each Plugin that loaded is logged with
-/// its name, version, and source, and each library that did not, with its
-/// path and the reason; one failure never stops the others.
-fn load_plugin_dir(packs: &mut PackRegistry, directory: &Path) -> Option<PluginReport> {
-    let report = match insert_plugin_dir(packs, directory) {
+/// what loaded, or `None` when the directory cannot be read. Every tool
+/// call of a Plugin it loads is lent `resources`. A directory that does
+/// not exist is a state, not a failure: a build that has not placed its
+/// Plugins has none. Each Plugin that loaded is logged with its name,
+/// version, and source, and each library that did not, with its path and
+/// the reason; one failure never stops the others.
+fn load_plugin_dir(
+    packs: &mut PackRegistry,
+    directory: &Path,
+    resources: &HostResources,
+) -> Option<PluginReport> {
+    let report = match insert_plugin_dir(packs, directory, resources) {
         Ok(report) => report,
         Err(error) if error.kind() == io::ErrorKind::NotFound => return None,
         Err(error) => {
@@ -283,24 +290,32 @@ fn load_plugin_dir(packs: &mut PackRegistry, directory: &Path) -> Option<PluginR
     Some(report)
 }
 
-/// The Host-wide services the Plugins' `install`s read: the search
-/// provider over the gateway `registry` holds, and the runtime the server
-/// runs on, under the Plugin contract's tokio runtime service. Built
-/// outside a runtime, as a synchronous test does, the runtime is left
-/// out, web and mcp are inserted unavailable, and a run that requires
-/// either is refused.
-fn services(registry: &Registry) -> HostServices {
-    let mut services = HostServices::new();
-    // Two valid, distinct literals into an empty map, so neither call
-    // can be refused.
-    let _ = services.provide(
-        &SEARCH_PROVIDER,
-        Arc::new(GatewaySearchProvider::new(registry.clone())),
-    );
-    if let Ok(runtime) = tokio::runtime::Handle::try_current() {
-        let _ = services.provide(&RUNTIME, Arc::new(runtime));
+/// What the server offers every library Plugin it loads: the Gateway that
+/// `registry` holds. The Harness asks for it as each tool call of such a
+/// Plugin starts, so a replaced Gateway serves the next call, and a call
+/// that starts while the heartbeat reports the Gateway down is lent
+/// resources that leave it out. The web Pack sends a search to the
+/// Gateway its call is lent.
+fn resources(registry: &Registry) -> HostResources {
+    let mut resources = HostResources::new();
+    let registry = registry.clone();
+    // The first offer on empty resources, so the Gateway's name is free
+    // and the call cannot be refused.
+    let _ = provide_gateway_resources(&mut resources, move || reachable_gateway(&registry));
+    resources
+}
+
+/// The Gateway `registry` holds now, when the heartbeat says it is
+/// reachable: its API root and its bearer key. `None` when no gateway
+/// handles are registered, when the heartbeat reports the Gateway down,
+/// and when the current generation's URL or key cannot build.
+fn reachable_gateway(registry: &Registry) -> Option<(GatewayEndpoint, SecretString)> {
+    let handles = registry.state::<GatewayHandles>()?;
+    if !handles.health().is_reachable() {
+        return None;
     }
-    services
+    let gateway = UsableGateway::read(&handles)?;
+    Some((gateway.endpoint, gateway.key))
 }
 
 /// The Host finder over the agents folder at `agents_path`: the source

@@ -12,27 +12,43 @@ fn each_library_is_named_as_cargo_names_it_for_each_target() {
     for (target, names) in [
         (
             "x86_64-pc-windows-msvc",
-            ["plugin_std.dll", "plugin_bashkit.dll"],
+            ["plugin_std.dll", "plugin_bashkit.dll", "plugin_web.dll"],
         ),
         (
             "aarch64-pc-windows-msvc",
-            ["plugin_std.dll", "plugin_bashkit.dll"],
+            ["plugin_std.dll", "plugin_bashkit.dll", "plugin_web.dll"],
         ),
         (
             "x86_64-apple-darwin",
-            ["libplugin_std.dylib", "libplugin_bashkit.dylib"],
+            [
+                "libplugin_std.dylib",
+                "libplugin_bashkit.dylib",
+                "libplugin_web.dylib",
+            ],
         ),
         (
             "aarch64-apple-darwin",
-            ["libplugin_std.dylib", "libplugin_bashkit.dylib"],
+            [
+                "libplugin_std.dylib",
+                "libplugin_bashkit.dylib",
+                "libplugin_web.dylib",
+            ],
         ),
         (
             "x86_64-unknown-linux-gnu",
-            ["libplugin_std.so", "libplugin_bashkit.so"],
+            [
+                "libplugin_std.so",
+                "libplugin_bashkit.so",
+                "libplugin_web.so",
+            ],
         ),
         (
             "aarch64-unknown-linux-gnu",
-            ["libplugin_std.so", "libplugin_bashkit.so"],
+            [
+                "libplugin_std.so",
+                "libplugin_bashkit.so",
+                "libplugin_web.so",
+            ],
         ),
     ] {
         assert_eq!(plugin::library_names(target), names, "{target}");
@@ -67,7 +83,7 @@ fn a_host_build_places_each_library_in_the_plugin_directory_beside_workshop() {
     .expect("Workshop build");
 
     let plugins = environment.target_root.join("debug").join("plugins");
-    for library in ["plugin_std", "plugin_bashkit"] {
+    for library in ["plugin_std", "plugin_bashkit", "plugin_web"] {
         assert_eq!(
             std::fs::read(plugins.join(format!("{library}.dll"))).expect("the placed library"),
             plugin_bytes(library, None, "debug"),
@@ -76,7 +92,7 @@ fn a_host_build_places_each_library_in_the_plugin_directory_beside_workshop() {
     }
     assert_eq!(
         std::fs::read_dir(&plugins).expect("plugins").count(),
-        2,
+        3,
         "the copies leave no other file behind"
     );
 }
@@ -107,7 +123,7 @@ fn a_build_for_a_named_target_places_each_library_under_that_target_and_replaces
     )
     .expect("Workshop build");
 
-    for library in ["plugin_std", "plugin_bashkit"] {
+    for library in ["plugin_std", "plugin_bashkit", "plugin_web"] {
         assert_eq!(
             std::fs::read(plugins.join(format!("lib{library}.so"))).expect("the placed library"),
             plugin_bytes(library, Some(triple), "release"),
@@ -129,6 +145,7 @@ fn a_build_that_left_a_library_out_fails_naming_the_file_and_places_nothing() {
     for (lost, file) in [
         ("plugin_std", "libplugin_std.so"),
         ("plugin_bashkit", "libplugin_bashkit.so"),
+        ("plugin_web", "libplugin_web.so"),
     ] {
         let test_environment = environment();
         let environment = &test_environment.environment;
@@ -177,6 +194,7 @@ fn the_bundle_configuration_copies_each_library_into_each_platform_s_bundle() {
     let dylibs = [
         deps.join("libplugin_std.dylib"),
         deps.join("libplugin_bashkit.dylib"),
+        deps.join("libplugin_web.dylib"),
     ];
     assert_eq!(
         plugin::bundle_config(System::MacOs, &dylibs),
@@ -185,6 +203,7 @@ fn the_bundle_configuration_copies_each_library_into_each_platform_s_bundle() {
                 "bundle": { "macOS": { "files": {
                     "Resources/plugins/libplugin_std.dylib": dylibs[0],
                     "Resources/plugins/libplugin_bashkit.dylib": dylibs[1],
+                    "Resources/plugins/libplugin_web.dylib": dylibs[2],
                 } } }
             })
             .to_string()
@@ -194,6 +213,7 @@ fn the_bundle_configuration_copies_each_library_into_each_platform_s_bundle() {
     let sos = [
         deps.join("libplugin_std.so"),
         deps.join("libplugin_bashkit.so"),
+        deps.join("libplugin_web.so"),
     ];
     assert_eq!(
         plugin::bundle_config(System::Linux, &sos),
@@ -202,13 +222,18 @@ fn the_bundle_configuration_copies_each_library_into_each_platform_s_bundle() {
                 "bundle": { "linux": { "appimage": { "files": {
                     "/usr/lib/runvil/plugins/libplugin_std.so": sos[0],
                     "/usr/lib/runvil/plugins/libplugin_bashkit.so": sos[1],
+                    "/usr/lib/runvil/plugins/libplugin_web.so": sos[2],
                 } } } }
             })
             .to_string()
         )),
         "an AppImage path runs from the root of the AppDir"
     );
-    let dlls = [deps.join("plugin_std.dll"), deps.join("plugin_bashkit.dll")];
+    let dlls = [
+        deps.join("plugin_std.dll"),
+        deps.join("plugin_bashkit.dll"),
+        deps.join("plugin_web.dll"),
+    ];
     assert_eq!(
         plugin::bundle_config(System::Windows, &dlls),
         Ok(None),
@@ -222,9 +247,14 @@ fn a_bundle_tauri_left_without_a_library_fails_the_bundle_build() {
         ("aarch64-apple-darwin", "macos", "Runvil.app"),
         ("x86_64-unknown-linux-gnu", "appimage", "Runvil.AppDir"),
     ] {
-        // The bundle is whole except for the library `lacks` names: both
-        // of them, and then the second alone.
-        for (kept, lacks) in [(0, "libplugin_std."), (1, "libplugin_bashkit.")] {
+        // The bundle holds the first `kept` libraries, and `lacks` names
+        // the first one it lacks: all three are missing, then the last
+        // two, and then the last alone.
+        for (kept, lacks) in [
+            (0, "libplugin_std."),
+            (1, "libplugin_bashkit."),
+            (2, "libplugin_web."),
+        ] {
             let test_environment = environment();
             let environment = &test_environment.environment;
             let staged = test_environment.stage_gateway(target);

@@ -1,16 +1,16 @@
-//! The libraries of the Plugins Workshop ships, the std Plugin's and the
-//! bashkit Plugin's, which Workshop loads from the Plugin directory of
-//! its installation.
+//! The libraries of the Plugins Workshop ships, the std Plugin's, the
+//! bashkit Plugin's, and the web Plugin's, which Workshop loads from the
+//! Plugin directory of its installation.
 //!
 //! Nothing here builds a library. The Workshop server depends on
-//! `workshop-plugin-std` and `workshop-plugin-bashkit`, so Cargo writes
-//! each library to `deps` in the profile's directory whenever it builds
-//! Workshop, and each mode takes them from there. A build copies them
-//! into `plugins` beside Workshop in the target directory. A macOS or
-//! Linux bundle build has Tauri copy them into Workshop's bundle, so the
-//! updater, which replaces only that bundle, replaces the libraries with
-//! it. The Windows setup takes them from `deps` itself, in
-//! `crates/workshop/desktop/installer.nsi`.
+//! `workshop-plugin-std`, `workshop-plugin-bashkit`, and
+//! `workshop-plugin-web`, so Cargo writes each library to `deps` in the
+//! profile's directory whenever it builds Workshop, and each mode takes
+//! them from there. A build copies them into `plugins` beside Workshop
+//! in the target directory. A macOS or Linux bundle build has Tauri copy
+//! them into Workshop's bundle, so the updater, which replaces only that
+//! bundle, replaces the libraries with it. The Windows setup takes them
+//! from `deps` itself, in `crates/workshop/desktop/installer.nsi`.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -30,10 +30,11 @@ pub(crate) const MACOS_PLUGIN_PARENT: &str = "Resources";
 pub(crate) const APPIMAGE_PLUGIN_PARENT: &str = "usr/lib/runvil";
 
 /// The library of each Plugin Workshop ships, as its `workshop-plugin-*`
-/// crate names it: the std Plugin's, which holds the file tools, and the
-/// bashkit Plugin's, which holds the shell. `installer.nsi` and the
-/// install tests in `cppalliance/runvil` name the same two.
-pub(crate) const LIBRARIES: [&str; 2] = ["plugin_std", "plugin_bashkit"];
+/// crate names it: the std Plugin's, which holds the file tools, the
+/// bashkit Plugin's, which holds the shell, and the web Plugin's, which
+/// holds the web tools. `installer.nsi` and the install tests in
+/// `cppalliance/runvil` name the same three.
+pub(crate) const LIBRARIES: [&str; 3] = ["plugin_std", "plugin_bashkit", "plugin_web"];
 
 /// The file name Cargo gives each shipped library for `target`, in the
 /// order of [`LIBRARIES`].
@@ -123,7 +124,7 @@ pub(crate) fn bundle_config(
 /// # Errors
 /// Returns the first path that is missing. A Tauri CLI that ignored the
 /// configuration of [`bundle_config`] would otherwise ship a Workshop
-/// with no file tools or no shell.
+/// with no file tools, no shell, or no web tools.
 pub(crate) fn check_bundled(system: System, bundle: &Path, names: &[String]) -> Result<(), String> {
     for name in names {
         let Some((tree, inside)) = bundled(system, name) else {

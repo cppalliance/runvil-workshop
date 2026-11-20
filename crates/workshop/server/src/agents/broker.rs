@@ -4,12 +4,12 @@
 //! run's own rounds into its conversation.
 //!
 //! The Workshop broker holds the server's [`Registry`] and reads the
-//! gateway through it on every call, as the search provider does, so a
-//! replaced gateway serves the next round. It keeps the Gateway broker of
-//! the last generation it served under. A model list first waits until
-//! the menu's catalog holds a chat-capable model, so a conversation
-//! launched before the Gateway's catalog arrives starts its run only once
-//! it can bind one.
+//! gateway through it on every call, as the resources for the library
+//! Plugins do, so a replaced gateway serves the next round. It keeps the
+//! Gateway broker of the last generation it served under. A model list
+//! first waits until the menu's catalog holds a chat-capable model, so a
+//! conversation launched before the Gateway's catalog arrives starts its
+//! run only once it can bind one.
 //!
 //! Each round reads the dropdown's pick through the registry as it is
 //! sent, so a model picked between rounds serves the next one; a round

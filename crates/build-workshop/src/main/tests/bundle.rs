@@ -69,7 +69,11 @@ pub(super) fn bundled_plugins(environment: &BuildEnvironment, target: &str) -> V
                 .join("Contents")
                 .join("Resources")
                 .join("plugins"),
-            ["libplugin_std.dylib", "libplugin_bashkit.dylib"],
+            [
+                "libplugin_std.dylib",
+                "libplugin_bashkit.dylib",
+                "libplugin_web.dylib",
+            ],
         )
     } else {
         (
@@ -79,7 +83,11 @@ pub(super) fn bundled_plugins(environment: &BuildEnvironment, target: &str) -> V
                 .join("lib")
                 .join("runvil")
                 .join("plugins"),
-            ["libplugin_std.so", "libplugin_bashkit.so"],
+            [
+                "libplugin_std.so",
+                "libplugin_bashkit.so",
+                "libplugin_web.so",
+            ],
         )
     };
     names.iter().map(|name| plugins.join(name)).collect()
@@ -95,6 +103,7 @@ fn plugin_config(environment: &BuildEnvironment, target: &str) -> Option<String>
                 "Resources/plugins/libplugin_std.dylib": deps.join("libplugin_std.dylib"),
                 "Resources/plugins/libplugin_bashkit.dylib":
                     deps.join("libplugin_bashkit.dylib"),
+                "Resources/plugins/libplugin_web.dylib": deps.join("libplugin_web.dylib"),
             } } }
         })
     } else if target.contains("linux") {
@@ -103,6 +112,7 @@ fn plugin_config(environment: &BuildEnvironment, target: &str) -> Option<String>
                 "/usr/lib/runvil/plugins/libplugin_std.so": deps.join("libplugin_std.so"),
                 "/usr/lib/runvil/plugins/libplugin_bashkit.so":
                     deps.join("libplugin_bashkit.so"),
+                "/usr/lib/runvil/plugins/libplugin_web.so": deps.join("libplugin_web.so"),
             } } } }
         })
     } else {

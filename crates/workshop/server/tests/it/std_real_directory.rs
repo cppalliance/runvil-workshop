@@ -19,7 +19,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::task::{Context, Poll, Waker};
 
 use runvil::effect::{ToolCallOrigin, ToolCaller};
-use runvil::harness::{PluginReport, insert_plugin_dir};
+use runvil::harness::{HostResources, PluginReport, insert_plugin_dir};
 use runvil::plugin::{Pack, PackRegistry, ToolContext, ToolFiles};
 use runvil::vfs::{Access, Origin, RealBackend, VfsError, VfsOp, VfsOutcome, VfsRef};
 use runvil::{BoxFuture, OutputTrust, ToolId, ToolOutput};
@@ -89,7 +89,10 @@ fn seeded_directory() -> tempfile::TempDir {
 )]
 fn std_pack() -> (Arc<dyn Pack>, PluginReport) {
     let mut packs = PackRegistry::new();
-    let report = insert_plugin_dir(&mut packs, &plugin_dir()).expect("the directory is read");
+    // The file tools work on the run's files alone, so the Plugins of the
+    // directory get empty resources.
+    let report = insert_plugin_dir(&mut packs, &plugin_dir(), &HostResources::new())
+        .expect("the directory is read");
     assert!(report.failures().is_empty(), "{:?}", report.failures());
     let (_info, id, factory) = packs
         .into_entries()

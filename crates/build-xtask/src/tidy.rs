@@ -33,6 +33,7 @@ const VOCABULARY: &[Tiered] = &[
 const PLUGINS: &[Tiered] = &[
     ("workshop-plugin-std", "plugin-std"),
     ("workshop-plugin-bashkit", "plugin-bashkit"),
+    ("workshop-plugin-web", "plugin-web"),
 ];
 /// Tier 1: domain services. Depend on vocabulary crates only.
 const SERVICES: &[Tiered] = &[

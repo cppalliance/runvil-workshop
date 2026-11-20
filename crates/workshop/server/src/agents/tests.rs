@@ -1,27 +1,28 @@
-//! The agent conversations' Harness setup: after the server calls the
-//! two linked Plugins, loads the std Plugin's library from its Plugin
-//! directory, and builds its Host, every run of a conversation, which
-//! has a user, holds the `web`, `subagents`, `mcp`, `std`, and `user`
-//! Packs. A prompt declaring `web` or the built-in
-//! `subagents` prepares over the server's installed Packs, a Host without
-//! the search provider installs web unavailable and refuses the prompt as
-//! it parses, naming that service, and outside a runtime the services leave
-//! the runtime out. The `mcp.json` reader returns the `mcpServers` object
-//! as it stands, or an empty one, and a prompt declaring `mcp` prepares,
-//! because the one mcp Pack reads the runtime the server provides. The
-//! servers value is the mcp Pack's configuration, so one it refuses
-//! refuses a prompt requiring `mcp` as it parses. The Host's finder
-//! refuses an unknown agent as `NotFound` and an unreadable one as `Io`,
-//! each with the launch refusal's own text, and it reads an agent that
-//! another names under `prompts:`, which that agent then runs with
-//! `execute`. A configured Plugin directory
-//! loads each library Plugin in it and reports each file that is none,
-//! and a directory that does not exist loads nothing. A prompt reads and
-//! changes the files of its run through the std library's `Read`,
-//! `Write`, `StrReplace`, and `Delete` tools and through the bashkit
-//! library's `Shell` tool, and the Host reads each change back after the
-//! run. A Host with no Plugin directory refuses a prompt that requires
-//! `std` or `bash`.
+//! The agent conversations' Harness setup: after the server installs the
+//! linked mcp Plugin, loads the std and web Plugins' libraries from its
+//! Plugin directory, and builds its Host, every run of a conversation,
+//! which has a user, holds the `web`, `subagents`, `mcp`, `std`, and
+//! `user` Packs. A prompt declaring `web` prepares over a Plugin
+//! directory that holds the web library, and one declaring the built-in
+//! `subagents` prepares over the server's installed Packs. The `mcp.json`
+//! reader returns the `mcpServers` object as it stands, or an empty one.
+//! A prompt declaring `mcp` prepares on a Host built on a runtime, whose
+//! handle the mcp Pack is installed with, and a Host built outside a
+//! runtime installs no mcp Pack and refuses that prompt. The servers
+//! value is the mcp Pack's server list, so one it refuses refuses a
+//! prompt requiring `mcp` as it parses. The Host's finder refuses an
+//! unknown agent as `NotFound` and an unreadable one as `Io`, each with
+//! the launch refusal's own text, and it reads an agent that another
+//! names under `prompts:`, which that agent then runs with `execute`. A
+//! configured Plugin directory loads each library Plugin in it and
+//! reports each file that is none, and a directory that does not exist
+//! loads nothing. A prompt reads and changes the files of its run through
+//! the std library's `Read`, `Write`, `StrReplace`, and `Delete` tools
+//! and through the bashkit library's `Shell` tool, and the Host reads
+//! each change back after the run. A Host with no Plugin directory
+//! refuses a prompt that requires `std`, `bash`, or `web`. The Gateway
+//! that a tool call of a library Plugin is lent has its tests in
+//! `gateway`.
 
 use std::env::consts::{DLL_EXTENSION, DLL_PREFIX, DLL_SUFFIX};
 use std::path::PathBuf;
@@ -29,14 +30,13 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
-use plugin_web::SEARCH_PROVIDER;
 use runvil::effect::Round;
-use runvil::harness::{InferenceBroker, MemoryRecorder, Packs, PluginSource};
+use runvil::harness::{HostResources, InferenceBroker, MemoryRecorder, Packs, PluginSource};
 use runvil::model::{
     Completion, CompletionOptions, Message, ModelBinding, ModelCatalog, ToolSchema,
     make_completion_error, phrase,
 };
-use runvil::plugin::{HostServices, PackRegistry, ServiceKey, TOKIO_RUNTIME};
+use runvil::plugin::PackRegistry;
 use runvil::vfs::{Origin, VfsRef};
 use runvil::{BoxFuture, Error, ErrorCode, ErrorFact, Host, RunSetup};
 use serde_json::json;
@@ -45,12 +45,11 @@ use workshop_registry::Registry;
 
 use super::{
     PluginListing, SHIPPED_PACKS, agent_finder, holds, host_packs, list_plugin_dir,
-    load_plugin_dir, read_mcp_servers, services, with_plugins,
+    load_plugin_dir, read_mcp_servers, resources, with_plugins,
 };
 
-/// The runtime's key, built from the Plugin contract's name as any Host
-/// builds it.
-const RUNTIME: ServiceKey<tokio::runtime::Handle> = ServiceKey::new(TOKIO_RUNTIME);
+#[path = "tests-gateway.rs"]
+mod gateway;
 
 /// A prompt that requires the Pack `pack` and returns a fixed text.
 fn requiring(pack: &str) -> String {
@@ -163,7 +162,7 @@ async fn every_run_holds_the_packs_the_three_plugins_add_and_the_builtins() {
           names[#names + 1] = tools.packs.get(id).name\n\
         end\n\
         return table.concat(names, ',') .. '|' .. tostring(tools.packs.get('user-input'))\n```\n";
-    let (dir, _library) = plugin_dir("every-run-holds");
+    let dir = plugin_dir_with("every-run-holds", &[STD_LIBRARY, WEB_LIBRARY]);
     let (host, _) = host_packs(&Registry::new(), None, Some(dir.path()));
     assert_eq!(
         run_prompt(host, lists.to_owned()).await,
@@ -175,11 +174,20 @@ async fn every_run_holds_the_packs_the_three_plugins_add_and_the_builtins() {
 
 #[tokio::test]
 async fn a_prompt_declaring_web_prepares_on_the_servers_built_packs() {
-    let (host, _) = host_packs(&Registry::new(), None, None);
+    let (dir, _library) = plugin_dir_of("declares-web", WEB_LIBRARY);
+    let (host, report) = host_packs(&Registry::new(), None, Some(dir.path()));
+    let report = report.expect("the configured directory is read");
+    assert!(report.failures().is_empty(), "{:?}", report.failures());
+    let names: Vec<&str> = report
+        .plugins()
+        .iter()
+        .map(|plugin| plugin.name())
+        .collect();
+    assert_eq!(names, ["web"]);
     assert_eq!(
         run_prompt(host, requiring("web")).await,
         Ok(Ok("browsed".to_owned())),
-        "the server adds web and provides both services its install reads"
+        "the web library's Pack is installed, so a prompt that requires web runs"
     );
 }
 
@@ -190,36 +198,6 @@ async fn a_prompt_declaring_subagents_prepares_on_the_servers_built_packs() {
         run_prompt(host, requiring("subagents")).await,
         Ok(Ok("browsed".to_owned())),
         "the server's Host installs the built-in subagents"
-    );
-}
-
-#[tokio::test]
-async fn a_host_without_the_search_provider_refuses_a_prompt_requiring_web() {
-    let mut runtime_only = HostServices::new();
-    runtime_only
-        .provide(&RUNTIME, Arc::new(tokio::runtime::Handle::current()))
-        .expect("an empty map takes the runtime");
-    let (host, _) = with_plugins(&runtime_only, json!({}), None);
-
-    let result = run_prompt(host, requiring("web")).await;
-    let Err(message) = result else {
-        panic!("the Host refuses the prompt as it parses: {result:?}");
-    };
-    assert!(
-        message.contains(
-            "- web is unavailable: web needs runvil/search-provider, and this host provides none"
-        ),
-        "the refusal names the Pack and the missing service: {message}"
-    );
-}
-
-#[test]
-fn outside_a_runtime_the_services_leave_the_runtime_out() {
-    let services = services(&Registry::new());
-    assert!(services.provides(&SEARCH_PROVIDER.id()));
-    assert!(
-        !services.provides(&RUNTIME.id()),
-        "a synchronous caller has no runtime to provide"
     );
 }
 
@@ -267,23 +245,44 @@ async fn an_agent_executes_an_agent_of_the_folder_that_its_prompts_list_names() 
 }
 
 #[tokio::test]
-async fn a_prompt_declaring_mcp_prepares_on_the_runtime_the_server_provides() {
-    // The server's own `services` provides the runtime, and `plugin-mcp`
-    // reads it through a key of its own even with no servers, so only a
-    // run over both shows the two keys name the same service.
+async fn a_prompt_declaring_mcp_prepares_on_a_host_built_on_a_runtime() {
+    // The Host is built on this test's runtime, as the server builds its
+    // own, so the mcp Pack is installed with that runtime's handle, here
+    // over no servers.
     let (host, _) = host_packs(&Registry::new(), None, None);
     assert_eq!(
         run_prompt(host, requiring("mcp")).await,
         Ok(Ok("browsed".to_owned())),
-        "the server adds mcp once, and its install finds the server's runtime"
+        "a Host built on a runtime installs the mcp Pack once"
+    );
+}
+
+#[test]
+fn a_host_built_outside_a_runtime_installs_no_mcp_pack() {
+    // A synchronous test builds the Host outside a runtime, so the Host
+    // is built without the mcp Pack. The run itself needs a runtime,
+    // which starts only after the Host is built.
+    let (host, _) = host_packs(&Registry::new(), None, None);
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("a runtime for the run is built");
+
+    let result = runtime.block_on(run_prompt(host, requiring("mcp")));
+    let Err(message) = result else {
+        panic!("the Host refuses the prompt as it parses: {result:?}");
+    };
+    assert!(
+        message.contains("- mcp is unavailable: runvil/mcp is not installed"),
+        "the refusal names the Pack no Plugin inserted: {message}"
     );
 }
 
 #[tokio::test]
-async fn the_servers_value_is_the_mcp_packs_configuration() {
-    // A value that is neither null nor an object is the one configuration
+async fn the_servers_value_is_the_mcp_packs_server_list() {
+    // A value that is neither null nor an object is the one server list
     // the install refuses, so only that value reaching it fails the run.
-    let (host, _) = with_plugins(&services(&Registry::new()), json!([]), None);
+    let (host, _) = with_plugins(&resources(&Registry::new()), json!([]), None);
 
     let result = run_prompt(host, requiring("mcp")).await;
     let Err(message) = result else {
@@ -291,7 +290,7 @@ async fn the_servers_value_is_the_mcp_packs_configuration() {
     };
     assert!(
         message.contains("- mcp is unavailable: the MCP configuration must be a JSON object"),
-        "the refusal names the mcp Pack and its configuration rule: {message}"
+        "the refusal names the mcp Pack and its server list rule: {message}"
     );
 }
 
@@ -305,17 +304,20 @@ const STD_LIBRARY: &str = "plugin_std";
 /// The bashkit Plugin's library, as Cargo names it.
 pub(super) const BASHKIT_LIBRARY: &str = "plugin_bashkit";
 
+/// The web Plugin's library, as Cargo names it.
+const WEB_LIBRARY: &str = "plugin_web";
+
 /// The file name of the dynamic library `library`.
 fn library_file(library: &str) -> String {
     format!("{DLL_PREFIX}{library}{DLL_SUFFIX}")
 }
 
-/// A Plugin directory for the test named `test`, holding a copy of the
-/// dynamic library `library`, and that copy's path. Cargo builds the
-/// library beside this test executable, because the crate depends on the
-/// `workshop-plugin-*` crate that exports it. The directory's name comes
-/// from the test, the process id, and a counter.
-pub(super) fn plugin_dir_of(test: &str, library: &str) -> (tempfile::TempDir, PathBuf) {
+/// A Plugin directory for the test named `test`, holding a copy of each
+/// dynamic library of `libraries`. Cargo builds each library beside this
+/// test executable, because the crate depends on the `workshop-plugin-*`
+/// crate that exports it. The directory's name comes from the test, the
+/// process id, and a counter.
+fn plugin_dir_with(test: &str, libraries: &[&str]) -> tempfile::TempDir {
     let prefix = format!(
         "{test}-{}-{}-",
         std::process::id(),
@@ -326,12 +328,20 @@ pub(super) fn plugin_dir_of(test: &str, library: &str) -> (tempfile::TempDir, Pa
         .tempdir()
         .expect("a temporary directory is made");
     let exe = std::env::current_exe().expect("the test executable has a path");
-    let built = exe
-        .parent()
-        .expect("the test executable has a directory")
-        .join(library_file(library));
+    let built = exe.parent().expect("the test executable has a directory");
+    for library in libraries {
+        let file = library_file(library);
+        std::fs::copy(built.join(&file), dir.path().join(&file))
+            .expect("the Plugin's library is copied");
+    }
+    dir
+}
+
+/// A Plugin directory for the test named `test`, holding a copy of the
+/// dynamic library `library`, and that copy's path.
+pub(super) fn plugin_dir_of(test: &str, library: &str) -> (tempfile::TempDir, PathBuf) {
+    let dir = plugin_dir_with(test, &[library]);
     let copy = dir.path().join(library_file(library));
-    std::fs::copy(built, &copy).expect("the Plugin's library is copied");
     (dir, copy)
 }
 
@@ -345,7 +355,8 @@ pub(super) fn plugin_dir(test: &str) -> (tempfile::TempDir, PathBuf) {
 fn a_plugin_directory_loads_the_std_plugin_from_its_library() {
     let (dir, library) = plugin_dir("loads-std");
     let mut packs = PackRegistry::new();
-    let report = load_plugin_dir(&mut packs, dir.path()).expect("the directory is read");
+    let report = load_plugin_dir(&mut packs, dir.path(), &HostResources::new())
+        .expect("the directory is read");
 
     assert!(report.failures().is_empty(), "{:?}", report.failures());
     let [plugin] = report.plugins() else {
@@ -365,7 +376,8 @@ fn a_file_that_is_no_library_is_reported_and_the_std_plugin_still_loads() {
     let bad = dir.path().join(format!("a-text-file.{DLL_EXTENSION}"));
     std::fs::write(&bad, "not a library").expect("write fixture");
     let mut packs = PackRegistry::new();
-    let report = load_plugin_dir(&mut packs, dir.path()).expect("the directory is read");
+    let report = load_plugin_dir(&mut packs, dir.path(), &HostResources::new())
+        .expect("the directory is read");
 
     assert_eq!(report.plugins().len(), 1, "{:?}", report.plugins());
     let [failure] = report.failures() else {
@@ -413,13 +425,18 @@ fn a_plugin_directory_that_does_not_exist_loads_nothing() {
     let (dir, _library) = plugin_dir("missing-directory");
     let mut packs = PackRegistry::new();
     assert!(
-        load_plugin_dir(&mut packs, &dir.path().join("absent")).is_none(),
+        load_plugin_dir(
+            &mut packs,
+            &dir.path().join("absent"),
+            &HostResources::new()
+        )
+        .is_none(),
         "a missing directory is a state, not a failure"
     );
 }
 
 #[tokio::test]
-async fn the_servers_host_loads_its_plugin_directory_beside_the_linked_plugins() {
+async fn the_servers_host_loads_its_plugin_directory_beside_the_linked_plugin() {
     let (dir, _library) = plugin_dir("server-host");
     let (host, report) = host_packs(&Registry::new(), None, Some(dir.path()));
 
@@ -442,11 +459,13 @@ fn only_a_plugin_directory_with_a_shipped_library_gives_the_host_its_pack() {
     for (library, pack) in [
         (STD_LIBRARY, "runvil/std"),
         (BASHKIT_LIBRARY, "runvil/bash"),
+        (WEB_LIBRARY, "runvil/web"),
     ] {
         assert!(SHIPPED_PACKS.contains(&pack), "{pack}");
         let (dir, _library) = plugin_dir_of("holds-a-shipped-pack", library);
         let mut packs = PackRegistry::new();
-        load_plugin_dir(&mut packs, dir.path()).expect("the directory is read");
+        load_plugin_dir(&mut packs, dir.path(), &HostResources::new())
+            .expect("the directory is read");
         assert!(holds(&packs, pack), "{library} inserts {pack}");
         assert!(
             !holds(&PackRegistry::new(), pack),
@@ -528,7 +547,7 @@ async fn a_prompt_reads_and_changes_files_of_its_run_through_the_std_library_plu
 
 #[tokio::test]
 async fn without_a_plugin_directory_a_prompt_requiring_a_shipped_pack_is_refused() {
-    for pack in ["std", "bash"] {
+    for pack in ["std", "bash", "web"] {
         let (host, report) = host_packs(&Registry::new(), None, None);
         assert!(report.is_none(), "no directory is read");
 

@@ -1,6 +1,7 @@
 //! The one read of a usable gateway that the agent sessions' broker,
-//! search provider, and launch refusal share: the generation, the API
-//! root, and the bearer of the gateway the registry currently holds.
+//! launch refusal, and resources for the library Plugins share: the
+//! generation, the API root, and the bearer of the gateway the registry
+//! currently holds.
 //!
 //! It reads no heartbeat health; a caller that needs reachability checks
 //! it itself.
