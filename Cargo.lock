@@ -665,7 +665,7 @@ dependencies = [
 
 [[package]]
 name = "build-ui"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "anyhow",
  "serde_json",
@@ -674,7 +674,7 @@ dependencies = [
 
 [[package]]
 name = "build-workshop"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "anyhow",
  "ctrlc",
@@ -7946,7 +7946,7 @@ checksum = "f17a85883d4e6d00e8a97c586de764dabcc06133f7f1d55dce5cdc070ad7fe59"
 
 [[package]]
 name = "workshop"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "anyhow",
  "reqwest",
@@ -8005,7 +8005,7 @@ dependencies = [
 
 [[package]]
 name = "workshop-gateway-discovery"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "libc",
  "serde",
@@ -8033,7 +8033,7 @@ dependencies = [
 
 [[package]]
 name = "workshop-plugin-bashkit"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "plugin-bashkit",
  "runvil-plugin-sdk",
@@ -8041,7 +8041,7 @@ dependencies = [
 
 [[package]]
 name = "workshop-plugin-std"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "plugin-std",
  "runvil-plugin-sdk",
@@ -8049,7 +8049,7 @@ dependencies = [
 
 [[package]]
 name = "workshop-plugin-web"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "plugin-web",
  "runvil-plugin-sdk",
@@ -8087,7 +8087,7 @@ dependencies = [
 
 [[package]]
 name = "workshop-server"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "axum",
  "build-ui",
