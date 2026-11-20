@@ -244,6 +244,34 @@ async fn an_agent_executes_an_agent_of_the_folder_that_its_prompts_list_names() 
 }
 
 #[tokio::test]
+async fn the_servers_of_the_configured_mcp_file_reach_the_mcp_pack() {
+    // Nothing listens on port 1, so neither server ever becomes ready.
+    // The Pack's listing still names each server it was handed, and the
+    // names are all this test reads.
+    let (_dir, path) = mcp_file(
+        r#"{ "mcpServers": {
+            "docs": { "url": "http://127.0.0.1:1/mcp" },
+            "search": { "url": "http://127.0.0.1:1/mcp" }
+        } }"#,
+    );
+    let lists = "---\nname: lists\ndescription: lists its MCP servers\nrunvil: 0\n\
+        uses:\n  - mcp\n---\n\n\
+        ## Only\n\n```lua\n\
+        local listing = json.decode(tools.call('mcp/get_dynamic_tools', {}))\n\
+        local names = {}\n\
+        for _, server in ipairs(listing.namespaces) do\n\
+          names[#names + 1] = server.namespace\n\
+        end\n\
+        return table.concat(names, ',')\n```\n";
+    let host = server_host(serving(lists), &Registry::new(), Some(&path), None);
+    assert_eq!(
+        run_prompt(host).await,
+        Ok(Ok("docs,search".to_owned())),
+        "the mcp Pack lists the two servers the file names, in name order"
+    );
+}
+
+#[tokio::test]
 async fn a_prompt_declaring_mcp_prepares_on_a_host_built_on_a_runtime() {
     // The Host is built on this test's runtime, as the server builds its
     // own, so the mcp Pack is installed with that runtime's handle, here
