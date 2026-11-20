@@ -2,11 +2,10 @@
 
 use std::sync::Arc;
 
-use runvil::harness::MemoryRecorder;
+use runvil::harness::{MemoryRecorder, OfflineBroker};
 use workshop_menu::{CatalogBus, MenuBus};
 
 use super::*;
-use crate::agents::tests::OfflineBroker;
 
 /// A setup with nothing selected.
 fn empty_setup() -> RunSetup {

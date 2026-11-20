@@ -30,15 +30,10 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
-use runvil::effect::Round;
-use runvil::harness::{HostResources, InferenceBroker, MemoryRecorder, Packs, PluginSource};
-use runvil::model::{
-    Completion, CompletionOptions, Message, ModelBinding, ModelCatalog, ToolSchema,
-    make_completion_error, phrase,
-};
+use runvil::harness::{HostResources, MemoryRecorder, OfflineBroker, Packs, PluginSource};
 use runvil::plugin::PackRegistry;
 use runvil::vfs::{Origin, VfsRef};
-use runvil::{BoxFuture, Error, ErrorCode, ErrorFact, Host, RunSetup};
+use runvil::{Error, ErrorCode, ErrorFact, Host, RunSetup};
 use serde_json::json;
 use workshop_agents::{Conversations, SessionState, TokioTimer, load_agent};
 use workshop_registry::Registry;
@@ -58,28 +53,6 @@ fn requiring(pack: &str) -> String {
         uses:\n  - {pack}\n---\n\n\
         ## Only\n\n```lua\nreturn 'browsed'\n```\n"
     )
-}
-
-/// Lists no model and refuses every round as `Unavailable`, so a run
-/// binds no model and nothing is fetched.
-pub(super) struct OfflineBroker;
-
-impl InferenceBroker for OfflineBroker {
-    fn models(&self) -> BoxFuture<'static, Result<ModelCatalog, Error>> {
-        Box::pin(async { Ok(ModelCatalog::empty()) })
-    }
-
-    fn chat(
-        &self,
-        _binding: ModelBinding,
-        _messages: Vec<Message>,
-        _tools: Vec<ToolSchema>,
-        _options: CompletionOptions,
-        _round: Round,
-    ) -> BoxFuture<'static, Result<Box<Completion>, Error>> {
-        let code = ErrorCode::Unavailable;
-        Box::pin(async move { Err(make_completion_error(code, phrase(code))) })
-    }
 }
 
 /// Runs the prompt `source` as one conversation over `packs` and the

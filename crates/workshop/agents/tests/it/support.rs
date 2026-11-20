@@ -1,41 +1,15 @@
-//! Shared fixtures: an offline broker, and a Host and a per-run setup
-//! built around the recorder tee a conversation hands it.
+//! Shared fixtures: a Host and a per-run setup built around the recorder
+//! tee a conversation hands it.
 
 use std::sync::Arc;
 
-use runvil::effect::Round;
-use runvil::harness::{InferenceBroker, MemoryRecorder, Packs};
-use runvil::model::{
-    Completion, CompletionOptions, Message, ModelBinding, ModelCatalog, ToolSchema,
-    make_completion_error, phrase,
-};
+use runvil::harness::{MemoryRecorder, OfflineBroker, Packs};
 use runvil::plugin::PackRegistry;
-use runvil::{BoxFuture, Error, ErrorCode, Host, RunSetup};
+use runvil::{Error, ErrorCode, Host, RunSetup};
 use workshop_agents::{Conversation, TokioTimer};
 
 /// The name the fixture Host finds its one agent by.
 pub(crate) const AGENT: &str = "fixture";
-
-/// Lists no model and refuses every round as `Unavailable`.
-struct Offline;
-
-impl InferenceBroker for Offline {
-    fn models(&self) -> BoxFuture<'static, Result<ModelCatalog, Error>> {
-        Box::pin(async { Ok(ModelCatalog::empty()) })
-    }
-
-    fn chat(
-        &self,
-        _binding: ModelBinding,
-        _messages: Vec<Message>,
-        _tools: Vec<ToolSchema>,
-        _options: CompletionOptions,
-        _round: Round,
-    ) -> BoxFuture<'static, Result<Box<Completion>, Error>> {
-        let code = ErrorCode::Unavailable;
-        Box::pin(async move { Err(make_completion_error(code, phrase(code))) })
-    }
-}
 
 /// A prompt whose one section runs `lua`, declaring the user Pack, as a
 /// conversation's agent does.
@@ -71,7 +45,7 @@ pub(crate) fn run_for(
     });
     let setup = RunSetup {
         has_user: true,
-        ..RunSetup::new(conversation.recorder(recorder), Arc::new(Offline))
+        ..RunSetup::new(conversation.recorder(recorder), Arc::new(OfflineBroker))
     };
     (host, setup)
 }
