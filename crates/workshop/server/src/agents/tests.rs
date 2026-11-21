@@ -442,9 +442,10 @@ fn a_plugin_directory_that_does_not_exist_loads_nothing() {
 
 #[test]
 fn a_plugin_directory_that_cannot_be_read_is_a_failure_and_the_host_is_built() {
-    let dir = tempfile::TempDir::new().expect("tempdir");
     // A regular file in the directory's place exists, so the Host names
-    // it, and it cannot be read as a directory.
+    // it, and it cannot be read as a directory. The directory around it
+    // is named for this test, as each Plugin directory here is.
+    let dir = plugin_dir_with("cannot-be-read", &[]);
     let file = dir.path().join("plugins");
     std::fs::write(&file, "not a directory").expect("write fixture");
     // A synchronous test builds the Host outside a runtime, so the Plugin
