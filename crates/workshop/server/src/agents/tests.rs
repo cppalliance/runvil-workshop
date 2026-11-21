@@ -30,12 +30,13 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
+use harness_gateway_client::TokioTimer;
 use runvil::harness::{HostResources, MemoryRecorder, OfflineBroker, Packs, PluginSource};
 use runvil::plugin::PackRegistry;
 use runvil::vfs::{Origin, VfsRef};
 use runvil::{Error, ErrorCode, ErrorFact, Host, RunSetup};
 use serde_json::json;
-use workshop_agents::{Conversations, SessionState, TokioTimer, load_agent};
+use workshop_agents::{Conversations, SessionState, load_agent};
 use workshop_registry::Registry;
 
 use super::{

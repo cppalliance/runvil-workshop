@@ -11,7 +11,8 @@
 //! with the file-tool Pack, the bashkit Plugin with the shell Pack, and
 //! the web Plugin with the web Pack among them, and the built-ins
 //! subagents and user; a finder that reads each agent from the agents
-//! folder through `load_agent`; and the tokio timer. Every tool call of a
+//! folder through `load_agent`; and the stock tokio timer of the Gateway
+//! client. Every tool call of a
 //! library Plugin is lent the server's [`resources`]: the Gateway the
 //! registry holds as the call starts, which is where the web Pack sends a
 //! search. Each launch opens a conversation in `workshop-agents` and builds
@@ -30,9 +31,9 @@
 //! off. The filesystem has no policy of its own, so the default one,
 //! `AllowAll`, admits every operation: the file tools and the shell change
 //! the files of the in-memory root, which end with the run, and a
-//! read-only mount refuses each change. The run's setup carries the Host
-//! state ([`bindings`]): the menu's pick and the workspace's granted
-//! roots, read once the menu's catalog holds a chat-capable model.
+//! read-only mount refuses each change. The run's setup takes the Host
+//! state ([`bindings`]): the menu's pick, read once the menu's catalog
+//! holds a chat-capable model.
 //! Status-bar reporting stays in the server (`status`): a
 //! per-conversation reporter derives it from the conversation's events,
 //! deltas, and failure reports.
@@ -59,14 +60,15 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use harness_gateway_client::{GatewayEndpoint, SecretString, provide_gateway_resources};
+use harness_gateway_client::{
+    GatewayEndpoint, SecretString, TokioTimer, provide_gateway_resources,
+};
 use runvil::harness::{HostResources, Packs, PluginReport, RunId, insert_plugin_dir};
 use runvil::plugin::PackRegistry;
 use runvil::{Error, ErrorCode, ErrorFact, Host, RunSetup};
 use serde_json::Value;
 use workshop_agents::{
-    Conversation, ConversationId, Conversations, LaunchError, TokioTimer, discover_agents,
-    load_agent,
+    Conversation, ConversationId, Conversations, LaunchError, discover_agents, load_agent,
 };
 use workshop_gateway::GatewayHandles;
 use workshop_registry::Registry;
@@ -369,7 +371,7 @@ struct Inner {
     broker: WorkshopBroker,
     /// What every run shares: the installed Packs each run makes its
     /// instances of, the finder that reads each agent from the agents
-    /// folder, and the tokio timer.
+    /// folder, and the stock tokio timer.
     host: Arc<Host>,
     /// What the Plugin directory loaded, held so that a library Plugin
     /// which inserted no Pack still stays loaded for as long as the
@@ -406,11 +408,11 @@ impl AgentSessions {
             config.agents.plugins.as_deref(),
         );
         let agents_path = config.agents.path.clone();
-        let host = Host {
+        let host = Arc::new(Host {
             packs,
             prompts: Arc::new(agent_finder(agents_path.clone())),
             timer: Arc::new(TokioTimer),
-        };
+        });
         Self {
             inner: Arc::new(Inner {
                 agents_path,
@@ -418,7 +420,7 @@ impl AgentSessions {
                     config.server.state_dir.join(HARNESS_STATE_DIR),
                 )),
                 broker: WorkshopBroker::new(registry.clone()),
-                host: Arc::new(host),
+                host,
                 _plugins: plugins,
                 conversations: Conversations::new(),
                 registry,

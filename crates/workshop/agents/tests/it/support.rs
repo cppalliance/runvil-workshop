@@ -3,10 +3,11 @@
 
 use std::sync::Arc;
 
-use runvil::harness::{MemoryRecorder, OfflineBroker, Packs};
+use harness_gateway_client::TokioTimer;
+use runvil::harness::{FindTextPrompt, MemoryRecorder, OfflineBroker, Packs};
 use runvil::plugin::PackRegistry;
-use runvil::{Error, ErrorCode, Host, RunSetup};
-use workshop_agents::{Conversation, TokioTimer};
+use runvil::{Host, RunSetup};
+use workshop_agents::Conversation;
 
 /// The name the fixture Host finds its one agent by.
 pub(crate) const AGENT: &str = "fixture";
@@ -30,22 +31,10 @@ pub(crate) fn run_for(
 ) -> (Arc<Host>, RunSetup) {
     let host = Arc::new(Host {
         packs: Packs::new(PackRegistry::new()),
-        prompts: Arc::new(move |name: &str| {
-            if name == AGENT {
-                return Ok(source.clone());
-            }
-            let code = ErrorCode::NotFound;
-            Err(Error::new(
-                code,
-                format!("no agent named {name}"),
-                code.prose(),
-            ))
-        }),
+        prompts: Arc::new(FindTextPrompt::new(AGENT, source)),
         timer: Arc::new(TokioTimer),
     });
-    let setup = RunSetup {
-        has_user: true,
-        ..RunSetup::new(conversation.recorder(recorder), Arc::new(OfflineBroker))
-    };
+    let setup =
+        RunSetup::new(conversation.recorder(recorder), Arc::new(OfflineBroker)).has_user(true);
     (host, setup)
 }

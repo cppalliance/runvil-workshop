@@ -18,16 +18,19 @@ rand.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
-# `sync` for the conversation's broadcasts and state watch; `time` for the
-# timer every run sleeps on; `rt` for the blocking pool a conversation
-# parses its agent on.
-tokio = { workspace = true, features = ["rt", "sync", "time"] }
+# `sync` for the conversation's broadcasts and state watch; `rt` for the
+# blocking pool a conversation parses its agent on.
+tokio = { workspace = true, features = ["rt", "sync"] }
 tracing.workspace = true
 
 [dev-dependencies]
+# The stock tokio timer that the fixture Host of the conversation suite
+# sleeps on.
+harness-gateway-client.workspace = true
 # The discovery suite seeds an agents directory on disk.
 tempfile.workspace = true
-tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+# `time` for the deadline the conversation suite sets on each wait.
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time"] }
 
 [lints]
 workspace = true
