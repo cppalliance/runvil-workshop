@@ -13,6 +13,17 @@ mod boot;
 mod chat_gate;
 mod heartbeat;
 mod heartbeat_loop;
+mod live;
+// Starts the Workshop program on a display of its own, with tools only
+// Linux has.
+#[cfg(target_os = "linux")]
+mod live_program;
+// Kills the process group of a Gateway it starts, which only Unix has.
+#[cfg(unix)]
+mod live_stop;
+// Drives the Workshop window through `tauri-driver`, on the same display.
+#[cfg(target_os = "linux")]
+mod live_window;
 mod realtime_relay;
 mod std_real_directory;
 mod user_state;
