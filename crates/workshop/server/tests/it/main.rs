@@ -14,6 +14,9 @@ mod chat_gate;
 mod heartbeat;
 mod heartbeat_loop;
 mod live;
+// Kills the process group of a Gateway it starts, which only Unix has.
+#[cfg(unix)]
+mod live_stop;
 mod realtime_relay;
 mod std_real_directory;
 mod user_state;

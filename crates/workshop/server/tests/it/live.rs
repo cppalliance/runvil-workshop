@@ -35,7 +35,7 @@ use crate::common::{JsonSocket, launch, plugin_dir, spawn_router};
 
 /// How long one step of a real run may take. A small local model answers
 /// in about a second; the margin covers a model that is still warming up.
-const STEP: Duration = Duration::from_secs(120);
+pub(crate) const STEP: Duration = Duration::from_secs(120);
 
 /// The text of the Harness repository's shipped `prompts/hello.md`.
 const HELLO_MD: &str = "---\nname: hello\ndescription: Say hello\nrunvil: 0\n---\n\n\
@@ -122,7 +122,7 @@ const REPORT_MD: &str = "---\nname: report\ndescription: Reports on a topic from
 
 /// The Gateway the environment names: its base URL with no path, and its
 /// key.
-fn gateway() -> (String, String) {
+pub(crate) fn gateway() -> (String, String) {
     let root = std::env::var("RUNVIL_E2E_GATEWAY").expect("RUNVIL_E2E_GATEWAY is the API root");
     let key = std::env::var("RUNVIL_E2E_KEY").expect("RUNVIL_E2E_KEY is the Gateway's key");
     let base = root.trim_end_matches('/').trim_end_matches("/v1");
@@ -132,7 +132,7 @@ fn gateway() -> (String, String) {
 /// A Workshop server bound to the Gateway the environment names, with
 /// each of `agents` written to its agents folder as `<name>.md`, and its
 /// catalog holding the models that Gateway lists.
-async fn live_server(agents: &[(&str, &str)]) -> (String, tempfile::TempDir, AppState) {
+pub(crate) async fn live_server(agents: &[(&str, &str)]) -> (String, tempfile::TempDir, AppState) {
     let (base_url, api_key) = gateway();
     let dir = tempfile::TempDir::new().expect("tempdir");
     let agents_dir = dir.path().join("agents");
@@ -177,7 +177,7 @@ async fn live_server(agents: &[(&str, &str)]) -> (String, tempfile::TempDir, App
 }
 
 /// Connects to the agents socket and launches `agent`.
-async fn launched(base: &str, agent: &str) -> JsonSocket {
+pub(crate) async fn launched(base: &str, agent: &str) -> JsonSocket {
     let mut socket = JsonSocket::connect(&format!("{base}/agents/ws")).await;
     assert_eq!(
         socket.recv_json().await["type"],
