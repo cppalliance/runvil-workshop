@@ -19,8 +19,8 @@ use workshop_registry::Registry;
 use super::mount_at;
 #[cfg(windows)]
 use super::{C_DRIVE_MOUNT, C_DRIVE_SOURCE};
-use crate::agents::host_packs;
-use crate::agents::tests::{BASHKIT_LIBRARY, plugin_dir, plugin_dir_of, run_prompt_over};
+use crate::agents::server_host;
+use crate::agents::tests::{BASHKIT_LIBRARY, plugin_dir, plugin_dir_of, run_prompt_over, serving};
 
 /// What a test returns: any error from setup or from the VFS fails it.
 type Outcome = Result<(), Box<dyn Error>>;
@@ -227,9 +227,14 @@ async fn a_prompt_sees_the_directory_mapped_under_the_runvil_mount() -> Outcome 
     let directory = local_directory()?;
     // The std Plugin is a library, which the Host loads from a directory.
     let (plugins, _library) = plugin_dir("sees-the-mapping");
-    let (host, _) = host_packs(&Registry::new(), None, Some(plugins.path()));
+    let host = server_host(
+        serving(PROMPT),
+        &Registry::new(),
+        None,
+        Some(plugins.path()),
+    );
 
-    let result = run_prompt_over(host, PROMPT.to_owned(), filesystem_with(directory.path())).await;
+    let result = run_prompt_over(host, filesystem_with(directory.path())).await;
 
     let Ok(Ok(final_text)) = result else {
         return Err(format!("the prompt did not complete: {result:?}").into());
@@ -276,14 +281,14 @@ return table.concat({
 async fn the_file_tools_change_nothing_under_the_mapping() -> Outcome {
     let directory = local_directory()?;
     let (plugins, _library) = plugin_dir("changes-the-mapping");
-    let (host, _) = host_packs(&Registry::new(), None, Some(plugins.path()));
+    let host = server_host(
+        serving(CHANGING_PROMPT),
+        &Registry::new(),
+        None,
+        Some(plugins.path()),
+    );
 
-    let result = run_prompt_over(
-        host,
-        CHANGING_PROMPT.to_owned(),
-        filesystem_with(directory.path()),
-    )
-    .await;
+    let result = run_prompt_over(host, filesystem_with(directory.path())).await;
 
     let Ok(Ok(final_text)) = result else {
         return Err(format!("the prompt did not complete: {result:?}").into());
@@ -334,9 +339,14 @@ async fn the_shell_changes_nothing_under_the_mapping_and_writes_beside_it() -> O
     let directory = local_directory()?;
     let vfs = filesystem_with(directory.path());
     let (plugins, _library) = plugin_dir_of("shells-into-the-mapping", BASHKIT_LIBRARY);
-    let (host, _) = host_packs(&Registry::new(), None, Some(plugins.path()));
+    let host = server_host(
+        serving(CHANGING_SHELL_PROMPT),
+        &Registry::new(),
+        None,
+        Some(plugins.path()),
+    );
 
-    let result = run_prompt_over(host, CHANGING_SHELL_PROMPT.to_owned(), vfs.clone()).await;
+    let result = run_prompt_over(host, vfs.clone()).await;
 
     let Ok(Ok(final_text)) = result else {
         return Err(format!("the prompt did not complete: {result:?}").into());
@@ -386,9 +396,14 @@ async fn the_shell_reads_two_directories_mapped_into_its_run() -> Outcome {
     let second = other_directory()?;
     let vfs = mount_at(filesystem_with(first.path()), OTHER_MOUNT, second.path());
     let (plugins, _library) = plugin_dir_of("shells-over-the-mappings", BASHKIT_LIBRARY);
-    let (host, _) = host_packs(&Registry::new(), None, Some(plugins.path()));
+    let host = server_host(
+        serving(SHELL_PROMPT),
+        &Registry::new(),
+        None,
+        Some(plugins.path()),
+    );
 
-    let result = run_prompt_over(host, SHELL_PROMPT.to_owned(), vfs).await;
+    let result = run_prompt_over(host, vfs).await;
 
     let Ok(Ok(final_text)) = result else {
         return Err(format!("the prompt did not complete: {result:?}").into());

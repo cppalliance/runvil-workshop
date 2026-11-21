@@ -5,21 +5,23 @@
 //! conversations. The `/ws` workshop socket sits outside this subsystem;
 //! the two share only [`crate::websocket`].
 //!
-//! The server builds one [`Host`] at startup: its `Packs`, installed from
-//! the linked mcp Plugin, over the servers of the configured `mcp.json`,
-//! the library Plugins in the configured Plugin directory, the std Plugin
-//! with the file-tool Pack, the bashkit Plugin with the shell Pack, and
-//! the web Plugin with the web Pack among them, and the built-ins
-//! subagents and user; a finder that reads each agent from the agents
-//! folder through `load_agent`; and the stock tokio timer of the Gateway
-//! client. Every tool call of a
+//! The server builds one [`Host`] at startup, through its builder: a
+//! finder that reads each agent from the agents folder through
+//! `load_agent`, and its Plugins in the order they install. The linked
+//! mcp Plugin is first, over the servers of the configured `mcp.json`.
+//! The library Plugins in the configured Plugin directory follow, the
+//! std Plugin with the file-tool Pack, the bashkit Plugin with the shell
+//! Pack, and the web Plugin with the web Pack among them. Every Host has
+//! the built-ins subagents and user beside their Packs. Every tool call
+//! of a
 //! library Plugin is lent the server's [`resources`]: the Gateway the
 //! registry holds as the call starts, which is where the web Pack sends a
 //! search. Each launch opens a conversation in `workshop-agents` and builds
 //! that conversation's one run its own [`RunSetup`]: the conversation's
 //! recorder tee on a handle of the run log's [`TursoRecorder`] that names
 //! the launched agent, a per-run broker over the server's inference broker
-//! ([`broker`]), and a user, the conversation's operator, so the run holds
+//! ([`broker`]), the stock tokio timer of the Gateway client, and a user,
+//! the conversation's operator, so the run holds
 //! `runvil/user`; the operator's messages reach the run's main chain
 //! through the conversation. The run makes its own instance of each Pack
 //! it holds and drops them when it ends. The run's model rounds reach the
@@ -63,9 +65,9 @@ use std::sync::Arc;
 use harness_gateway_client::{
     GatewayEndpoint, SecretString, TokioTimer, provide_gateway_resources,
 };
-use runvil::harness::{HostResources, Packs, PluginReport, RunId, insert_plugin_dir};
+use runvil::harness::{HostResources, RunId, insert_plugin_dir};
 use runvil::plugin::PackRegistry;
-use runvil::{Error, ErrorCode, ErrorFact, Host, RunSetup};
+use runvil::{Error, ErrorCode, ErrorFact, Host, PromptFinder, RunSetup};
 use serde_json::Value;
 use workshop_agents::{
     Conversation, ConversationId, Conversations, LaunchError, discover_agents, load_agent,
@@ -85,18 +87,19 @@ pub(crate) use state::{SessionsState, register};
 /// the `runs.db` every conversation's run is recorded in.
 const HARNESS_STATE_DIR: &str = "harness";
 
-/// The server's installed Packs, and what its Plugin directory loaded.
+/// The server's Host, which finds its agents through `prompts`.
 /// `registry` holds the Gateway that each tool call of a library Plugin
 /// is lent ([`resources`]). `mcp` is the `[agents] mcp` setting: the mcp
 /// Pack is installed over the servers of the file it names. `plugins` is
 /// the `[agents] plugins` setting: the directory whose library Plugins
 /// are loaded.
-fn host_packs(
+fn server_host(
+    prompts: Arc<dyn PromptFinder>,
     registry: &Registry,
     mcp: Option<&Path>,
     plugins: Option<&Path>,
-) -> (Packs, Option<PluginReport>) {
-    with_plugins(&resources(registry), read_mcp_servers(mcp), plugins)
+) -> Arc<Host> {
+    with_plugins(prompts, resources(registry), read_mcp_servers(mcp), plugins)
 }
 
 /// The `mcpServers` object of the `mcp.json`-format file at `setting`,
@@ -154,7 +157,8 @@ fn read_mcp_servers(setting: Option<&Path>) -> Value {
     }
 }
 
-/// The Packs of the server's Host, and what its Plugin directory loaded.
+/// The server's Host over its Plugins, which finds its agents through
+/// `prompts`.
 ///
 /// The linked mcp Plugin installs first, over the `servers` object, with
 /// the handle of the runtime this is called on. It is installed only on a
@@ -162,28 +166,40 @@ fn read_mcp_servers(setting: Option<&Path>) -> Value {
 /// is built without the mcp Pack and refuses a prompt that requires
 /// `mcp`. Then every library Plugin in the directory `plugins` loads,
 /// when the server is given one, and every tool call of its Packs is lent
-/// `resources`. The std Plugin, whose Pack holds the file tools, the
+/// `resources`. A directory that does not exist is a state, not a
+/// failure: a build that has not placed its Plugins has none, so the Host
+/// is built without that directory. The std Plugin, whose Pack holds the
+/// file tools, the
 /// bashkit Plugin, whose Pack holds the shell, and the web Plugin, whose
 /// Pack holds the web tools, are three of those libraries, so a Host
 /// whose Plugin directory lacks one has no `std`, no `bash`, or no `web`
 /// Pack and refuses a prompt that requires it. A `tracing` warning says
-/// so at startup. The registry also holds the built-ins `subagents` and
+/// so at startup. Every Host also has the built-ins `subagents` and
 /// `user`, and each run makes its own instances of the Packs it holds.
-/// The report lists each library Plugin that loaded and each failure.
+///
+/// The Host keeps one report for each Plugin step: the mcp Plugin's,
+/// when it is installed, and then the Plugin directory's, which lists
+/// each library Plugin that loaded and each failure. The Harness logs
+/// each of them through `tracing` as it builds the Host.
 fn with_plugins(
-    resources: &HostResources,
+    prompts: Arc<dyn PromptFinder>,
+    resources: HostResources,
     servers: Value,
     plugins: Option<&Path>,
-) -> (Packs, Option<PluginReport>) {
-    let mut packs = PackRegistry::new();
-    if let Ok(runtime) = tokio::runtime::Handle::try_current()
-        && let Err(error) = plugin_mcp::install(&mut packs, servers, runtime)
-    {
-        tracing::warn!(%error, "the mcp Plugin inserted no Pack");
+) -> Arc<Host> {
+    let mut builder = Host::builder(prompts).with_resources(resources);
+    if let Ok(runtime) = tokio::runtime::Handle::try_current() {
+        builder =
+            builder.with_rust_plugin(move |packs| plugin_mcp::install(packs, servers, runtime));
     }
-    let report = plugins.and_then(|directory| load_plugin_dir(&mut packs, directory, resources));
+    // A directory that is known to be missing is a state: a build that has
+    // not placed its Plugins has none.
+    if let Some(directory) = plugins.filter(|directory| directory.try_exists().unwrap_or(true)) {
+        builder = builder.with_plugin_dir(directory);
+    }
+    let host = builder.build();
     for pack in SHIPPED_PACKS {
-        if !holds(&packs, pack) {
+        if !holds(&host, pack) {
             tracing::warn!(
                 directory = ?plugins,
                 pack,
@@ -191,7 +207,7 @@ fn with_plugins(
             );
         }
     }
-    (Packs::new(packs), report)
+    host
 }
 
 /// The Packs that only a library Plugin Workshop ships inserts: the file
@@ -199,9 +215,9 @@ fn with_plugins(
 /// web tools, from the web Plugin.
 const SHIPPED_PACKS: [&str; 3] = ["runvil/std", "runvil/bash", "runvil/web"];
 
-/// Whether `packs` holds the Pack named `pack`, a vendor and a Pack id.
-fn holds(packs: &PackRegistry, pack: &str) -> bool {
-    packs.list().any(|(info, _)| info.fqn == pack)
+/// Whether `host` has the Pack named `pack`, a vendor and a Pack id.
+fn holds(host: &Host, pack: &str) -> bool {
+    host.packs().any(|info| info.fqn == pack)
 }
 
 /// What the library Plugins in one directory do when they are loaded.
@@ -249,49 +265,6 @@ pub fn list_plugin_dir(directory: &Path) -> io::Result<PluginListing> {
     Ok(PluginListing { loaded, failed })
 }
 
-/// Loads every library Plugin in `directory` and returns the report of
-/// what loaded, or `None` when the directory cannot be read. Every tool
-/// call of a Plugin it loads is lent `resources`. A directory that does
-/// not exist is a state, not a failure: a build that has not placed its
-/// Plugins has none. Each Plugin that loaded is logged with its name,
-/// version, and source, and each library that did not, with its path and
-/// the reason; one failure never stops the others.
-fn load_plugin_dir(
-    packs: &mut PackRegistry,
-    directory: &Path,
-    resources: &HostResources,
-) -> Option<PluginReport> {
-    let report = match insert_plugin_dir(packs, directory, resources) {
-        Ok(report) => report,
-        Err(error) if error.kind() == io::ErrorKind::NotFound => return None,
-        Err(error) => {
-            tracing::warn!(
-                directory = %directory.display(),
-                %error,
-                "the Plugin directory could not be read; no library Plugin is loaded"
-            );
-            return None;
-        }
-    };
-    for plugin in report.plugins() {
-        tracing::info!(
-            name = plugin.name(),
-            version = plugin.version(),
-            source = ?plugin.source(),
-            "loaded a library Plugin"
-        );
-    }
-    for failure in report.failures() {
-        let path = failure
-            .facts
-            .get(&ErrorFact::Path)
-            .and_then(Value::as_str)
-            .unwrap_or_default();
-        tracing::warn!(path, error = %failure, "a library Plugin did not load");
-    }
-    Some(report)
-}
-
 /// What the server offers every library Plugin it loads: the Gateway that
 /// `registry` holds. The Harness asks for it as each tool call of such a
 /// Plugin starts, so a replaced Gateway serves the next call, and a call
@@ -322,12 +295,13 @@ fn reachable_gateway(registry: &Registry) -> Option<(GatewayEndpoint, SecretStri
 
 /// The Host finder over the agents folder at `agents_path`: the source
 /// `load_agent` reads for each name, or its refusal as [`agent_error`].
-fn agent_finder(agents_path: PathBuf) -> impl Fn(&str) -> Result<String, Error> + Send + Sync {
-    move |name: &str| {
+/// It comes inside an `Arc`, as a Host's builder takes its finder.
+fn agent_finder(agents_path: PathBuf) -> Arc<dyn PromptFinder> {
+    Arc::new(move |name: &str| {
         load_agent(&agents_path, name)
             .map(|(_file, source)| source)
             .map_err(|refusal| agent_error(&refusal))
-    }
+    })
 }
 
 /// The Host finder's failure for an agent `load_agent` refused: the
@@ -370,13 +344,11 @@ struct Inner {
     /// The inference broker behind each run's broker.
     broker: WorkshopBroker,
     /// What every run shares: the installed Packs each run makes its
-    /// instances of, the finder that reads each agent from the agents
-    /// folder, and the stock tokio timer.
+    /// instances of, the built-ins among them, and the finder that reads
+    /// each agent from the agents folder. It also keeps each library
+    /// Plugin it loaded, so one that inserted no Pack still stays loaded
+    /// for as long as the launcher lives.
     host: Arc<Host>,
-    /// What the Plugin directory loaded, held so that a library Plugin
-    /// which inserted no Pack still stays loaded for as long as the
-    /// launcher lives.
-    _plugins: Option<PluginReport>,
     /// The running conversations.
     conversations: Conversations,
 }
@@ -402,17 +374,13 @@ impl AgentSessions {
     /// opens under the state directory when the first run starts.
     #[must_use]
     pub fn new(config: &Config, registry: Registry, backoff: ReconnectBackoff) -> Self {
-        let (packs, plugins) = host_packs(
+        let agents_path = config.agents.path.clone();
+        let host = server_host(
+            agent_finder(agents_path.clone()),
             &registry,
             config.agents.mcp.as_deref(),
             config.agents.plugins.as_deref(),
         );
-        let agents_path = config.agents.path.clone();
-        let host = Arc::new(Host {
-            packs,
-            prompts: Arc::new(agent_finder(agents_path.clone())),
-            timer: Arc::new(TokioTimer),
-        });
         Self {
             inner: Arc::new(Inner {
                 agents_path,
@@ -421,7 +389,6 @@ impl AgentSessions {
                 )),
                 broker: WorkshopBroker::new(registry.clone()),
                 host,
-                _plugins: plugins,
                 conversations: Conversations::new(),
                 registry,
                 backoff,
@@ -496,8 +463,8 @@ impl AgentSessions {
 
     /// The setup of `conversation`'s run before the Host state is read:
     /// its recorder tee over a run-log handle naming its agent, its broker,
-    /// its filesystem, and a user, since every conversation has an
-    /// operator.
+    /// the stock tokio timer, its filesystem, and a user, since every
+    /// conversation has an operator.
     fn setup_for(&self, conversation: &Conversation) -> RunSetup {
         let recorder = conversation.recorder(Arc::new(
             self.inner.recorder.for_agent(conversation.agent()),
@@ -506,11 +473,9 @@ impl AgentSessions {
             self.inner.broker.clone(),
             conversation.clone(),
         ));
-        RunSetup {
-            vfs: language_guide::run_vfs(),
-            has_user: true,
-            ..RunSetup::new(recorder, broker)
-        }
+        RunSetup::new(recorder, broker, Arc::new(TokioTimer))
+            .vfs(language_guide::run_vfs())
+            .has_user(true)
     }
 
     /// The running conversation with this id, when one exists: how a

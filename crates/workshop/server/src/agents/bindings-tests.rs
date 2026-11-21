@@ -2,6 +2,7 @@
 
 use std::sync::Arc;
 
+use harness_gateway_client::TokioTimer;
 use runvil::harness::{MemoryRecorder, OfflineBroker};
 use workshop_menu::{CatalogBus, MenuBus};
 
@@ -9,7 +10,11 @@ use super::*;
 
 /// A setup with nothing selected.
 fn empty_setup() -> RunSetup {
-    RunSetup::new(Arc::new(MemoryRecorder::new()), Arc::new(OfflineBroker))
+    RunSetup::new(
+        Arc::new(MemoryRecorder::new()),
+        Arc::new(OfflineBroker),
+        Arc::new(TokioTimer),
+    )
 }
 
 #[test]

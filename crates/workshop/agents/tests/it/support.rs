@@ -4,8 +4,7 @@
 use std::sync::Arc;
 
 use harness_gateway_client::TokioTimer;
-use runvil::harness::{FindTextPrompt, MemoryRecorder, OfflineBroker, Packs};
-use runvil::plugin::PackRegistry;
+use runvil::harness::{FindTextPrompt, MemoryRecorder, OfflineBroker};
 use runvil::{Host, RunSetup};
 use workshop_agents::Conversation;
 
@@ -29,12 +28,12 @@ pub(crate) fn run_for(
     recorder: Arc<MemoryRecorder>,
     source: String,
 ) -> (Arc<Host>, RunSetup) {
-    let host = Arc::new(Host {
-        packs: Packs::new(PackRegistry::new()),
-        prompts: Arc::new(FindTextPrompt::new(AGENT, source)),
-        timer: Arc::new(TokioTimer),
-    });
-    let setup =
-        RunSetup::new(conversation.recorder(recorder), Arc::new(OfflineBroker)).has_user(true);
+    let host = Host::builder(FindTextPrompt::new(AGENT, source)).build();
+    let setup = RunSetup::new(
+        conversation.recorder(recorder),
+        Arc::new(OfflineBroker),
+        Arc::new(TokioTimer),
+    )
+    .has_user(true);
     (host, setup)
 }

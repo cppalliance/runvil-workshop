@@ -31,17 +31,16 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use harness_gateway_client::TokioTimer;
-use runvil::harness::{HostResources, MemoryRecorder, OfflineBroker, Packs, PluginSource};
-use runvil::plugin::PackRegistry;
+use runvil::harness::{MemoryRecorder, OfflineBroker, PluginReport, PluginSource};
 use runvil::vfs::{Origin, VfsRef};
-use runvil::{Error, ErrorCode, ErrorFact, Host, RunSetup};
+use runvil::{Error, ErrorCode, ErrorFact, Host, PromptFinder, RunSetup};
 use serde_json::json;
 use workshop_agents::{Conversations, SessionState, load_agent};
 use workshop_registry::Registry;
 
 use super::{
-    PluginListing, SHIPPED_PACKS, agent_finder, holds, host_packs, list_plugin_dir,
-    load_plugin_dir, read_mcp_servers, resources, with_plugins,
+    PluginListing, SHIPPED_PACKS, agent_finder, holds, list_plugin_dir, read_mcp_servers,
+    resources, server_host, with_plugins,
 };
 
 #[path = "tests-gateway.rs"]
@@ -56,25 +55,49 @@ fn requiring(pack: &str) -> String {
     )
 }
 
-/// Runs the prompt `source` as one conversation over `packs` and the
-/// default in-memory filesystem; see [`run_prompt_over`].
-async fn run_prompt(packs: Packs, source: String) -> Result<Result<String, Error>, String> {
-    run_prompt_over(packs, source, VfsRef::default()).await
+/// A finder that gives `source` under every name.
+pub(super) fn serving(source: impl Into<String>) -> Arc<dyn PromptFinder> {
+    let source = source.into();
+    Arc::new(move |_: &str| -> Result<String, Error> { Ok(source.clone()) })
 }
 
-/// Runs the prompt `source` as one conversation over the filesystem
-/// `vfs`, on a Host over `packs` whose finder gives `source` under every
-/// name; see [`run_agent_on`].
+/// The report of the Plugin directory of `host`, which is the last step
+/// its builder names.
+fn directory_report(host: &Host) -> &PluginReport {
+    host.plugin_reports()
+        .last()
+        .expect("the Host names a Plugin directory")
+}
+
+/// The name of each Plugin that the Plugin directory of `host` loaded.
+fn loaded(host: &Host) -> Vec<&str> {
+    directory_report(host)
+        .plugins()
+        .iter()
+        .map(|plugin| plugin.name())
+        .collect()
+}
+
+/// Asserts that the Plugin directory of `host` reported no failure.
+#[track_caller]
+fn assert_no_failures(host: &Host) {
+    let failures = directory_report(host).failures();
+    assert!(failures.is_empty(), "{failures:?}");
+}
+
+/// Runs the prompt that `host` finds under every name as one
+/// conversation over the default in-memory filesystem; see
+/// [`run_agent_on`].
+async fn run_prompt(host: Arc<Host>) -> Result<Result<String, Error>, String> {
+    run_prompt_over(host, VfsRef::default()).await
+}
+
+/// Runs the prompt that `host` finds under every name as one
+/// conversation over the filesystem `vfs`; see [`run_agent_on`].
 pub(super) async fn run_prompt_over(
-    packs: Packs,
-    source: String,
+    host: Arc<Host>,
     vfs: VfsRef,
 ) -> Result<Result<String, Error>, String> {
-    let host = Host {
-        packs,
-        prompts: Arc::new(move |_: &str| -> Result<String, Error> { Ok(source.clone()) }),
-        timer: Arc::new(TokioTimer),
-    };
     run_agent_on(host, "browses", vfs).await
 }
 
@@ -84,27 +107,23 @@ pub(super) async fn run_prompt_over(
 /// report when the Host refused the prompt as it parsed it and no run
 /// began.
 async fn run_agent_on(
-    host: Host,
+    host: Arc<Host>,
     name: &str,
     vfs: VfsRef,
 ) -> Result<Result<String, Error>, String> {
     let recorder = Arc::new(MemoryRecorder::new());
     let conversation = Conversations::new().open(name);
     let mut errors = conversation.subscribe_errors();
-    let setup = RunSetup {
-        vfs,
-        has_user: true,
-        ..RunSetup::new(
-            conversation.recorder(recorder.clone()),
-            Arc::new(OfflineBroker),
-        )
-    };
-    tokio::time::timeout(
-        Duration::from_secs(10),
-        conversation.run(Arc::new(host), name, setup),
+    let setup = RunSetup::new(
+        conversation.recorder(recorder.clone()),
+        Arc::new(OfflineBroker),
+        Arc::new(TokioTimer),
     )
-    .await
-    .expect("the run ends in time");
+    .vfs(vfs)
+    .has_user(true);
+    tokio::time::timeout(Duration::from_secs(10), conversation.run(host, name, setup))
+        .await
+        .expect("the run ends in time");
     assert_eq!(
         conversation.state(),
         SessionState::Closed,
@@ -137,9 +156,9 @@ async fn every_run_holds_the_packs_the_three_plugins_add_and_the_builtins() {
         end\n\
         return table.concat(names, ',') .. '|' .. tostring(tools.packs.get('user-input'))\n```\n";
     let dir = plugin_dir_with("every-run-holds", &[STD_LIBRARY, WEB_LIBRARY]);
-    let (host, _) = host_packs(&Registry::new(), None, Some(dir.path()));
+    let host = server_host(serving(lists), &Registry::new(), None, Some(dir.path()));
     assert_eq!(
-        run_prompt(host, lists.to_owned()).await,
+        run_prompt(host).await,
         Ok(Ok("web,subagents,mcp,std,user|nil".to_owned())),
         "a run that declares nothing holds every runvil Pack the server installed, the \
          built-ins, and the user Pack its user brings, and no user-input Pack"
@@ -149,17 +168,16 @@ async fn every_run_holds_the_packs_the_three_plugins_add_and_the_builtins() {
 #[tokio::test]
 async fn a_prompt_declaring_web_prepares_on_the_servers_built_packs() {
     let (dir, _library) = plugin_dir_of("declares-web", WEB_LIBRARY);
-    let (host, report) = host_packs(&Registry::new(), None, Some(dir.path()));
-    let report = report.expect("the configured directory is read");
-    assert!(report.failures().is_empty(), "{:?}", report.failures());
-    let names: Vec<&str> = report
-        .plugins()
-        .iter()
-        .map(|plugin| plugin.name())
-        .collect();
-    assert_eq!(names, ["web"]);
+    let host = server_host(
+        serving(requiring("web")),
+        &Registry::new(),
+        None,
+        Some(dir.path()),
+    );
+    assert_no_failures(&host);
+    assert_eq!(loaded(&host), ["web"]);
     assert_eq!(
-        run_prompt(host, requiring("web")).await,
+        run_prompt(host).await,
         Ok(Ok("browsed".to_owned())),
         "the web library's Pack is installed, so a prompt that requires web runs"
     );
@@ -167,9 +185,14 @@ async fn a_prompt_declaring_web_prepares_on_the_servers_built_packs() {
 
 #[tokio::test]
 async fn a_prompt_declaring_subagents_prepares_on_the_servers_built_packs() {
-    let (host, _) = host_packs(&Registry::new(), None, None);
+    let host = server_host(
+        serving(requiring("subagents")),
+        &Registry::new(),
+        None,
+        None,
+    );
     assert_eq!(
-        run_prompt(host, requiring("subagents")).await,
+        run_prompt(host).await,
         Ok(Ok("browsed".to_owned())),
         "the server's Host installs the built-in subagents"
     );
@@ -184,7 +207,7 @@ fn the_finder_refuses_an_unknown_agent_as_not_found_and_an_unreadable_one_as_io(
     let finder = agent_finder(dir.path().to_path_buf());
 
     for (name, code) in [("missing", ErrorCode::NotFound), ("broken", ErrorCode::Io)] {
-        let error = finder(name).expect_err("the finder refuses the agent");
+        let error = finder.find(name).expect_err("the finder refuses the agent");
         let refusal = load_agent(dir.path(), name).expect_err("the launch check refuses it too");
         assert_eq!(error.code, code, "{name}");
         assert_eq!(error.message, refusal.to_string(), "{name}");
@@ -204,12 +227,12 @@ async fn an_agent_executes_an_agent_of_the_folder_that_its_prompts_list_names() 
         ## Only\n\n```lua\nreturn 'inner ran'\n```\n";
     std::fs::write(dir.path().join("outer.md"), outer).expect("write fixture");
     std::fs::write(dir.path().join("inner.md"), inner).expect("write fixture");
-    let (packs, _) = host_packs(&Registry::new(), None, None);
-    let host = Host {
-        packs,
-        prompts: Arc::new(agent_finder(dir.path().to_path_buf())),
-        timer: Arc::new(TokioTimer),
-    };
+    let host = server_host(
+        agent_finder(dir.path().to_path_buf()),
+        &Registry::new(),
+        None,
+        None,
+    );
 
     assert_eq!(
         run_agent_on(host, "outer", VfsRef::default()).await,
@@ -223,9 +246,9 @@ async fn a_prompt_declaring_mcp_prepares_on_a_host_built_on_a_runtime() {
     // The Host is built on this test's runtime, as the server builds its
     // own, so the mcp Pack is installed with that runtime's handle, here
     // over no servers.
-    let (host, _) = host_packs(&Registry::new(), None, None);
+    let host = server_host(serving(requiring("mcp")), &Registry::new(), None, None);
     assert_eq!(
-        run_prompt(host, requiring("mcp")).await,
+        run_prompt(host).await,
         Ok(Ok("browsed".to_owned())),
         "a Host built on a runtime installs the mcp Pack once"
     );
@@ -236,13 +259,13 @@ fn a_host_built_outside_a_runtime_installs_no_mcp_pack() {
     // A synchronous test builds the Host outside a runtime, so the Host
     // is built without the mcp Pack. The run itself needs a runtime,
     // which starts only after the Host is built.
-    let (host, _) = host_packs(&Registry::new(), None, None);
+    let host = server_host(serving(requiring("mcp")), &Registry::new(), None, None);
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
         .expect("a runtime for the run is built");
 
-    let result = runtime.block_on(run_prompt(host, requiring("mcp")));
+    let result = runtime.block_on(run_prompt(host));
     let Err(message) = result else {
         panic!("the Host refuses the prompt as it parses: {result:?}");
     };
@@ -256,9 +279,14 @@ fn a_host_built_outside_a_runtime_installs_no_mcp_pack() {
 async fn the_servers_value_is_the_mcp_packs_server_list() {
     // A value that is neither null nor an object is the one server list
     // the install refuses, so only that value reaching it fails the run.
-    let (host, _) = with_plugins(&resources(&Registry::new()), json!([]), None);
+    let host = with_plugins(
+        serving(requiring("mcp")),
+        resources(&Registry::new()),
+        json!([]),
+        None,
+    );
 
-    let result = run_prompt(host, requiring("mcp")).await;
+    let result = run_prompt(host).await;
     let Err(message) = result else {
         panic!("the Host refuses the prompt as it parses: {result:?}");
     };
@@ -328,9 +356,8 @@ pub(super) fn plugin_dir(test: &str) -> (tempfile::TempDir, PathBuf) {
 #[test]
 fn a_plugin_directory_loads_the_std_plugin_from_its_library() {
     let (dir, library) = plugin_dir("loads-std");
-    let mut packs = PackRegistry::new();
-    let report = load_plugin_dir(&mut packs, dir.path(), &HostResources::new())
-        .expect("the directory is read");
+    let host = server_host(serving(""), &Registry::new(), None, Some(dir.path()));
+    let report = directory_report(&host);
 
     assert!(report.failures().is_empty(), "{:?}", report.failures());
     let [plugin] = report.plugins() else {
@@ -349,9 +376,8 @@ fn a_file_that_is_no_library_is_reported_and_the_std_plugin_still_loads() {
     let (dir, _library) = plugin_dir("reports-a-bad-file");
     let bad = dir.path().join(format!("a-text-file.{DLL_EXTENSION}"));
     std::fs::write(&bad, "not a library").expect("write fixture");
-    let mut packs = PackRegistry::new();
-    let report = load_plugin_dir(&mut packs, dir.path(), &HostResources::new())
-        .expect("the directory is read");
+    let host = server_host(serving(""), &Registry::new(), None, Some(dir.path()));
+    let report = directory_report(&host);
 
     assert_eq!(report.plugins().len(), 1, "{:?}", report.plugins());
     let [failure] = report.failures() else {
@@ -397,32 +423,34 @@ fn a_listing_names_each_plugin_that_loads_and_each_library_that_does_not() {
 #[test]
 fn a_plugin_directory_that_does_not_exist_loads_nothing() {
     let (dir, _library) = plugin_dir("missing-directory");
-    let mut packs = PackRegistry::new();
+    // A synchronous test builds the Host outside a runtime, so the Plugin
+    // directory would be its one step.
+    let host = server_host(
+        serving(""),
+        &Registry::new(),
+        None,
+        Some(&dir.path().join("absent")),
+    );
     assert!(
-        load_plugin_dir(
-            &mut packs,
-            &dir.path().join("absent"),
-            &HostResources::new()
-        )
-        .is_none(),
-        "a missing directory is a state, not a failure"
+        host.plugin_reports().is_empty(),
+        "a missing directory is a state, not a failure: {:?}",
+        host.plugin_reports()
     );
 }
 
 #[tokio::test]
 async fn the_servers_host_loads_its_plugin_directory_beside_the_linked_plugin() {
     let (dir, _library) = plugin_dir("server-host");
-    let (host, report) = host_packs(&Registry::new(), None, Some(dir.path()));
+    let host = server_host(
+        serving(requiring("std")),
+        &Registry::new(),
+        None,
+        Some(dir.path()),
+    );
 
-    let report = report.expect("the configured directory is read");
-    let names: Vec<&str> = report
-        .plugins()
-        .iter()
-        .map(|plugin| plugin.name())
-        .collect();
-    assert_eq!(names, ["std"]);
+    assert_eq!(loaded(&host), ["std"]);
     assert_eq!(
-        run_prompt(host, requiring("std")).await,
+        run_prompt(host).await,
         Ok(Ok("browsed".to_owned())),
         "the library's Pack is installed, so a prompt that requires std runs"
     );
@@ -430,6 +458,7 @@ async fn the_servers_host_loads_its_plugin_directory_beside_the_linked_plugin() 
 
 #[test]
 fn only_a_plugin_directory_with_a_shipped_library_gives_the_host_its_pack() {
+    let bare = server_host(serving(""), &Registry::new(), None, None);
     for (library, pack) in [
         (STD_LIBRARY, "runvil/std"),
         (BASHKIT_LIBRARY, "runvil/bash"),
@@ -437,14 +466,9 @@ fn only_a_plugin_directory_with_a_shipped_library_gives_the_host_its_pack() {
     ] {
         assert!(SHIPPED_PACKS.contains(&pack), "{pack}");
         let (dir, _library) = plugin_dir_of("holds-a-shipped-pack", library);
-        let mut packs = PackRegistry::new();
-        load_plugin_dir(&mut packs, dir.path(), &HostResources::new())
-            .expect("the directory is read");
-        assert!(holds(&packs, pack), "{library} inserts {pack}");
-        assert!(
-            !holds(&PackRegistry::new(), pack),
-            "{pack} is not among the built-ins"
-        );
+        let host = server_host(serving(""), &Registry::new(), None, Some(dir.path()));
+        assert!(holds(&host, pack), "{library} inserts {pack}");
+        assert!(!holds(&bare, pack), "{pack} is not among the built-ins");
     }
 }
 
@@ -465,9 +489,13 @@ const READS_AND_CHANGES: &str = "---\nname: changes\ndescription: reads and chan
 #[tokio::test]
 async fn a_prompt_reads_and_changes_files_of_its_run_through_the_std_library_plugin() {
     let (dir, _library) = plugin_dir("reads-and-changes");
-    let (host, report) = host_packs(&Registry::new(), None, Some(dir.path()));
-    let report = report.expect("the configured directory is read");
-    assert!(report.failures().is_empty(), "{:?}", report.failures());
+    let host = server_host(
+        serving(READS_AND_CHANGES),
+        &Registry::new(),
+        None,
+        Some(dir.path()),
+    );
+    assert_no_failures(&host);
 
     let vfs = VfsRef::default();
     let seed = vfs
@@ -477,7 +505,7 @@ async fn a_prompt_reads_and_changes_files_of_its_run_through_the_std_library_plu
         .expect("the file is seeded");
     seed.write("/old.md", b"old\n").expect("the file is seeded");
 
-    let result = run_prompt_over(host, READS_AND_CHANGES.to_owned(), vfs.clone()).await;
+    let result = run_prompt_over(host, vfs.clone()).await;
     let Ok(Ok(text)) = result else {
         panic!("the run ends with its text: {result:?}");
     };
@@ -522,10 +550,16 @@ async fn a_prompt_reads_and_changes_files_of_its_run_through_the_std_library_plu
 #[tokio::test]
 async fn without_a_plugin_directory_a_prompt_requiring_a_shipped_pack_is_refused() {
     for pack in ["std", "bash", "web"] {
-        let (host, report) = host_packs(&Registry::new(), None, None);
-        assert!(report.is_none(), "no directory is read");
+        let host = server_host(serving(requiring(pack)), &Registry::new(), None, None);
+        let [mcp] = host.plugin_reports() else {
+            panic!(
+                "the linked Plugin is the one step, so no directory is read: {:?}",
+                host.plugin_reports()
+            );
+        };
+        assert!(mcp.plugins().is_empty(), "{:?}", mcp.plugins());
 
-        let result = run_prompt(host, requiring(pack)).await;
+        let result = run_prompt(host).await;
         let Err(message) = result else {
             panic!("the Host refuses the prompt as it parses: {result:?}");
         };
@@ -550,15 +584,14 @@ const RUNS_A_COMMAND: &str = "---\nname: shells\ndescription: runs a command\nru
 #[tokio::test]
 async fn a_prompt_runs_a_command_over_its_runs_files_through_the_bashkit_library_plugin() {
     let (dir, _library) = plugin_dir_of("runs-a-command", BASHKIT_LIBRARY);
-    let (host, report) = host_packs(&Registry::new(), None, Some(dir.path()));
-    let report = report.expect("the configured directory is read");
-    assert!(report.failures().is_empty(), "{:?}", report.failures());
-    let names: Vec<&str> = report
-        .plugins()
-        .iter()
-        .map(|plugin| plugin.name())
-        .collect();
-    assert_eq!(names, ["bashkit"]);
+    let host = server_host(
+        serving(RUNS_A_COMMAND),
+        &Registry::new(),
+        None,
+        Some(dir.path()),
+    );
+    assert_no_failures(&host);
+    assert_eq!(loaded(&host), ["bashkit"]);
 
     let vfs = VfsRef::default();
     vfs.acquire(Origin::new("seed"))
@@ -566,7 +599,7 @@ async fn a_prompt_runs_a_command_over_its_runs_files_through_the_bashkit_library
         .write("/notes.md", b"hello\nworld\n")
         .expect("the file is seeded");
 
-    let result = run_prompt_over(host, RUNS_A_COMMAND.to_owned(), vfs.clone()).await;
+    let result = run_prompt_over(host, vfs.clone()).await;
     let Ok(Ok(text)) = result else {
         panic!("the run ends with its text: {result:?}");
     };
