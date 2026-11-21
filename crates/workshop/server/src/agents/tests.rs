@@ -15,8 +15,10 @@
 //! the launch refusal's own text, and it reads an agent that another
 //! names under `prompts:`, which that agent then runs with `execute`. A
 //! configured Plugin directory loads each library Plugin in it and
-//! reports each file that is none, and a directory that does not exist
-//! loads nothing. A prompt reads and changes the files of its run through
+//! reports each file that is none, a directory that does not exist
+//! loads nothing, and one that cannot be read is a failure of the Host's
+//! report while the Host is built. A prompt reads and changes the files
+//! of its run through
 //! the std library's `Read`, `Write`, `StrReplace`, and `Delete` tools
 //! and through the bashkit library's `Shell` tool, and the Host reads
 //! each change back after the run. A Host with no Plugin directory
@@ -435,6 +437,40 @@ fn a_plugin_directory_that_does_not_exist_loads_nothing() {
         host.plugin_reports().is_empty(),
         "a missing directory is a state, not a failure: {:?}",
         host.plugin_reports()
+    );
+}
+
+#[test]
+fn a_plugin_directory_that_cannot_be_read_is_a_failure_and_the_host_is_built() {
+    let dir = tempfile::TempDir::new().expect("tempdir");
+    // A regular file in the directory's place exists, so the Host names
+    // it, and it cannot be read as a directory.
+    let file = dir.path().join("plugins");
+    std::fs::write(&file, "not a directory").expect("write fixture");
+    // A synchronous test builds the Host outside a runtime, so the Plugin
+    // directory is its one step.
+    let host = server_host(serving(""), &Registry::new(), None, Some(&file));
+
+    let [report] = host.plugin_reports() else {
+        panic!("the directory is the one step: {:?}", host.plugin_reports());
+    };
+    assert!(report.plugins().is_empty(), "{:?}", report.plugins());
+    let [failure] = report.failures() else {
+        panic!("the directory is the one failure: {:?}", report.failures());
+    };
+    assert_eq!(failure.code, ErrorCode::PluginLoadFailed);
+    assert_eq!(
+        failure.facts.get(&ErrorFact::Reason),
+        Some(&json!("directory"))
+    );
+    assert_eq!(
+        failure.facts.get(&ErrorFact::Path),
+        Some(&json!(file.display().to_string())),
+        "the failure names the configured path"
+    );
+    assert!(
+        holds(&host, "runvil/user") && !holds(&host, "runvil/std"),
+        "the Host is built, with its built-ins and no library Plugin's Pack"
     );
 }
 
