@@ -7,34 +7,34 @@ todos:
     status: completed
   - id: mcp-servers
     content: "Add the test of the configured MCP servers to crates/workshop/server/src/agents/tests.rs"
-    status: pending
+    status: completed
   - id: web-search
     content: "Add the test of the Gateway a web search is lent to crates/workshop/server/src/agents/tests-gateway.rs"
-    status: pending
+    status: completed
   - id: socket-tests
     content: "Add crates/workshop/server/tests/it/live.rs with the six ignored tests, and name the module in tests/it/main.rs"
-    status: pending
+    status: completed
   - id: kill-test
     content: "Add crates/workshop/server/tests/it/live_stop.rs with the one ignored test, and name it in tests/it/main.rs for Unix only"
-    status: pending
+    status: completed
   - id: program-test
     content: "Add crates/workshop/server/tests/it/live_program.rs with the one ignored test, and name it in tests/it/main.rs for Linux only"
-    status: pending
+    status: completed
   - id: window-tests
     content: "Add crates/workshop/server/tests/it/live_window.rs with the two ignored tests, and name it in tests/it/main.rs for Linux only"
-    status: pending
+    status: completed
   - id: breaks
     content: "Apply each of the three breaks, confirm the test named for it now fails, and revert it"
-    status: pending
+    status: completed
   - id: runs
     content: "Run the ten ignored tests against a real Gateway with a small local model, several times each, and see no process left"
-    status: pending
+    status: completed
   - id: verify
     content: "Run the verification commands"
-    status: pending
+    status: completed
   - id: pr
     content: "Push the branch qa-plan-tests to the fork and open one PR against cppalliance/runvil-workshop"
-    status: pending
+    status: in_progress
 ---
 
 # Check what Workshop hands its Packs, and run Workshop against a real Gateway
@@ -244,7 +244,7 @@ The two tests of a normal run are checked by their breaks: each break must fail 
   - Socket tests that start their own Gateway. They would tie this repository to the Gateway's settings format. Only the kill test starts one, because it must own the Gateway it kills, and it writes no settings.
   - `POST /shutdown` on a Gateway the kill test is given. Measured: a streamed reply of 114 pieces went on to its end, in 2.3 seconds, after the request was answered 202.
   - Finding the process of a running Gateway from its port and killing it. It could kill a Gateway the person relies on.
-  - Killing only the program the kill test started, which is what the test first did. The serving process then sees that its supervisor is gone and shuts down in good order, in about 0.6 seconds, and a reply shorter than that finishes first. Then the run ends with text and no error comes.
+  - Killing only the program the kill test started, which is what the test first did. The serving process then sees that its supervisor is gone and shuts down in good order, in about 0.6 seconds, and a reply shorter than that finishes first. Then the run ends with text and no error comes. See the notes.
   - Starting the installed Workshop program. It may be an older version than the code under test.
   - Loading Workshop's page in a headless browser. It would test the interface outside the window, and it cannot close the window.
   - Keyboard and mouse events from `xdotool`. It cannot read the chat panel.
@@ -258,6 +258,27 @@ The two tests of a normal run are checked by their breaks: each break must fail 
   - The program's state goes in the test's folder, because Workshop keeps its state beside the settings file it loaded.
   - Live tests started before the Gateway has finished loading its model fail at once. The Gateway's log line `command finished` for `load-profile` marks the end of loading.
   - `stalled_browser_cleanup_is_bounded_after_gateway_disconnect`, in `crates/workshop/server/tests/it/realtime_relay/overload.rs`, fails on the author's Linux machine on unchanged code, at `the Gateway fills the relay's browser send`, after about ten seconds. It fails the same way on unchanged `upstream/master` at commit `73e4fccd`. CI runs the server's tests on Windows only. This plan does not touch it.
+  - The break results and the exit criteria below were measured on `upstream/master` at commit `73e4fccd`, onto which the branch was rebased on 2026-11-21. Workshop builds its Host through the Harness's `Host::builder` there, and the two tests of a normal run were changed to build theirs the same way.
+  - Result of break 1: the 308 tests of the `workshop-server`, `workshop-agents`, and `workshop-run-log` crates ran. The MCP test failed, and the only other failure was `stalled_browser_cleanup_is_bounded_after_gateway_disconnect`.
+  - Result of break 2: the 258 tests of `workshop-server` ran. The web search test failed, with the first Gateway's result in the answer. The only other failure was `stalled_browser_cleanup_is_bounded_after_gateway_disconnect`.
+  - Result of break 3: the web search test failed with "web_search: the host offers no web search right now". `a_message_sent_while_a_tool_call_runs_is_a_user_message_the_next_request_holds` failed too, and so did `stalled_browser_cleanup_is_bounded_after_gateway_disconnect`.
+  - The live runs used a Gateway built from `cppalliance/runvil-gateway` at commit `52fd92d`, serving Qwen3 0.6B from a local file. The closing test used the Gateway release Workshop is pinned to, `gateway-v0.3.1`, beside the Workshop program.
+  - Found while writing the socket tests: the built-in chat agent requires a context of at least 32,768 tokens for its `default` role. Against a model declared with 8,192, the launch ends with the requirements notice, which Workshop relays whole in an error frame.
+  - Found while writing the socket tests: a real Gateway answers a wrong key with status 401 even from a loopback caller it would trust with no key. Workshop always sends its key, so the key in its settings must be right.
+  - Unexplained: twice, with the model loaded and several of the socket tests running side by side straight after the Gateway started, one model round failed and Workshop reported "Model turn failed". Workshop's message does not carry the cause. It was not seen with the tests run one at a time, nor in direct requests to the Gateway, nor in runs through the Harness alone.
+  - Result of the first runs of the socket tests: from a fresh start of the Gateway, with the tests run one at a time, all six passed in three runs in a row, in 14, 5, and 6 seconds. Run side by side on a Gateway that had been up for a while, all six passed in four runs in a row.
+  - Observed in every run of the kill test: the recorded error has the code `Transport` and its message ends "unexpected EOF during chunk size line".
+  - Found in the kill test: its first form killed only the program it started. It passed three runs in a row, and then failed 3 runs of 38 when every test was run again. In each failed run the client got no error frame within the deadline. The Gateway's log showed why: "the supervisor closed stdin; shutting down", and its exit 0.6 seconds later. The model had cut its list short ("1" to "30", then "...", then "300"), so the reply of 129 pieces finished inside that time, and the run rightly ended with text. Workshop was not at fault. The test had not killed the process that serves.
+  - Result of the runs of the kill test with the whole group killed: it passed 50 runs of 50, in 4.3 to 5.5 seconds a run. In none of them did the Gateway's log show a shutdown in good order, and no Gateway or model process was left after any run.
+  - Result of the runs of the program test: it passed in four runs, the first in 12 seconds and the next three in about 2 seconds each. No process the test started was left after any run.
+  - Found while writing the closing test, with Workshop at commit `68c7249`, and not tried again since: Workshop can start the Gateway release it is pinned to, and cannot start a Gateway built from that repository's `master` at commit `52fd92d`. Workshop holds the launch lock while it starts the Gateway and waits for the discovery file. The newer Gateway tries to take the same lock, waits ten seconds, and exits with "settle which process launches the Gateway: no launch winner became attachable within 10s". Workshop then reports "the launched gateway exited (exit status: 1) without writing a gateway discovery file".
+  - Result of the first runs of the window tests: each passed in three runs in a row, about 3 seconds a run, and no process or open port was left after any of them.
+  - Found in the typing test: it first waited only for the model picker, and failed 3 runs of 18 when every test was run again. In each failed run the typed text was still in the chat box and the chat panel was empty, because the test had pressed Enter before the agent's run started. Workshop was not at fault. With the second wait, the test passed 30 runs of 30, about 3.3 seconds a run. The closing test passed 5 runs of 5.
+  - Those live runs were made on 2026-11-20, the last of them on `upstream/master` at commit `4666b17f`. Result of the live runs made again on 2026-11-21, after the rebase onto `73e4fccd`: the six socket tests passed, one at a time, in 6 seconds. The program test passed 3 runs of 3, the typing test 5 of 5, the kill test 5 of 5, and the closing test 3 of 3. No process the tests started and no open port was left at the end.
+  - Result of the exit criteria. The three crates ran 343 tests: 342 passed, 14 were skipped, and `stalled_browser_cleanup_is_bounded_after_gateway_disconnect` failed. `cargo clippy -p workshop -p workshop-server -p workshop-server-api --all-targets`, `cargo fmt --all --check`, `cargo test -p build-xtask`, and the wording check passed. The rest of the workspace, which is not an exit criterion, ran 704 tests, all passed, and 1 was skipped. Clippy over the rest of the workspace, the docs build, and the custom lints were not run locally.
+  - CI runs the checks that were not run locally on the draft pull request, cppalliance/runvil-workshop#32. Its ten checks passed on the branch as it stood on 2026-11-20, before the rebase: `check-workshop`, `check-workshop-linux`, `ci-green`, `clippy`, `docs`, `dylint`, `fmt`, `supply-chain`, `test`, and `ui`.
+  - `vibelight`, run on each changed test file alone on 2026-11-21, reports no lead in `live_stop.rs`, `live_program.rs`, or `live_window.rs`. In `tests-gateway.rs` it reports one, on the helper `registry_with_gateway`, which this change does not touch. In `tests.rs` it reports six, none on the MCP test. One of them counts the web search test among three tests that repeat a literal, in the wording the file already uses. In `live.rs` it reports nine, all in the new code: two helpers that return a tuple, a `kind` passed as a string to two helpers and always the same to one, a helper with one caller, two tests whose bodies are alike, and two literals repeated across tests. Those nine have not been acted on.
+  - This work was first written as six plans, one for each test of a normal run and one for each kind of live test. They were merged into this plan on 2026-11-21, at the user's word: "let's merge those into 1".
 
 ### Deferred and Out of Scope
 
