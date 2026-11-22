@@ -118,8 +118,8 @@ async fn run_agent_on(
     let mut errors = conversation.subscribe_errors();
     let setup = RunSetup::new(
         conversation.recorder(recorder.clone()),
-        Arc::new(OfflineBroker),
-        Arc::new(TokioTimer),
+        OfflineBroker,
+        TokioTimer,
     )
     .vfs(vfs)
     .has_user(true);

@@ -29,11 +29,7 @@ pub(crate) fn run_for(
     source: String,
 ) -> (Arc<Host>, RunSetup) {
     let host = Host::builder(FindTextPrompt::new(AGENT, source)).build();
-    let setup = RunSetup::new(
-        conversation.recorder(recorder),
-        Arc::new(OfflineBroker),
-        Arc::new(TokioTimer),
-    )
-    .has_user(true);
+    let setup =
+        RunSetup::new(conversation.recorder(recorder), OfflineBroker, TokioTimer).has_user(true);
     (host, setup)
 }

@@ -466,14 +466,9 @@ impl AgentSessions {
     /// the stock tokio timer, its filesystem, and a user, since every
     /// conversation has an operator.
     fn setup_for(&self, conversation: &Conversation) -> RunSetup {
-        let recorder = conversation.recorder(Arc::new(
-            self.inner.recorder.for_agent(conversation.agent()),
-        ));
-        let broker = Arc::new(RunBroker::new(
-            self.inner.broker.clone(),
-            conversation.clone(),
-        ));
-        RunSetup::new(recorder, broker, Arc::new(TokioTimer))
+        let recorder = conversation.recorder(self.inner.recorder.for_agent(conversation.agent()));
+        let broker = RunBroker::new(self.inner.broker.clone(), conversation.clone());
+        RunSetup::new(recorder, broker, TokioTimer)
             .vfs(language_guide::run_vfs())
             .has_user(true)
     }

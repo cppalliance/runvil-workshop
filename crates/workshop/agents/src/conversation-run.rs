@@ -5,7 +5,7 @@
 
 use std::sync::Arc;
 
-use runvil::harness::{RunRecorder, display_chain};
+use runvil::harness::{IntoShared, RunRecorder, display_chain};
 use runvil::ids::RoundId;
 use runvil::{Error, Harness, Host, Prompt, RunReport, RunSetup};
 
@@ -20,10 +20,12 @@ const CANCELED: &str = "the agent run was canceled";
 impl Conversation {
     /// The recorder the run writes through: every call goes on to
     /// `inner`, and each event `inner` accepted reaches this
-    /// conversation.
+    /// conversation. `inner` is taken in each form in which a run's
+    /// setup takes a recorder: the recorder itself, an `Arc` of it, or
+    /// an `Arc<dyn RunRecorder>`.
     #[must_use]
-    pub fn recorder(&self, inner: Arc<dyn RunRecorder>) -> Arc<dyn RunRecorder> {
-        Arc::new(ConversationRecorder::new(self.clone(), inner))
+    pub fn recorder(&self, inner: impl IntoShared<dyn RunRecorder>) -> Arc<dyn RunRecorder> {
+        Arc::new(ConversationRecorder::new(self.clone(), inner.into_shared()))
     }
 
     /// Parses the agent `name` on `host` on the blocking pool, then runs
