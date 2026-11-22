@@ -2,15 +2,17 @@
 //! to the inner recorder, and what the inner recorder accepted also
 //! reaches the conversation.
 //!
-//! The tee notes the run the inner recorder begins and hands each event
-//! record the inner recorder accepted to the conversation, so the record,
-//! the live broadcast, and the transcript agree event for event. A refused write
+//! The tee notes the run the inner recorder begins. The Harness hands it
+//! each event with the event's record. The tee passes both on to the
+//! inner recorder, and it hands the event to the conversation once the
+//! inner recorder has accepted the record, so the record, the live
+//! broadcast, and the transcript agree event for event. A refused write
 //! is returned as the inner recorder's own, and its event reaches no one.
 
 use std::sync::Arc;
 
 use runvil::event::Event;
-use runvil::harness::{Record, RecordKind, RunId, RunMeta, RunRecorder};
+use runvil::harness::{Record, RunId, RunMeta, RunRecorder};
 use runvil::{BoxFuture, Error};
 
 use crate::conversation::Conversation;
@@ -41,22 +43,18 @@ impl RunRecorder for ConversationRecorder {
     }
 
     fn append(&self, run: RunId, record: Record) -> BoxFuture<'_, Result<(), Error>> {
+        self.inner.append(run, record)
+    }
+
+    fn append_event<'a>(
+        &'a self,
+        run: RunId,
+        record: Record,
+        event: &'a Event,
+    ) -> BoxFuture<'a, Result<(), Error>> {
         Box::pin(async move {
-            let event = (record.kind == RecordKind::Event).then(|| record.payload.clone());
-            self.inner.append(run, record).await?;
-            if let Some(payload) = event {
-                // The run serialized this event for the record a moment
-                // ago, so it reads back; a payload that does not is
-                // logged and left out of the transcript.
-                match serde_json::from_value::<Event>(payload) {
-                    Ok(event) => self.conversation.observe(&event),
-                    Err(error) => tracing::error!(
-                        conversation = %self.conversation.id(),
-                        %error,
-                        "a recorded event did not read back; the transcript skips it"
-                    ),
-                }
-            }
+            self.inner.append_event(run, record, event).await?;
+            self.conversation.observe(event);
             Ok(())
         })
     }

@@ -47,6 +47,8 @@ fn record(kind: RecordKind, event: &Event) -> Record {
 
 /// An inner recorder that notes, at each append, how many entries the
 /// conversation's transcript already held, and refuses appends on demand.
+/// It leaves `append_event` at its default, so the record of an event
+/// reaches its `append` as every other record does.
 struct Watching {
     inner: MemoryRecorder,
     conversation: Conversation,
@@ -96,7 +98,8 @@ async fn the_tee_adds_an_event_to_the_transcript_after_the_inner_recorder_accept
     let (conversation, inner, tee) = watched(false);
     let mut live = conversation.subscribe_events();
     let run = tee.begin_run(meta()).await.unwrap();
-    tee.append(run, record(RecordKind::Event, &section_started()))
+    let event = section_started();
+    tee.append_event(run, record(RecordKind::Event, &event), &event)
         .await
         .unwrap();
     assert_eq!(
@@ -123,8 +126,9 @@ async fn the_tee_returns_the_inner_recorders_refusal_and_keeps_the_event_out() {
     let (conversation, _inner, tee) = watched(true);
     let mut live = conversation.subscribe_events();
     let run = tee.begin_run(meta()).await.unwrap();
+    let event = section_started();
     let refusal = tee
-        .append(run, record(RecordKind::Event, &section_started()))
+        .append_event(run, record(RecordKind::Event, &event), &event)
         .await
         .expect_err("the inner recorder's refusal is the tee's");
     assert_eq!(
@@ -179,7 +183,7 @@ async fn recorded_turn_failures_report_their_kind_and_section() {
         provenance: provenance(),
     };
     for event in [&model, &tool] {
-        tee.append(run, record(RecordKind::Event, event))
+        tee.append_event(run, record(RecordKind::Event, event), event)
             .await
             .unwrap();
     }
