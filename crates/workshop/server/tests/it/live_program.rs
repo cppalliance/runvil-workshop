@@ -36,12 +36,11 @@ use serde_json::{Value, json};
 use crate::common::{JsonSocket, plugin_dir};
 use crate::live::STEP;
 
-/// The Workshop program this test started, in a session of its own with
-/// every process it starts. All of them are killed when the value is
-/// dropped.
-struct OwnWorkshop(Child);
+/// A program this suite started, in a session of its own with every
+/// process it starts. All of them are killed when the value is dropped.
+pub(crate) struct OwnSession(Child);
 
-impl OwnWorkshop {
+impl OwnSession {
     /// The id of the session the program leads, which is its process id.
     fn session(&self) -> String {
         self.0.id().to_string()
@@ -78,7 +77,7 @@ impl OwnWorkshop {
     }
 }
 
-impl Drop for OwnWorkshop {
+impl Drop for OwnSession {
     fn drop(&mut self) {
         // The program runs under three wrappers, and its message bus
         // starts helpers of its own, so the whole session goes.
@@ -97,37 +96,57 @@ impl Drop for OwnWorkshop {
     }
 }
 
-/// Starts the Workshop program the environment names in `folder`, with
-/// the home folder `home`, in a session of its own, on a display and a
-/// message bus of its own.
-fn own_workshop(folder: &Path, home: &str) -> OwnWorkshop {
-    let program = workshop_program();
+/// Starts `command` in `folder`, with the home folder `home`, in a
+/// session of its own, on a display and a message bus of its own.
+pub(crate) fn own_session(folder: &Path, home: &str, command: &[&str]) -> OwnSession {
     let log = |name: &str| {
         Stdio::from(std::fs::File::create(folder.join(name)).expect("the log file creates"))
     };
     // `setsid` makes the child the leader of a new session, so the
     // session's id is the child's process id.
     let child = Command::new("setsid")
-        .args(["dbus-run-session", "--", "xvfb-run", "-a", &program])
+        .args(["dbus-run-session", "--", "xvfb-run", "-a"])
+        .args(command)
         .env("HOME", home)
-        // With these two, the program can only draw on the display that
+        // With these two, a window can only be drawn on the display that
         // `xvfb-run` makes, never on the person's own session.
         .env_remove("WAYLAND_DISPLAY")
         .env("GDK_BACKEND", "x11")
         .current_dir(folder)
         .stdin(Stdio::null())
-        .stdout(log("workshop.stdout.log"))
-        .stderr(log("workshop.stderr.log"))
+        .stdout(log("stdout.log"))
+        .stderr(log("stderr.log"))
         .spawn()
-        .expect("the Workshop program starts");
-    OwnWorkshop(child)
+        .expect("the program starts");
+    OwnSession(child)
+}
+
+/// A new folder for the Workshop program to start in. The program reads
+/// the first `workshop.toml` it finds, beside itself and then in the
+/// folder it starts in, and keeps its state beside that file.
+/// [`workshop_program`] refuses a program with a file beside it, so the
+/// program reads this one. The file must name a Gateway; this one names
+/// an address nothing listens on, so a Gateway the program uses can only
+/// be one it found through a discovery file or started itself.
+pub(crate) fn settings_folder() -> tempfile::TempDir {
+    let folder = tempfile::TempDir::new().expect("tempdir");
+    std::fs::write(
+        folder.path().join("workshop.toml"),
+        format!(
+            "[gateway]\nbase_url = \"http://127.0.0.1:1\"\napi_key = \"unused\"\n\n\
+             [agents]\nplugins = {:?}\n",
+            plugin_dir().display().to_string()
+        ),
+    )
+    .expect("the settings file writes");
+    folder
 }
 
 /// The Workshop program the environment names. A `workshop.toml` beside
-/// the program would win over the one the test writes, and the test
-/// would then run on that file's settings and keep its state beside it.
-/// So a program with such a file is refused.
-fn workshop_program() -> String {
+/// the program would win over the one in [`settings_folder`], and the
+/// tests would then run on that file's settings and keep their state
+/// beside it. So a program with such a file is refused.
+pub(crate) fn workshop_program() -> String {
     let program = std::env::var("RUNVIL_E2E_WORKSHOP_BIN")
         .expect("RUNVIL_E2E_WORKSHOP_BIN is the Workshop program to start");
     // Workshop looks beside the file a link leads to, so the link is
@@ -144,7 +163,7 @@ fn workshop_program() -> String {
 }
 
 /// The loopback port on which the program serves Workshop's page.
-async fn served_port(workshop: &OwnWorkshop) -> u16 {
+async fn served_port(workshop: &OwnSession) -> u16 {
     let client = reqwest::Client::new();
     tokio::time::timeout(STEP, async {
         loop {
@@ -188,23 +207,8 @@ async fn the_workshop_program_reports_the_running_gateways_address_and_its_chat_
         "a Gateway must be running at {gateway} before this test starts"
     );
 
-    // The program reads the first `workshop.toml` it finds, beside itself
-    // and then in the folder it starts in, and keeps its state beside that
-    // file. `workshop_program` refuses a program with a file beside it, so
-    // the program reads this one. The file must name a Gateway; this one names
-    // an address nothing listens on, so the address the program reports
-    // can only have come from the running Gateway's discovery file.
-    let folder = tempfile::TempDir::new().expect("tempdir");
-    std::fs::write(
-        folder.path().join("workshop.toml"),
-        format!(
-            "[gateway]\nbase_url = \"http://127.0.0.1:1\"\napi_key = \"unused\"\n\n\
-             [agents]\nplugins = {:?}\n",
-            plugin_dir().display().to_string()
-        ),
-    )
-    .expect("the settings file writes");
-    let workshop = own_workshop(folder.path(), &home);
+    let folder = settings_folder();
+    let workshop = own_session(folder.path(), &home, &[&workshop_program()]);
     let port = served_port(&workshop).await;
 
     let reported = tokio::time::timeout(STEP, async {
