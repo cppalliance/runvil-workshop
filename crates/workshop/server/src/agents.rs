@@ -19,14 +19,17 @@
 //! search. Each launch opens a conversation in `workshop-agents` and builds
 //! that conversation's one run its own [`RunSetup`]: the conversation's
 //! recorder tee on a handle of the run log's [`TursoRecorder`] that names
-//! the launched agent, a per-run broker over the server's inference broker
-//! ([`broker`]), the stock tokio timer of the Gateway client, and a user,
-//! the conversation's operator, so the run holds
+//! the launched agent, the server's inference broker ([`broker`]), the
+//! stock tokio timer of the Gateway client, a user, the conversation's
+//! operator, so the run holds
 //! `runvil/user`; the operator's messages reach the run's main chain
-//! through the conversation. The run makes its own instance of each Pack
+//! through the conversation, and a streaming callback that publishes each
+//! live piece of a section's own round into the conversation under the
+//! round's id. The run makes its own instance of each Pack
 //! it holds and drops them when it ends. The run's model rounds reach the
-//! gateway only through its per-run broker, which follows the live gateway
-//! binding and sends each round to the dropdown's current pick. Each
+//! gateway only through the server's inference broker, which follows the
+//! live gateway binding and sends each round to the dropdown's current
+//! pick. Each
 //! run's filesystem is an in-memory root, with a read-only mount beside it
 //! for each of two demos whose switch is on: the language guide, and the
 //! machine's C drive (`language_guide`). Both switches are committed as
@@ -65,12 +68,14 @@ use std::sync::Arc;
 use harness_gateway_client::{
     GatewayEndpoint, SecretString, TokioTimer, provide_gateway_resources,
 };
+use runvil::effect::Round;
 use runvil::harness::{HostResources, RunId, insert_plugin_dir};
 use runvil::plugin::PackRegistry;
 use runvil::{Error, ErrorCode, ErrorFact, Host, PromptFinder, RunSetup};
 use serde_json::Value;
 use workshop_agents::{
-    Conversation, ConversationId, Conversations, LaunchError, discover_agents, load_agent,
+    Conversation, ConversationId, Conversations, DeltaKind, LaunchError, discover_agents,
+    load_agent,
 };
 use workshop_gateway::GatewayHandles;
 use workshop_registry::Registry;
@@ -78,7 +83,7 @@ use workshop_run_log::TursoRecorder;
 use workshop_support::{Config, ReconnectBackoff};
 
 use bindings::with_host_state;
-use broker::{RunBroker, WorkshopBroker};
+use broker::WorkshopBroker;
 use gateway::{UsableGateway, usable_gateway};
 use socket::Receivers;
 pub(crate) use state::{SessionsState, register};
@@ -341,7 +346,7 @@ struct Inner {
     /// The run log every run is recorded in, through a handle naming its
     /// agent behind each run's tee.
     recorder: Arc<TursoRecorder>,
-    /// The inference broker behind each run's broker.
+    /// The inference broker every run's setup holds.
     broker: WorkshopBroker,
     /// What every run shares: the installed Packs each run makes its
     /// instances of, the built-ins among them, and the finder that reads
@@ -462,15 +467,19 @@ impl AgentSessions {
     }
 
     /// The setup of `conversation`'s run before the Host state is read:
-    /// its recorder tee over a run-log handle naming its agent, its broker,
-    /// the stock tokio timer, its filesystem, and a user, since every
-    /// conversation has an operator.
+    /// its recorder tee over a run-log handle naming its agent, the
+    /// server's inference broker, the stock tokio timer, its filesystem, a
+    /// user, since every conversation has an operator, and the streaming
+    /// callback that publishes each live piece into the conversation.
     fn setup_for(&self, conversation: &Conversation) -> RunSetup {
         let recorder = conversation.recorder(self.inner.recorder.for_agent(conversation.agent()));
-        let broker = RunBroker::new(self.inner.broker.clone(), conversation.clone());
-        RunSetup::new(recorder, broker, TokioTimer)
+        // The broker is a handle, and the setup owns one. The callback is
+        // `'static`, and the caller still needs the conversation to run
+        // the run, so the callback takes a handle to it.
+        RunSetup::new(recorder, self.inner.broker.clone(), TokioTimer)
             .vfs(language_guide::run_vfs())
             .has_user(true)
+            .streaming(live_pieces(conversation.clone()))
     }
 
     /// The running conversation with this id, when one exists: how a
@@ -493,6 +502,25 @@ impl AgentSessions {
     #[must_use]
     pub fn run_id(&self, id: &str) -> Option<RunId> {
         self.get(id)?.run_id()
+    }
+}
+
+/// The run's streaming callback: publishes each live piece of a section's
+/// own round into `conversation`, under the round's id. It sends on the
+/// conversation's own broadcast and returns, and it calls nothing of the
+/// Harness.
+fn live_pieces(
+    conversation: Conversation,
+) -> impl Fn(Round, runvil::harness::Delta) + Send + Sync + 'static {
+    move |round, piece| {
+        let (kind, content) = match piece {
+            runvil::harness::Delta::Text(text) => (DeltaKind::Text, text),
+            runvil::harness::Delta::Reasoning(text) => (DeltaKind::Reasoning, text),
+            // The enum is non-exhaustive across the crate seam; any other
+            // piece has no delta kind and stays unshown.
+            _ => return,
+        };
+        conversation.publish_delta(round.id, kind, content);
     }
 }
 

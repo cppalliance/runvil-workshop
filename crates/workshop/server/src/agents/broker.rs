@@ -1,7 +1,8 @@
-//! The agent conversations' inference brokers: [`WorkshopBroker`], which
+//! The agent conversations' inference broker: [`WorkshopBroker`], which
 //! sends every model round and model list through the current Gateway
-//! generation, and [`RunBroker`], one run's view of it, which streams the
-//! run's own rounds into its conversation.
+//! generation. It streams: each round's callback for live pieces goes on
+//! to the Gateway broker that serves the round, and the broker says so
+//! through `supports_streaming`.
 //!
 //! The Workshop broker holds the server's [`Registry`] and reads the
 //! gateway through it on every call, as the resources for the library
@@ -18,16 +19,14 @@
 use std::num::NonZeroU32;
 use std::sync::{Arc, Mutex, PoisonError};
 
-use harness_gateway_client::{GatewayBroker, StreamDelta};
+use harness_gateway_client::GatewayBroker;
 use runvil::effect::Round;
-use runvil::event::ReplyOrigin;
-use runvil::harness::InferenceBroker;
+use runvil::harness::{InferenceBroker, PieceSink};
 use runvil::model::{
     Completion, CompletionOptions, Message, ModelBinding, ModelCatalog, ToolSchema,
     make_completion_error, phrase,
 };
 use runvil::{BoxFuture, Error, ErrorCode};
-use workshop_agents::{Conversation, DeltaKind};
 use workshop_menu::{CatalogBus, MenuHandles};
 use workshop_registry::Registry;
 
@@ -115,26 +114,6 @@ impl WorkshopBroker {
         }
         options.with_model(pick)
     }
-
-    /// Runs one round through the current generation's Gateway broker,
-    /// sent to the dropdown's current pick, handing `on_piece` each live
-    /// piece of the reply as it arrives.
-    fn chat_streaming(
-        &self,
-        binding: ModelBinding,
-        messages: Vec<Message>,
-        tools: Vec<ToolSchema>,
-        options: CompletionOptions,
-        on_piece: Arc<dyn Fn(StreamDelta) + Send + Sync>,
-    ) -> BoxFuture<'static, Result<Box<Completion>, Error>> {
-        match self.current() {
-            Ok(broker) => {
-                let options = self.routed(&binding, options);
-                broker.chat_streaming(binding, messages, tools, options, on_piece)
-            }
-            Err(error) => Box::pin(async move { Err(error) }),
-        }
-    }
 }
 
 impl InferenceBroker for WorkshopBroker {
@@ -146,6 +125,14 @@ impl InferenceBroker for WorkshopBroker {
         })
     }
 
+    fn supports_streaming(&self) -> bool {
+        // Every broker it serves a round through is a `GatewayBroker`.
+        true
+    }
+
+    /// Runs one round through the current generation's Gateway broker,
+    /// sent to the dropdown's current pick, handing `on_piece` each live
+    /// piece of the reply as it arrives.
     fn chat(
         &self,
         binding: ModelBinding,
@@ -153,11 +140,12 @@ impl InferenceBroker for WorkshopBroker {
         tools: Vec<ToolSchema>,
         options: CompletionOptions,
         round: Round,
+        on_piece: Option<PieceSink>,
     ) -> BoxFuture<'static, Result<Box<Completion>, Error>> {
         match self.current() {
             Ok(broker) => {
                 let options = self.routed(&binding, options);
-                broker.chat(binding, messages, tools, options, round)
+                broker.chat(binding, messages, tools, options, round, on_piece)
             }
             Err(error) => Box::pin(async move { Err(error) }),
         }
@@ -179,58 +167,6 @@ fn narrower_pick_window(
         .and_then(|model| model.get("context"))
         .and_then(serde_json::Value::as_u64)
         .filter(|window| *window < u64::from(bound.get()))
-}
-
-/// One run's broker over the Workshop broker: a section's own round
-/// streams its live pieces into the run's conversation, stamped with the
-/// round's id, and every other call goes through as it came.
-pub(super) struct RunBroker {
-    inner: WorkshopBroker,
-    conversation: Conversation,
-}
-
-impl RunBroker {
-    /// The broker for `conversation`'s run over `inner`.
-    pub(super) fn new(inner: WorkshopBroker, conversation: Conversation) -> Self {
-        Self {
-            inner,
-            conversation,
-        }
-    }
-}
-
-impl InferenceBroker for RunBroker {
-    fn models(&self) -> BoxFuture<'static, Result<ModelCatalog, Error>> {
-        self.inner.models()
-    }
-
-    fn chat(
-        &self,
-        binding: ModelBinding,
-        messages: Vec<Message>,
-        tools: Vec<ToolSchema>,
-        options: CompletionOptions,
-        round: Round,
-    ) -> BoxFuture<'static, Result<Box<Completion>, Error>> {
-        // Only a section's own round has a live reader; a nested
-        // `models.infer` round is read whole from its answer.
-        if round.origin != ReplyOrigin::Chat {
-            return self.inner.chat(binding, messages, tools, options, round);
-        }
-        let conversation = self.conversation.clone();
-        let on_piece = Arc::new(move |piece: StreamDelta| {
-            let (kind, content) = match piece {
-                StreamDelta::Text(text) => (DeltaKind::Text, text),
-                StreamDelta::Reasoning(text) => (DeltaKind::Reasoning, text),
-                // The enum is non-exhaustive across the crate seam; any
-                // other piece has no delta kind and stays unshown.
-                _ => return,
-            };
-            conversation.publish_delta(round.id, kind, content);
-        });
-        self.inner
-            .chat_streaming(binding, messages, tools, options, on_piece)
-    }
 }
 
 /// Waits until `catalog` holds a chat-capable model. The watch is taken

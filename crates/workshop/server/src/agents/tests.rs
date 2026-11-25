@@ -22,8 +22,10 @@
 //! the std library's `Read`, `Write`, `StrReplace`, and `Delete` tools
 //! and through the bashkit library's `Shell` tool, and the Host reads
 //! each change back after the run. A Host with no Plugin directory
-//! refuses a prompt that requires `std`, `bash`, or `web`. The Gateway
-//! that a tool call of a library Plugin is lent has its tests in
+//! refuses a prompt that requires `std`, `bash`, or `web`. A run's
+//! streaming callback publishes each piece it is handed into its
+//! conversation, under the id of the round the piece belongs to. The
+//! Gateway that a tool call of a library Plugin is lent has its tests in
 //! `gateway`.
 
 use std::env::consts::{DLL_EXTENSION, DLL_PREFIX, DLL_SUFFIX};
@@ -33,16 +35,19 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use harness_gateway_client::TokioTimer;
-use runvil::harness::{MemoryRecorder, OfflineBroker, PluginReport, PluginSource};
+use runvil::effect::Round;
+use runvil::event::ReplyOrigin;
+use runvil::harness::{Delta, MemoryRecorder, OfflineBroker, PluginReport, PluginSource};
+use runvil::ids::RoundId;
 use runvil::vfs::{Origin, VfsRef};
 use runvil::{Error, ErrorCode, ErrorFact, Host, PromptFinder, RunSetup};
 use serde_json::json;
-use workshop_agents::{Conversations, SessionState, load_agent};
+use workshop_agents::{Conversations, DeltaKind, SessionState, load_agent};
 use workshop_registry::Registry;
 
 use super::{
-    PluginListing, SHIPPED_PACKS, agent_finder, holds, list_plugin_dir, read_mcp_servers,
-    resources, server_host, with_plugins,
+    PluginListing, SHIPPED_PACKS, agent_finder, holds, list_plugin_dir, live_pieces,
+    read_mcp_servers, resources, server_host, with_plugins,
 };
 
 #[path = "tests-gateway.rs"]
@@ -736,5 +741,31 @@ fn a_valid_mcp_file_reads_back_its_servers_object_and_ignores_other_keys() {
             "docs": { "url": "https://example.test/docs" }
         }),
         "the servers object is handed on verbatim, names and entries alike"
+    );
+}
+
+#[test]
+fn the_streaming_callback_publishes_each_piece_into_its_conversation_under_the_round_id() {
+    let conversation = Conversations::new().open("chat");
+    let mut deltas = conversation.subscribe_deltas();
+    let sink = live_pieces(conversation);
+    let round = Round::new(RoundId::new(3), ReplyOrigin::Chat);
+
+    sink(round, Delta::Text("one ".to_owned()));
+    sink(round, Delta::Reasoning("hmm".to_owned()));
+
+    let text = deltas.try_recv().expect("the text piece was published");
+    assert_eq!(text.kind, DeltaKind::Text);
+    assert_eq!(text.content, "one ");
+    assert_eq!(text.reply, 3, "the piece carries its round's id");
+    let reasoning = deltas
+        .try_recv()
+        .expect("the reasoning piece was published");
+    assert_eq!(reasoning.kind, DeltaKind::Reasoning);
+    assert_eq!(reasoning.content, "hmm");
+    assert_eq!(reasoning.reply, 3, "the piece carries its round's id");
+    assert!(
+        deltas.try_recv().is_err(),
+        "each piece is published once, and nothing else is"
     );
 }

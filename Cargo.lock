@@ -2242,7 +2242,7 @@ dependencies = [
 [[package]]
 name = "harness-gateway-client"
 version = "0.3.0"
-source = "git+https://github.com/cppalliance/runvil-harness?rev=ee89d0882ec8cecfcd0159c7f61c6741fceef612#ee89d0882ec8cecfcd0159c7f61c6741fceef612"
+source = "git+https://github.com/cppalliance/runvil-harness?rev=7a106571aa69d17489556082e67d3cfbbb247152#7a106571aa69d17489556082e67d3cfbbb247152"
 dependencies = [
  "bytes",
  "reqwest",
@@ -2256,7 +2256,7 @@ dependencies = [
 [[package]]
 name = "harness-plugin-loader"
 version = "0.3.0"
-source = "git+https://github.com/cppalliance/runvil-harness?rev=ee89d0882ec8cecfcd0159c7f61c6741fceef612#ee89d0882ec8cecfcd0159c7f61c6741fceef612"
+source = "git+https://github.com/cppalliance/runvil-harness?rev=7a106571aa69d17489556082e67d3cfbbb247152#7a106571aa69d17489556082e67d3cfbbb247152"
 dependencies = [
  "libloading 0.8.9",
  "runvil-plugin",
@@ -2267,7 +2267,7 @@ dependencies = [
 [[package]]
 name = "harness-runner"
 version = "0.3.0"
-source = "git+https://github.com/cppalliance/runvil-harness?rev=ee89d0882ec8cecfcd0159c7f61c6741fceef612#ee89d0882ec8cecfcd0159c7f61c6741fceef612"
+source = "git+https://github.com/cppalliance/runvil-harness?rev=7a106571aa69d17489556082e67d3cfbbb247152#7a106571aa69d17489556082e67d3cfbbb247152"
 dependencies = [
  "futures-util",
  "harness-plugin-loader",
@@ -4058,7 +4058,7 @@ dependencies = [
 [[package]]
 name = "plugin-mcp"
 version = "0.3.0"
-source = "git+https://github.com/cppalliance/runvil-harness?rev=ee89d0882ec8cecfcd0159c7f61c6741fceef612#ee89d0882ec8cecfcd0159c7f61c6741fceef612"
+source = "git+https://github.com/cppalliance/runvil-harness?rev=7a106571aa69d17489556082e67d3cfbbb247152#7a106571aa69d17489556082e67d3cfbbb247152"
 dependencies = [
  "reqwest",
  "rmcp",
@@ -4726,7 +4726,7 @@ dependencies = [
 [[package]]
 name = "runvil"
 version = "0.3.0"
-source = "git+https://github.com/cppalliance/runvil-harness?rev=ee89d0882ec8cecfcd0159c7f61c6741fceef612#ee89d0882ec8cecfcd0159c7f61c6741fceef612"
+source = "git+https://github.com/cppalliance/runvil-harness?rev=7a106571aa69d17489556082e67d3cfbbb247152#7a106571aa69d17489556082e67d3cfbbb247152"
 dependencies = [
  "harness-plugin-loader",
  "harness-runner",
@@ -4737,7 +4737,7 @@ dependencies = [
 [[package]]
 name = "runvil-engine"
 version = "0.3.0"
-source = "git+https://github.com/cppalliance/runvil-harness?rev=ee89d0882ec8cecfcd0159c7f61c6741fceef612#ee89d0882ec8cecfcd0159c7f61c6741fceef612"
+source = "git+https://github.com/cppalliance/runvil-harness?rev=7a106571aa69d17489556082e67d3cfbbb247152#7a106571aa69d17489556082e67d3cfbbb247152"
 dependencies = [
  "runvil-lua",
  "runvil-model-client",
@@ -4750,7 +4750,7 @@ dependencies = [
 [[package]]
 name = "runvil-lua"
 version = "0.3.0"
-source = "git+https://github.com/cppalliance/runvil-harness?rev=ee89d0882ec8cecfcd0159c7f61c6741fceef612#ee89d0882ec8cecfcd0159c7f61c6741fceef612"
+source = "git+https://github.com/cppalliance/runvil-harness?rev=7a106571aa69d17489556082e67d3cfbbb247152#7a106571aa69d17489556082e67d3cfbbb247152"
 dependencies = [
  "mlua",
  "runvil-markdown",
@@ -4764,7 +4764,7 @@ dependencies = [
 [[package]]
 name = "runvil-markdown"
 version = "0.3.0"
-source = "git+https://github.com/cppalliance/runvil-harness?rev=ee89d0882ec8cecfcd0159c7f61c6741fceef612#ee89d0882ec8cecfcd0159c7f61c6741fceef612"
+source = "git+https://github.com/cppalliance/runvil-harness?rev=7a106571aa69d17489556082e67d3cfbbb247152#7a106571aa69d17489556082e67d3cfbbb247152"
 dependencies = [
  "pulldown-cmark",
  "serde_json",
@@ -4774,7 +4774,7 @@ dependencies = [
 [[package]]
 name = "runvil-model-client"
 version = "0.3.0"
-source = "git+https://github.com/cppalliance/runvil-harness?rev=ee89d0882ec8cecfcd0159c7f61c6741fceef612#ee89d0882ec8cecfcd0159c7f61c6741fceef612"
+source = "git+https://github.com/cppalliance/runvil-harness?rev=7a106571aa69d17489556082e67d3cfbbb247152#7a106571aa69d17489556082e67d3cfbbb247152"
 dependencies = [
  "runvil-types",
  "serde",
@@ -4784,7 +4784,7 @@ dependencies = [
 [[package]]
 name = "runvil-plugin"
 version = "0.3.0"
-source = "git+https://github.com/cppalliance/runvil-harness?rev=ee89d0882ec8cecfcd0159c7f61c6741fceef612#ee89d0882ec8cecfcd0159c7f61c6741fceef612"
+source = "git+https://github.com/cppalliance/runvil-harness?rev=7a106571aa69d17489556082e67d3cfbbb247152#7a106571aa69d17489556082e67d3cfbbb247152"
 dependencies = [
  "runvil-types",
  "runvil-vfs",
@@ -4807,7 +4807,7 @@ source = "git+https://github.com/cppalliance/runvil-plugin-api?rev=74f9e08ba9cc5
 [[package]]
 name = "runvil-prompt"
 version = "0.3.0"
-source = "git+https://github.com/cppalliance/runvil-harness?rev=ee89d0882ec8cecfcd0159c7f61c6741fceef612#ee89d0882ec8cecfcd0159c7f61c6741fceef612"
+source = "git+https://github.com/cppalliance/runvil-harness?rev=7a106571aa69d17489556082e67d3cfbbb247152#7a106571aa69d17489556082e67d3cfbbb247152"
 dependencies = [
  "pulldown-cmark",
  "runvil-lua",
@@ -4820,7 +4820,7 @@ dependencies = [
 [[package]]
 name = "runvil-runtime"
 version = "0.3.0"
-source = "git+https://github.com/cppalliance/runvil-harness?rev=ee89d0882ec8cecfcd0159c7f61c6741fceef612#ee89d0882ec8cecfcd0159c7f61c6741fceef612"
+source = "git+https://github.com/cppalliance/runvil-harness?rev=7a106571aa69d17489556082e67d3cfbbb247152#7a106571aa69d17489556082e67d3cfbbb247152"
 dependencies = [
  "mlua",
  "regex",
@@ -4838,7 +4838,7 @@ dependencies = [
 [[package]]
 name = "runvil-types"
 version = "0.3.0"
-source = "git+https://github.com/cppalliance/runvil-harness?rev=ee89d0882ec8cecfcd0159c7f61c6741fceef612#ee89d0882ec8cecfcd0159c7f61c6741fceef612"
+source = "git+https://github.com/cppalliance/runvil-harness?rev=7a106571aa69d17489556082e67d3cfbbb247152#7a106571aa69d17489556082e67d3cfbbb247152"
 dependencies = [
  "serde",
  "serde_json",
@@ -4848,7 +4848,7 @@ dependencies = [
 [[package]]
 name = "runvil-vfs"
 version = "0.3.0"
-source = "git+https://github.com/cppalliance/runvil-harness?rev=ee89d0882ec8cecfcd0159c7f61c6741fceef612#ee89d0882ec8cecfcd0159c7f61c6741fceef612"
+source = "git+https://github.com/cppalliance/runvil-harness?rev=7a106571aa69d17489556082e67d3cfbbb247152#7a106571aa69d17489556082e67d3cfbbb247152"
 
 [[package]]
 name = "rust-embed"

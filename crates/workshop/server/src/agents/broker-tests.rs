@@ -3,10 +3,10 @@
 //! with no URL or key in the message, after a replacement binding is
 //! published the next round and the next model list reach the
 //! replacement, a model list waits while the menu's catalog holds no
-//! chat-capable model, a streaming round hands its pieces to its callback
-//! and answers whole, a run's broker streams only its section's own
-//! rounds into the conversation, and the window comparison flags a pick
-//! whose context window is smaller than the round's binding's.
+//! chat-capable model, the broker says it streams, a round hands its
+//! pieces to its callback and answers whole, and the window comparison
+//! flags a pick whose context window is smaller than the round's
+//! binding's.
 
 use std::num::NonZeroU32;
 use std::sync::{Arc, Mutex, PoisonError};
@@ -16,22 +16,20 @@ use axum::Router;
 use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
-use harness_gateway_client::StreamDelta;
 use runvil::effect::Round;
 use runvil::event::ReplyOrigin;
-use runvil::harness::InferenceBroker;
+use runvil::harness::{Delta, InferenceBroker, PieceSink};
 use runvil::ids::RoundId;
 use runvil::model::{
     CompletionOptions, CompletionResult, Message, ModelBinding, ModelId, ModelInvocation, phrase,
 };
 use runvil::{Error, ErrorCode};
 use serde_json::json;
-use workshop_agents::{Conversations, DeltaKind};
 use workshop_gateway::{GatewayBinding, GatewayHandles, GatewayHealth};
 use workshop_menu::{CatalogBus, MenuBus};
 use workshop_registry::{Registration, Registry};
 
-use super::{RunBroker, WorkshopBroker, narrower_pick_window};
+use super::{WorkshopBroker, narrower_pick_window};
 use crate::app::test_helpers::spawn_gateway;
 
 /// A registry holding gateway handles bound to `base_url` under `key`,
@@ -121,6 +119,7 @@ async fn round(broker: &WorkshopBroker) -> Result<String, Error> {
             Vec::new(),
             CompletionOptions::new("m"),
             Round::new(RoundId::new(0), ReplyOrigin::Infer),
+            None,
         )
         .await?;
     match completion.result() {
@@ -131,20 +130,24 @@ async fn round(broker: &WorkshopBroker) -> Result<String, Error> {
 
 /// Runs one streaming round on `broker` and returns its reply text beside
 /// every piece its callback was handed.
-async fn streamed_round(broker: &WorkshopBroker) -> (Result<String, Error>, Vec<StreamDelta>) {
-    let kept: Arc<Mutex<Vec<StreamDelta>>> = Arc::default();
+async fn streamed_round(broker: &WorkshopBroker) -> (Result<String, Error>, Vec<Delta>) {
+    let kept: Arc<Mutex<Vec<Delta>>> = Arc::default();
+    // The callback moves into the round, so the helper keeps this second
+    // handle to read what the callback was handed.
     let sink = Arc::clone(&kept);
+    let on_piece: PieceSink = Arc::new(move |piece| {
+        sink.lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(piece);
+    });
     let completion = broker
-        .chat_streaming(
+        .chat(
             binding(),
             vec![Message::user("hi")],
             Vec::new(),
             CompletionOptions::new("m"),
-            Arc::new(move |piece| {
-                sink.lock()
-                    .unwrap_or_else(PoisonError::into_inner)
-                    .push(piece);
-            }),
+            Round::new(RoundId::new(0), ReplyOrigin::Chat),
+            Some(on_piece),
         )
         .await;
     let reply = completion.map(|completion| match completion.result() {
@@ -196,6 +199,7 @@ async fn a_streaming_round_hands_its_pieces_to_the_callback_and_answers_whole() 
     let gateway = spawn_gateway(keyed_gateway("first-model", "first-key")).await;
     let (registry, _binding, _guard) = registry_with_gateway(&gateway, "first-key");
     let broker = WorkshopBroker::new(registry);
+    assert!(broker.supports_streaming(), "the Workshop broker streams");
 
     let (reply, pieces) = streamed_round(&broker).await;
     assert_eq!(
@@ -205,7 +209,7 @@ async fn a_streaming_round_hands_its_pieces_to_the_callback_and_answers_whole() 
     );
     assert_eq!(
         pieces,
-        [StreamDelta::Text("from first-model".to_owned())],
+        [Delta::Text("from first-model".to_owned())],
         "the reply's one content chunk reaches the callback as it arrives"
     );
 }
@@ -283,53 +287,6 @@ async fn a_model_list_waits_until_the_catalog_holds_a_chat_capable_model() {
         .expect("the list answers once a chat-capable model is published")
         .expect("the gateway lists");
     assert_eq!(models, ["first-model"], "the list is the gateway's own");
-}
-
-/// Runs one round of `origin` numbered `id` on a conversation's run
-/// broker and returns its reply text.
-async fn run_round(broker: &RunBroker, id: u64, origin: ReplyOrigin) -> String {
-    let completion = broker
-        .chat(
-            binding(),
-            vec![Message::user("hi")],
-            Vec::new(),
-            CompletionOptions::new("m"),
-            Round::new(RoundId::new(id), origin),
-        )
-        .await
-        .expect("the gateway answers");
-    match completion.result() {
-        CompletionResult::Text(text) => text.clone(),
-        other => panic!("the round replies with text: {other:?}"),
-    }
-}
-
-#[tokio::test]
-async fn a_sections_round_streams_into_its_conversation_under_the_round_id_and_an_infer_round_does_not()
- {
-    let gateway = spawn_gateway(keyed_gateway("first-model", "first-key")).await;
-    let (registry, _binding, _guard) = registry_with_gateway(&gateway, "first-key");
-    let conversation = Conversations::new().open("chat");
-    let mut deltas = conversation.subscribe_deltas();
-    let broker = RunBroker::new(WorkshopBroker::new(registry), conversation);
-
-    assert_eq!(
-        run_round(&broker, 4, ReplyOrigin::Infer).await,
-        "from first-model"
-    );
-    assert!(
-        deltas.try_recv().is_err(),
-        "a nested infer round streams nothing"
-    );
-
-    assert_eq!(
-        run_round(&broker, 3, ReplyOrigin::Chat).await,
-        "from first-model"
-    );
-    let delta = deltas.try_recv().expect("the section's round streamed");
-    assert_eq!(delta.kind, DeltaKind::Text);
-    assert_eq!(delta.content, "from first-model");
-    assert_eq!(delta.reply, 3, "the piece carries its round's id");
 }
 
 #[test]
