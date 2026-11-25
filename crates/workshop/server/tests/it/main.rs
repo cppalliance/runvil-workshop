@@ -13,6 +13,7 @@ mod boot;
 mod chat_gate;
 mod heartbeat;
 mod heartbeat_loop;
+mod live;
 mod realtime_relay;
 mod std_real_directory;
 mod user_state;
