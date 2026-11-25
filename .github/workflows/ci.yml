@@ -492,13 +492,80 @@ jobs:
             exit 1
           fi
 
+  # The ten live tests of workshop-server, which a normal test run skips:
+  # they run Workshop's server, the Workshop program, and its window against
+  # a real Gateway. tools/live-tests.mjs gives each group of tests the
+  # Gateway state it needs, and names what it runs. The chat model is
+  # CheapSeek, a test server that speaks the OpenAI chat API and computes
+  # each reply from fixed rules, so the job runs without a model file or a
+  # provider's key. The Gateway is the release gateway-pin/pin.json names,
+  # which `cargo workshop` places beside the Workshop program it builds.
+  live:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@4dc1969decfa71b34f25aa7f3dd4656654d9ad1e # nextest
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+
+      # The window tests drive Workshop through tauri-driver and WebKit's
+      # own driver, on a display that xvfb-run makes and a message bus that
+      # dbus-run-session makes.
+      - name: Install Tauri and window-test packages
+        timeout-minutes: 20
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev libssl-dev librsvg2-dev \
+            webkit2gtk-driver xvfb xauth dbus lsof
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: crates/workshop/package-lock.json
+
+      - name: Install UI dependencies
+        run: npm ci --prefix crates/workshop
+
+      - name: Stage the pinned Gateway
+        run: node tools/fetch-gateway-sidecar.mjs --target x86_64-unknown-linux-gnu
+
+      - name: Build Workshop beside the Gateway
+        run: cargo workshop
+
+      - name: Install tauri-driver
+        run: cargo install tauri-driver --locked --version 2.1.0
+
+      # The action sets CHEAPSEEK_BASE_URL for the step after it.
+      - name: Start CheapSeek
+        uses: cppalliance/cheapseek@54d18ebefc024fb2bfe86a3556792303829bcd56 # v1.1.0
+
+      - name: Live tests
+        run: node tools/live-tests.mjs
+
+      - name: Remove Gateway sidecar
+        if: always()
+        run: node tools/stage-gateway-sidecar.mjs remove --target x86_64-unknown-linux-gnu
+
+      - name: Clean tree
+        shell: bash
+        run: |
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "the build dirtied the repository:"
+            git status --porcelain
+            exit 1
+          fi
+
   # Single required status check for branch protection: it fails when any
   # job fails or is cancelled, so a cancelled job cannot read as green.
   # needs: is a static list, so every newly added job must be added to it
   # or that job bypasses this gate.
   ci-green:
     runs-on: ubuntu-latest
-    needs: [fmt, clippy, test, docs, check-workshop, check-workshop-linux, ui, supply-chain, dylint]
+    needs: [fmt, clippy, test, docs, check-workshop, check-workshop-linux, ui, supply-chain, dylint, live]
     if: always()
     steps:
       - name: Verify every job succeeded
