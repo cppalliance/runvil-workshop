@@ -25,9 +25,9 @@ repository = "https://github.com/cppalliance/runvil-workshop"
 # Workshop links in. All three name one commit, because two commits would
 # be two copies of every type the crates share. `version` beside `git`
 # keeps cargo-deny's wildcard check quiet.
-runvil = { version = "0.3.0", git = "https://github.com/cppalliance/runvil-harness", rev = "5d9c7bf86539401382aa5187c1b1873ceac38fb6" }
-harness-gateway-client = { version = "0.3.0", git = "https://github.com/cppalliance/runvil-harness", rev = "5d9c7bf86539401382aa5187c1b1873ceac38fb6" }
-plugin-mcp = { version = "0.3.0", git = "https://github.com/cppalliance/runvil-harness", rev = "5d9c7bf86539401382aa5187c1b1873ceac38fb6" }
+runvil = { version = "0.3.0", git = "https://github.com/cppalliance/runvil-harness", rev = "92abc305b9223513621eba95107648bdf8e4e47f" }
+harness-gateway-client = { version = "0.3.0", git = "https://github.com/cppalliance/runvil-harness", rev = "92abc305b9223513621eba95107648bdf8e4e47f" }
+plugin-mcp = { version = "0.3.0", git = "https://github.com/cppalliance/runvil-harness", rev = "92abc305b9223513621eba95107648bdf8e4e47f" }
 # The safe layer over the C Plugin contract, version 0.6, from its own
 # repository, pinned by commit. Only the library Plugin crates under
 # `crates/workshop/` name it, for `export_plugin!`. The commit is the one
