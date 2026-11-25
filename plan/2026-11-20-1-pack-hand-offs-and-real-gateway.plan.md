@@ -7,37 +7,37 @@ todos:
     status: completed
   - id: mcp-servers
     content: "Add the test of the configured MCP servers to crates/workshop/server/src/agents/tests.rs"
-    status: pending
+    status: completed
   - id: web-search
     content: "Add the test of the Gateway a web search is lent to crates/workshop/server/src/agents/tests-gateway.rs"
-    status: pending
+    status: completed
   - id: socket-tests
     content: "Add crates/workshop/server/tests/it/live.rs with the six ignored tests, and name the module in tests/it/main.rs"
-    status: pending
+    status: completed
   - id: kill-test
     content: "Add crates/workshop/server/tests/it/live_stop.rs with the one ignored test, and name it in tests/it/main.rs for Unix only"
-    status: pending
+    status: completed
   - id: program-test
     content: "Add crates/workshop/server/tests/it/live_program.rs with the one ignored test, and name it in tests/it/main.rs for Linux only"
-    status: pending
+    status: completed
   - id: window-tests
     content: "Add crates/workshop/server/tests/it/live_window.rs with the two ignored tests, and name it in tests/it/main.rs for Linux only"
-    status: pending
+    status: completed
   - id: breaks
     content: "Apply each of the three breaks, confirm the test named for it now fails, and revert it"
-    status: pending
+    status: completed
   - id: runs
     content: "Run the ten ignored tests against a real Gateway that serves CheapSeek, several times each, and see no process left"
-    status: pending
+    status: completed
   - id: verify
     content: "Run the verification commands"
-    status: pending
+    status: completed
   - id: automate
     content: "Add tools/live-tests.mjs and the live job of ci.yml, which run the ten live tests on every pull request"
-    status: pending
+    status: completed
   - id: pr
     content: "Push the branch qa-plan-tests to the fork and open one PR against cppalliance/runvil-workshop"
-    status: pending
+    status: in_progress
 ---
 
 # Check what Workshop hands its Packs, and run Workshop against a real Gateway
@@ -272,7 +272,7 @@ The two tests of a normal run are checked by their breaks: each break must fail 
   - Socket tests that start their own Gateway. They would tie this repository to the Gateway's settings format. Only the kill test starts one, because it must own the Gateway it kills, and it writes no settings.
   - `POST /shutdown` on a Gateway the kill test is given. Measured: a streamed reply of 114 pieces went on to its end, in 2.3 seconds, after the request was answered 202.
   - Finding the process of a running Gateway from its port and killing it. It could kill a Gateway the person relies on.
-  - Killing only the program the kill test started, which is what the test first did. The serving process then sees that its supervisor is gone and shuts down in good order, in about 0.6 seconds, and a reply shorter than that finishes first. Then the run ends with text and no error comes.
+  - Killing only the program the kill test started, which is what the test first did. The serving process then sees that its supervisor is gone and shuts down in good order, in about 0.6 seconds, and a reply shorter than that finishes first. Then the run ends with text and no error comes. See the notes.
   - Starting the installed Workshop program. It may be an older version than the code under test.
   - Loading Workshop's page in a headless browser. It would test the interface outside the window, and it cannot close the window.
   - Keyboard and mouse events from `xdotool`. It cannot read the chat panel.
@@ -289,6 +289,37 @@ The two tests of a normal run are checked by their breaks: each break must fail 
   - The program's state goes in the test's folder, because Workshop keeps its state beside the settings file it loaded.
   - Live tests started before the Gateway has finished loading its model fail at once. The Gateway's log line `command finished` for `load-profile` marks the end of loading.
   - `stalled_browser_cleanup_is_bounded_after_gateway_disconnect`, in `crates/workshop/server/tests/it/realtime_relay/overload.rs`, fails on the author's Linux machine on unchanged code, at `the Gateway fills the relay's browser send`, after about ten seconds. It fails the same way on unchanged `upstream/master` at commit `f40a4fce`. CI runs the server's tests on Windows only. This plan does not touch it.
+  - The break results and the exit criteria below were measured on `upstream/master` at commit `1b33d9f8`, onto which the branch was rebased on 2026-11-25. That commit pins the Harness at `5d9c7bf8`, which streams a reply to the Host, and upstream changed `agents.rs`, the broker, and `agents/tests.rs` for it. The MCP test went into upstream's new version of `agents/tests.rs` as it was, and the other test files are as they were but for one doc comment in `live_window.rs`. Every figure came out the same as on `3c12833c`, the base before it. On `1b33d9f8` without this plan's tests, break 1 and break 2 left every test passing but `stalled_browser_cleanup_is_bounded_after_gateway_disconnect`, and break 3 also failed `a_message_sent_while_a_tool_call_runs_is_a_user_message_the_next_request_holds`. Since 2026-11-21 Workshop builds its Host through the Harness's `Host::builder`, and the two tests of a normal run build theirs the same way.
+  - Result of break 1: the 308 tests of the `workshop-server`, `workshop-agents`, and `workshop-run-log` crates ran. The MCP test failed, and the only other failure was `stalled_browser_cleanup_is_bounded_after_gateway_disconnect`.
+  - Result of break 2: the 258 tests of `workshop-server` ran. The web search test failed, with the first Gateway's result in the answer. The only other failure was `stalled_browser_cleanup_is_bounded_after_gateway_disconnect`.
+  - Result of break 3: the web search test failed with "web_search: the host offers no web search right now". `a_message_sent_while_a_tool_call_runs_is_a_user_message_the_next_request_holds` failed too, and so did `stalled_browser_cleanup_is_bounded_after_gateway_disconnect`.
+  - The live runs used a Gateway built from `cppalliance/runvil-gateway` at commit `52fd92d`. Until 2026-11-23 it served Qwen3 0.6B from a local file, and every finding and result below that does not name CheapSeek was made on that model. Since then it serves CheapSeek release 1.1.0 as a remote endpoint on its own machine, declared with a context of 32,768 tokens. The closing test used the Gateway release Workshop is pinned to, `gateway-v0.3.1`, beside the Workshop program.
+  - Found while writing the socket tests: the built-in chat agent requires a context of at least 32,768 tokens for its `default` role. Against a model declared with 8,192, the launch ends with the requirements notice, which Workshop relays whole in an error frame.
+  - Found while writing the socket tests: a real Gateway answers a wrong key with status 401 even from a loopback caller it would trust with no key. Workshop always sends its key, so the key in its settings must be right.
+  - Unexplained: twice, with the model loaded and several of the socket tests running side by side straight after the Gateway started, one model round failed and Workshop reported "Model turn failed". Workshop's message does not carry the cause. It was not seen with the tests run one at a time, nor in direct requests to the Gateway, nor in runs through the Harness alone.
+  - Result of the first runs of the socket tests: from a fresh start of the Gateway, with the tests run one at a time, all six passed in three runs in a row, in 14, 5, and 6 seconds. Run side by side on a Gateway that had been up for a while, all six passed in four runs in a row.
+  - Observed in every run of the kill test: the recorded error has the code `Transport` and its message ends "unexpected EOF during chunk size line".
+  - Found in the kill test: its first form killed only the program it started. It passed three runs in a row, and then failed 3 runs of 38 when every test was run again. In each failed run the client got no error frame within the deadline. The Gateway's log showed why: "the supervisor closed stdin; shutting down", and its exit 0.6 seconds later. The model had cut its list short ("1" to "30", then "...", then "300"), so the reply of 129 pieces finished inside that time, and the run rightly ended with text. Workshop was not at fault. The test had not killed the process that serves.
+  - Result of the runs of the kill test with the whole group killed: it passed 50 runs of 50, in 4.3 to 5.5 seconds a run. In none of them did the Gateway's log show a shutdown in good order, and no Gateway or model process was left after any run.
+  - Result of the runs of the program test: it passed in four runs, the first in 12 seconds and the next three in about 2 seconds each. No process the test started was left after any run.
+  - Found while writing the closing test, with Workshop at commit `68c7249`, and not tried again since: Workshop can start the Gateway release it is pinned to, and cannot start a Gateway built from that repository's `master` at commit `52fd92d`. Workshop holds the launch lock while it starts the Gateway and waits for the discovery file. The newer Gateway tries to take the same lock, waits ten seconds, and exits with "settle which process launches the Gateway: no launch winner became attachable within 10s". Workshop then reports "the launched gateway exited (exit status: 1) without writing a gateway discovery file".
+  - Result of the first runs of the window tests: each passed in three runs in a row, about 3 seconds a run, and no process or open port was left after any of them.
+  - Found in the typing test: it first waited only for the model picker, and failed 3 runs of 18 when every test was run again. In each failed run the typed text was still in the chat box and the chat panel was empty, because the test had pressed Enter before the agent's run started. Workshop was not at fault. With the second wait, the test passed 30 runs of 30, about 3.3 seconds a run. The closing test passed 5 runs of 5.
+  - Those live runs were made on 2026-11-20, the last of them on `upstream/master` at commit `4666b17f`. They were made again after each later rebase. Result of the last runs on the local model, on 2026-11-23 on `3c12833c`: the six socket tests passed, one at a time, in 25 seconds. The program test passed 3 runs of 3, the typing test 5 of 5, the kill test 5 of 5, and the closing test 3 of 3. No process the tests started and no open port was left at the end.
+  - Result of the first runs on CheapSeek, on 2026-11-23, with the tests as they were written for the local model: five of the six socket tests, the program test, and the typing test passed. The chat test failed: asked for the word "tangerine" it had been told, CheapSeek gave advice on learning words, and asked for a name it had been told, it answered "You're Sam." The kill test failed: CheapSeek's reply to its request was 68 tokens long and had ended before the kill. The closing test failed its first run.
+  - Found in the closing test on CheapSeek: the test clicked Close as soon as the Gateway answered a chat request, which with CheapSeek is about a second after Workshop starts. In the failed run Workshop went on serving its page for the 120 seconds the test waits. In one of three runs made to look, the page was still loading when the click came (`document.readyState` was `interactive`), the click did nothing, and a second click two seconds later closed the window. The local model had hidden this, because the Gateway took about six seconds to load it before it answered. Workshop was not at fault. With the wait for the model picker, the test passed 5 runs of 5.
+  - Found in the kill test on CheapSeek: with a `say` directive of 200,000 words and the model declared with 32,768 tokens of context, the client read "Model turn failed" and no piece of a reply. Declared with 1,000,000 tokens, the same request passed. The Gateway itself took the request either way.
+  - Result of timing the kill test's reply, read by `curl`: the whole reply of 100,000 pieces takes 4.6 to 5.0 seconds through a Gateway built from source without optimization, and 0.54 to 0.56 seconds through the release `gateway-v0.3.1`. The first piece arrives after about 0.06 seconds, and the test kills on the first piece.
+  - Result of the runs on CheapSeek, on 2026-11-23 on `3c12833c`. The six socket tests passed 10 runs of 10 one at a time: the first run after the Gateway started took 10 seconds, and the others 2.5 to 2.7. Side by side they also passed 10 of 10. The program test passed 10 of 10, in about 1 second a run. The typing test passed 25 of 25, in 3.1 to 3.9 seconds. The kill test passed 50 of 50 with a Gateway built from source, in 1.0 to 1.2 seconds a run, and 50 of 50 with the release, in 1.1 to 1.8 seconds. The closing test passed 25 of 25, in 2.5 to 3.1 seconds. No process the tests started and no open port was left at the end.
+  - Result of the exit criteria. The three crates ran 343 tests: 342 passed, 14 were skipped, and `stalled_browser_cleanup_is_bounded_after_gateway_disconnect` failed. `cargo clippy -p workshop -p workshop-server -p workshop-server-api --all-targets`, `cargo fmt --all --check`, `cargo test -p build-xtask`, and the wording check passed. The rest of the workspace, which is not an exit criterion, ran 704 tests, all passed, and 1 was skipped. Clippy over the rest of the workspace, the docs build, and the custom lints were not run locally.
+  - CI runs the checks that were not run locally on the pull request, cppalliance/runvil-workshop#32. Its ten checks passed on the branch as it stood on 2026-11-21, on `upstream/master` at commit `73e4fccd`: `check-workshop`, `check-workshop-linux`, `ci-green`, `clippy`, `docs`, `dylint`, `fmt`, `supply-chain`, `test`, and `ui`. On `f40a4fce`, `supply-chain` and `ci-green` failed on two advisories against the `cookie` and `url` crates in upstream's lock file, which `3c12833c` updates.
+  - `vibelight`, run on each changed test file alone on 2026-11-25, reports no lead in `live_stop.rs`, `live_program.rs`, or `live_window.rs`. In `tests-gateway.rs` it reports one, on the helper `registry_with_gateway`, which this change does not touch. In `tests.rs` it reports six, none on the MCP test. One of them counts the web search test among three tests that repeat a literal, in the wording the file already uses. In `live.rs` it reports nine, all in the new code: two helpers that return a tuple, a `kind` passed as a string to two helpers and always the same to one, a helper with one caller, two tests whose bodies are alike, and two literals repeated across tests. Those nine have not been acted on.
+  - Found by Copilot's review of the pull request on 2026-11-23, and corrected on 2026-11-24: six faults in the live tests. The program test and the window tests would have run on a `workshop.toml` beside the Workshop program. The tool test passed on a tool call that had a reply and lacked a result. The window tests took a refused WebDriver command for a result. The kill test and the window tests took the first model of any kind. The closing test's last chat request had no limit. The kill test's guard skipped the process group when the program had already exited. The decisions above say what each test does now.
+  - Result of a run on 2026-11-24 with a `workshop.toml` put beside the Workshop program: the program test and the typing test each failed before the program was started, with "RUNVIL_E2E_WORKSHOP_BIN names a program with" the file's path "beside it". With the file removed, the program test passed.
+  - Result of a run of the closing test on 2026-11-24 with a selector for the Close button that matches nothing: the test failed after 4 seconds with "`element` was refused with 404 Not Found" and the driver's reason, "no such element".
+  - Result of the runs after the corrections, on 2026-11-24 on `3c12833c`, with CheapSeek release 1.1.0. The six socket tests passed 10 runs of 10 one after another, in 2.2 to 4.4 seconds a run, and 11.2 and 15.5 seconds in two runs. At the same time they passed 10 of 10, in 0.6 to 1.2 seconds. In all twenty runs the tool test read the tool call, the tool's result, and the reply in that order. The program test passed 10 of 10, in 0.9 to 1.1 seconds. The typing test passed 25 of 25, in 3.1 to 3.8 seconds. The kill test passed 50 of 50 with a Gateway built from source, in 1.0 to 1.6 seconds, and 50 of 50 with the release `gateway-v0.3.1`, in 1.0 to 1.8 seconds and 7.4 seconds in one run. The closing test passed 25 of 25, in 2.5 to 3.2 seconds and 8.2 seconds in one run. No process the tests started and no open port was left at the end. The exit criteria gave the same results as before the corrections.
+  - Result of `tools/live-tests.mjs` on 2026-11-25 on `1b33d9f8`, with CheapSeek release 1.1.0 and the Gateway release `gateway-v0.3.1`, which `cargo workshop` placed beside the Workshop program. In the script's first run, the eight tests that need a running Gateway passed and so did the kill test, and the closing test failed after 120 seconds: the Gateway that Workshop started logged "no profile selected; serving remote models only", and Workshop's model picker stayed empty for those 120 seconds. With a `gateway.state.toml` that selects the `default` profile, the closing test passed 3 runs of 3 alone, and the whole script then passed 13 runs of 13, in 13.0 to 22.6 seconds a run. After those runs, every process that the script or a test had started was gone.
+  - This work was first written as six plans, one for each test of a normal run and one for each kind of live test. They were merged into this plan on 2026-11-21, at the user's word: "let's merge those into 1".
 
 ### Deferred and Out of Scope
 
