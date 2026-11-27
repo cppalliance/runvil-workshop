@@ -25,35 +25,35 @@ repository = "https://github.com/cppalliance/runvil-workshop"
 # Workshop links in. All three name one commit, because two commits would
 # be two copies of every type the crates share. `version` beside `git`
 # keeps cargo-deny's wildcard check quiet.
-runvil = { version = "0.3.0", git = "https://github.com/cppalliance/runvil-harness", rev = "92abc305b9223513621eba95107648bdf8e4e47f" }
-harness-gateway-client = { version = "0.3.0", git = "https://github.com/cppalliance/runvil-harness", rev = "92abc305b9223513621eba95107648bdf8e4e47f" }
-plugin-mcp = { version = "0.3.0", git = "https://github.com/cppalliance/runvil-harness", rev = "92abc305b9223513621eba95107648bdf8e4e47f" }
-# The safe layer over the C Plugin contract, version 0.6, from its own
+runvil = { version = "0.3.0", git = "https://github.com/cppalliance/runvil-harness", rev = "af336702ac76ca8f9c1ebe918028a776473ae917" }
+harness-gateway-client = { version = "0.3.0", git = "https://github.com/cppalliance/runvil-harness", rev = "af336702ac76ca8f9c1ebe918028a776473ae917" }
+plugin-mcp = { version = "0.3.0", git = "https://github.com/cppalliance/runvil-harness", rev = "af336702ac76ca8f9c1ebe918028a776473ae917" }
+# The safe layer over the C Plugin contract, version 0.7, from its own
 # repository, pinned by commit. Only the library Plugin crates under
 # `crates/workshop/` name it, for `export_plugin!`. The commit is the one
 # runvil-harness pins the contract's `runvil-plugin-sys` at: that crate
 # sets `links`, so Cargo refuses two commits of the contract in one build.
-runvil-plugin-sdk = { version = "0.6.0", git = "https://github.com/cppalliance/runvil-plugin-api", rev = "74f9e08ba9cc524520fb4c90bd8ac372ba7f303f" }
+runvil-plugin-sdk = { version = "0.7.0", git = "https://github.com/cppalliance/runvil-plugin-api", rev = "42c109fdc8bffd15ee6b6d7afcc04383aa27373a" }
 # The std Plugin, from its own repository, pinned by commit, which must be
 # built against the contract commit above. default-features off drops its
 # own export of `runvil_plugin`, which `workshop-plugin-std` makes instead.
 # The key is `std-plugin` because that crate's own library is named
 # `plugin_std`, the name of the file Workshop ships.
-std-plugin = { package = "plugin-std", version = "0.1.0", git = "https://github.com/cppalliance/runvil-plugin-std", rev = "0eda071d07531b57dcbcb1a255b6207d8110f91c", default-features = false }
+std-plugin = { package = "plugin-std", version = "0.1.0", git = "https://github.com/cppalliance/runvil-plugin-std", rev = "1da424b5ee5beac900c7ce93653a54b4e957c893", default-features = false }
 # The bashkit Plugin, from its own repository, pinned by commit and built
 # against the same contract commit. default-features off drops its own
 # export of `runvil_plugin`, which `workshop-plugin-bashkit` makes
 # instead. The key is `bashkit-plugin` for the reason std's is
 # `std-plugin`: the crate's own library has the name of the file Workshop
 # ships, `plugin_bashkit`.
-bashkit-plugin = { package = "plugin-bashkit", version = "0.1.0", git = "https://github.com/cppalliance/runvil-plugin-bashkit", rev = "5afe8ff835774709fda6d0f70c6b28b76005c4cd", default-features = false }
+bashkit-plugin = { package = "plugin-bashkit", version = "0.1.0", git = "https://github.com/cppalliance/runvil-plugin-bashkit", rev = "488e845ad2bd7b3114092a3255b7b3d6105489f4", default-features = false }
 # The web Plugin, from its own repository, pinned by commit and built
 # against the same contract commit. default-features off drops its own
 # export of `runvil_plugin`, which `workshop-plugin-web` makes instead.
 # The key is `web-plugin` for the reason std's is `std-plugin`: the
 # crate's own library has the name of the file Workshop ships,
 # `plugin_web`.
-web-plugin = { package = "plugin-web", version = "0.1.0", git = "https://github.com/cppalliance/runvil-plugin-web", rev = "afc7f54916bcdc03887675f4450cdd9d3cf10cdd", default-features = false }
+web-plugin = { package = "plugin-web", version = "0.1.0", git = "https://github.com/cppalliance/runvil-plugin-web", rev = "2bde099da58faaef7285e6ec46f4344806b3472f", default-features = false }
 workshop-gateway-discovery = { path = "crates/workshop/gateway-discovery" }
 workshop-server = { path = "crates/workshop/server" }
 workshop-server-api = { path = "crates/workshop/server-api" }
